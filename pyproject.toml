@@ -1,6 +1,6 @@
 [project]
 name = "landing"
-version = "0.0.1"
+version = "0.0.0"
 description = "Landing helps humans and agents build context."
 authors = [{ name = "Chojan Shang", email = "psiace@apache.org" }]
 readme = "README.md"
