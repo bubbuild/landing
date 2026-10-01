@@ -26,7 +26,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def parser() -> Parser:
-    app = Parser(prog="landing", description="Development actions powered by Bub.")
+    app = Parser(prog="landing", description="Explain CI failures, delegate fixes, and review evidence.")
     app.add_argument("--db", type=Path, help="SQLite database path (local calls only)")
     app.add_argument("--server", default=os.getenv("LANDING_SERVER"), help="Remote Landing server URL")
     app.add_argument(

@@ -1,16 +1,33 @@
 [project]
-site_name = "landing"
+site_name = "Landing"
 repo_url = "https://github.com/PsiACE/landing"
 site_url = "https://PsiACE.github.io/landing"
-site_description = "Bub-powered development actions for people, CLI, and CI."
+site_description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 site_author = "Chojan Shang"
 edit_uri = "edit/main/docs/"
 repo_name = "PsiACE/landing"
-copyright = 'Maintained by <a href="https://PsiACE.com">PsiACE</a>.'
+copyright = 'Maintained by <a href="https://PsiACE.com">PsiACE</a>. Powered by Bub.'
 
 nav = [
-    { "Home" = "index.md" },
-    { "Modules" = "modules.md" },
+    { "Why Landing" = "index.md" },
+    { "Get started" = "get-started.md" },
+    { "Working with Landing" = "working-with-landing.md" },
+    { "Make Landing work for you" = "make-it-yours.md" },
+    { "Run Landing" = [
+        { "CI" = "guides/ci.md" },
+        { "GitHub" = "guides/github.md" },
+        { "Server and webhooks" = "guides/server.md" },
+        { "Containers and ONCE" = "guides/deploy.md" },
+        { "Replication and recovery" = "guides/recovery.md" },
+        { "Troubleshooting" = "guides/troubleshooting.md" },
+    ] },
+    { "Reference" = [
+        { "CLI" = "reference/cli.md" },
+        { "Configuration" = "reference/configuration.md" },
+        { "HTTP" = "reference/http.md" },
+        { "Python API" = "reference/python.md" },
+    ] },
+    { "Develop and dogfood" = "development.md" },
 ]
 
 [project.plugins.mkdocstrings.handlers.python]
@@ -74,6 +91,7 @@ icon = "fontawesome/brands/python"
 link = "https://pypi.org/project/landing"
 
 [project.markdown_extensions.pymdownx.superfences]
+custom_fences = [{ name = "mermaid", class = "mermaid" }]
 
 [project.markdown_extensions.pymdownx.arithmatex]
 generic = true

@@ -1,7 +1,7 @@
 [project]
 name = "landing"
 version = "0.0.0"
-description = "Bub-powered development actions for people, CLI, and CI."
+description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 authors = [{ name = "Chojan Shang", email = "psiace@apache.org" }]
 readme = "README.md"
 keywords = ['python']
