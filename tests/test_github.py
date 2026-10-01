@@ -75,7 +75,7 @@ def test_stale_head_is_checked_after_comment_lookup_and_never_written(monkeypatc
 
     def invoke(args, repository):
         calls.append(args)
-        return "[[]]" if args[0] == "api" else '{"headRefOid":"new-head","state":"OPEN"}'
+        return "" if args[0] == "api" else '{"headRefOid":"new-head","state":"OPEN"}'
 
     monkeypatch.setattr(github, "gh", invoke)
     assert github.reply("example/landing", 2, "gatekeeper", "Old recommendation.", head="old-head") is None

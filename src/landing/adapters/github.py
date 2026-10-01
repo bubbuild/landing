@@ -103,10 +103,11 @@ def reply(
 ) -> str | None:
     """Update one mode reply using gh, checking the current head immediately before writing."""
     marker = f"<!-- landing:{mode} -->"
-    comments = json.loads(
-        gh(["api", f"repos/{repository}/issues/{number}/comments?per_page=100", "--paginate", "--slurp"], repository)
+    rows = gh(
+        ["api", f"repos/{repository}/issues/{number}/comments?per_page=100", "--paginate", "--jq", ".[] | @json"],
+        repository,
     )
-    comments = [comment for page in comments for comment in page]
+    comments = [json.loads(row) for row in rows.splitlines() if row.strip()]
     if head:
         current = json.loads(gh(["pr", "view", str(number), "--json", "headRefOid,state"], repository))
         if current["headRefOid"] != head or current["state"] != "OPEN":
@@ -161,11 +162,13 @@ def publish_fix(repository: str, number: int, workspace: Path, action: Action, r
     git(
         [
             "-c",
+            f"url.https://github.com/{repository}.insteadOf=https://github.com/{repository}",
+            "-c",
             "credential.helper=",
             "-c",
             "credential.helper=!/usr/bin/gh auth git-credential",
             "push",
-            "origin",
+            f"https://github.com/{repository}.git",
             f"HEAD:refs/heads/{branch}",
         ],
         workspace,
