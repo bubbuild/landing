@@ -88,7 +88,6 @@ def dogfood(workspace, base, evidence, api_base, mode, check):
         BUB_API_KEY="test-key",
         BUB_API_BASE=api_base,
         BUB_CLIENT_ARGS='{"max_retries":0}',
-        BUB_MAX_STEPS="5",
         BUB_MODEL_TIMEOUT_SECONDS="5",
         LANDING_BASE_REVISION=base,
         LANDING_ACTION_TIMEOUT_SECONDS="20",

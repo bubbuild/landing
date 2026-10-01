@@ -65,7 +65,6 @@ jobs:
           BUB_API_KEY: ${{ secrets.LANDING_API_KEY }}
           BUB_API_BASE: ${{ vars.LANDING_API_BASE }}
           BUB_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
-          BUB_MAX_STEPS: '30'
           BUB_MODEL_TIMEOUT_SECONDS: '120'
           LANDING_MODE: ${{ inputs.mode || 'gatekeeper' }}
           LANDING_NUMBER: ${{ inputs.number || '0' }}

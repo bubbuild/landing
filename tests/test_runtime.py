@@ -9,6 +9,26 @@ from landing.tasks import Tasks
 from tests.conftest import completion
 
 
+def test_agent_can_finish_after_more_than_thirty_tool_steps(tmp_path, model, monkeypatch):
+    monkeypatch.delenv("BUB_MAX_STEPS", raising=False)
+    (tmp_path / "evidence.txt").write_text("Observed failure.\n")
+    responses, requests = model
+    responses.extend(completion(tool="fs_read", arguments={"path": "evidence.txt"}) for _ in range(31))
+    responses.append(completion("Finished investigating the evidence."))
+
+    async def run():
+        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
+            action = await runtime.run(
+                ActionRequest(mode="explainer", instruction="Investigate the failure.", workspace=str(tmp_path))
+            )
+            assert action.status == "completed"
+            assert action.result == "Finished investigating the evidence."
+            assert action.error is None
+
+    asyncio.run(run())
+    assert len(requests) == 32
+
+
 def test_fixer_uses_sdk_tools_and_checks_before_completion(tmp_path, model):
     responses, requests = model
     responses.extend([

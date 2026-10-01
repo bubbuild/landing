@@ -22,7 +22,7 @@ export BUB_API_KEY="your-provider-api-key"
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
 ```
 
-Model configuration uses Bub's existing `BUB_*` settings, including `BUB_API_BASE`, `BUB_MAX_STEPS`, and `BUB_MODEL_TIMEOUT_SECONDS`. Landing pins Bub 0.5.0 and explicitly registers its SDK hooks. Installed Bub plugins and ambient skills are not discovered or loaded.
+Model configuration uses Bub's existing `BUB_*` settings, including `BUB_API_BASE` and `BUB_MODEL_TIMEOUT_SECONDS`. Landing imposes no step budget; Bub's SDK default allows the agent to finish naturally. Landing pins Bub 0.5.0 and explicitly registers its SDK hooks. Installed Bub plugins and ambient skills are not discovered or loaded.
 
 ## Use from a terminal or CI
 
@@ -125,7 +125,7 @@ Worktrees must remain available while inspecting or retrying saved changes. CI i
 separate databases and retain evidence for 30 days; they are not a shared distributed queue.
 Long-lived feedback belongs in issues and regression tests, rather than expiring artifacts alone.
 
-Each action has a ten-minute execution limit, 30 Bub steps and a 120-second model request timeout
+Each action has a ten-minute execution limit and a 120-second model request timeout
 in dogfood CI. Missing configuration fails the delegated job; automatic feedback skips until a
 model is configured. Fork PRs run native CI without model credentials. No automatic repair loop
 or model-driven merge is installed.
