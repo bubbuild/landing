@@ -189,10 +189,25 @@ class Runtime:
                     self.tasks.event(action_id, "agent." + event.kind, {"session_id": action_id})
         if stream.error is not None:
             raise RuntimeError(stream.error.message)
-        decision = (
-            cast("Decision", state.get("landing_decision", "inconclusive")) if request.mode == "gatekeeper" else None
-        )
+        decision = self._decision(request, state, checks)
+        self._require_output(action_id, output, decision)
         return output, decision
+
+    @staticmethod
+    def _decision(request: ActionRequest, state: TurnState, checks: list[dict]) -> Decision | None:
+        if request.mode != "gatekeeper":
+            return None
+        if checks_failed(checks):
+            return "block"
+        return cast("Decision", state.get("landing_decision", "inconclusive"))
+
+    def _require_output(self, action_id: str, output: str, decision: Decision | None) -> None:
+        """Fail empty/whitespace-only model output instead of reporting it as completed work."""
+        if not output.strip():
+            # Record any decision reached before the failure so gatekeeper verdicts are not lost.
+            self.tasks.output(action_id, output, decision)
+            message = "The model returned empty output."
+            raise RuntimeError(message)
 
     async def perform(self, action_id: str) -> tuple[str, Decision | None]:
         request = self.tasks.request(action_id)
