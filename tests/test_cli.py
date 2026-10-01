@@ -7,7 +7,7 @@ from tests.conftest import completion
 
 
 @pytest.mark.parametrize("mode", ["issuer", "fixer", "gatekeeper", "explainer"])
-def test_cli_modes_use_one_sdk_and_reopen_history(tmp_path, model, capsys, mode):
+def test_cli_modes_complete_and_reopen_history(tmp_path, model, capsys, mode):
     responses, _ = model
     if mode == "gatekeeper":
         responses.append(completion(tool="decide", arguments={"decision": "allow"}))

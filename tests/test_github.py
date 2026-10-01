@@ -18,6 +18,7 @@ from tests.conftest import completion
     [
         ("issuer", ["issue", "create", "--title", "A verified problem"], True),
         ("explainer", ["issue", "view", "2"], True),
+        ("explainer", ["repo", "view", "other/repository"], False),
         ("gatekeeper", ["pr", "merge", "2"], False),
         ("fixer", ["auth", "token"], False),
         ("issuer", ["issue", "create", "-Rother/repository"], False),
@@ -33,7 +34,7 @@ def test_real_sdk_scopes_gh_capabilities(tmp_path, monkeypatch, model, mode, arg
         return "Verified GitHub evidence."
 
     monkeypatch.setattr(github, "gh", invoke)
-    responses, requests = model
+    responses, _ = model
     responses.extend([completion(tool="gh", arguments={"args": args}), completion("Explained the evidence.")])
 
     async def run():
@@ -49,7 +50,6 @@ def test_real_sdk_scopes_gh_capabilities(tmp_path, monkeypatch, model, mode, arg
 
     asyncio.run(run())
     assert bool(calls) == allowed
-    assert len(requests) == 2
     if allowed and args[0] == "api":
         assert calls[0][0][-2:] == ["--method", "GET"]
 

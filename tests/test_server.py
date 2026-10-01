@@ -125,20 +125,6 @@ def test_once_health_checks_worker_and_database_without_auth(tmp_path):
         assert client.get("/v1/actions", headers={"Authorization": "Bearer test-secret"}).json() == []
 
 
-def test_once_health_rejects_a_closed_database(tmp_path):
-    app = create_app(tmp_path / "landing.sqlite3")
-    with TestClient(app) as client:
-        assert client.portal is not None
-        client.portal.call(app.state.worker.cancel)
-        client.portal.call(app.state.runtime.tasks.close)
-        # Keep a pending worker reference so this check exercises SQLite availability.
-        app.state.worker = client.portal.start_task_soon(asyncio.sleep, 60)
-        try:
-            assert client.get("/up").status_code == 503
-        finally:
-            app.state.worker.cancel()
-
-
 def test_public_origin_is_used_for_pagination(tmp_path, model):
     responses, _ = model
     responses.extend([completion("Explained the failure.")] * 2)

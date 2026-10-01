@@ -65,6 +65,14 @@ def github_tool(repository: str) -> Tool:
         if any(arg.startswith(("-R", "--repo", "--hostname", "http://", "https://")) for arg in args):
             message = "Use identifiers in the configured repository."
             raise ValueError(message)
+        if (
+            pair == ("repo", "view")
+            and len(args) > 2
+            and not args[2].startswith("-")
+            and args[2].lower() != repository.lower()
+        ):
+            message = "Use the configured repository."
+            raise ValueError(message)
         if "--body" in args or "--body-file" in args or any(arg.startswith("--body=") for arg in args):
             message = "Supply the message through the body parameter."
             raise ValueError(message)
@@ -76,7 +84,9 @@ def github_tool(repository: str) -> Tool:
                 raise ValueError(message)
             args = [*args, "--method", "GET"]
         output = gh(args, repository, body=body, env=credentials)
-        return output[-100000:] if output.strip() else "Command succeeded; no matching results."
+        if len(output) > 100000:
+            return "[Earlier output omitted; narrow the query for complete evidence.]\n" + output[-100000:]
+        return output if output.strip() else "Command succeeded; no matching results."
 
     return Tool.from_callable(invoke, name="gh", context=True)
 
@@ -186,11 +196,32 @@ def publish_fix(
     body = f"Addresses #{number}.\n\n{action.result}\n\nAction `{action.id}`. Independent CI and human review are required."
     if existing:
         gh(["pr", "edit", existing[0]["url"]], repository, body=body)
-        return existing[0]["url"]
-    args = ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"]
-    if base:
-        args += ["--base", base]
-    return gh(args, repository, body=body).strip()
+        url = existing[0]["url"]
+    else:
+        args = ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"]
+        if base:
+            args += ["--base", base]
+        url = gh(args, repository, body=body).strip()
+    # GITHUB_TOKEN-created PRs do not emit another CI run. Dispatch the repository's
+    # existing checks explicitly; ordinary OAuth pushes already trigger PR checks.
+    workflow = os.getenv("LANDING_CHECK_WORKFLOW")
+    if os.getenv("GITHUB_ACTIONS") and workflow:
+        head = git(["rev-parse", "HEAD"], workspace).strip()
+        gh(
+            [
+                "workflow",
+                "run",
+                workflow,
+                "--ref",
+                branch,
+                "-f",
+                f"number={url.rsplit('/', 1)[-1]}",
+                "-f",
+                f"head={head}",
+            ],
+            repository,
+        )
+    return url
 
 
 async def run(  # noqa: C901 -- linear admission, execution, and delivery around the existing runtime.
@@ -203,6 +234,7 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
     number: int = 0,
     head: str = "",
     run_id: str = "",
+    checked_revision: str = "",
     key: str,
     checks: list[str],
     base: str = "",
@@ -217,6 +249,13 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
     if run_id:
         evidence = gh(["run", "view", run_id, "--json", "jobs,conclusion,headSha,url,workflowName"], repository)
         inputs.append(FileInput(name="native-checks.json", content=evidence))
+        if checked_revision:
+            inputs.append(
+                FileInput(
+                    name="ci-checkout.txt",
+                    content=f"Native CI checked out {checked_revision}. This workflow-supplied checkout revision is authoritative; run headSha identifies the triggering change and does not override it.",
+                )
+            )
         try:
             logs = gh(["run", "view", run_id, "--log-failed"], repository)
         except RuntimeError:
@@ -279,7 +318,13 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
                 key=key,
                 event=(
                     "github.target",
-                    {"number": number, "head": head, "revision": inspected, "workspace": str(target)},
+                    {
+                        "number": number,
+                        "head": head,
+                        "revision": inspected,
+                        "workspace": str(target),
+                        "checked_revision": checked_revision,
+                    },
                 ),
             )
         if action.status == "queued":
@@ -297,6 +342,8 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
             ).fetchone()[0]
         )
         text = f"Action `{action.id}`: {action.status}; decision: {action.decision or 'not applicable'}.\n\n{action.result or 'No explanation returned.'}\n\nInspected revision: `{target_record['revision']}`."
+        if target_record.get("checked_revision"):
+            text += f"\nNative CI checkout revision (supplied by the workflow): `{target_record['checked_revision']}`."
         if action.error:
             text += "\n\n" + action.error["message"]
         delivered = runtime.tasks.connection.execute(
@@ -342,6 +389,9 @@ def main() -> None:
     parser.add_argument("--base", default="", help="Base branch for the isolated checkout and fix PR")
     parser.add_argument("--run-id", default="")
     parser.add_argument(
+        "--checked-revision", default="", help="Actual native CI checkout SHA, separate from run headSha"
+    )
+    parser.add_argument(
         "--instruction",
         default="Investigate the supplied evidence. Use gh for existing issues, PRs, and checks; explain what needs attention and the next useful action.",
     )
@@ -381,6 +431,7 @@ def main() -> None:
             number=args.number,
             head=args.head,
             run_id=args.run_id,
+            checked_revision=args.checked_revision,
             key=args.delivery_key,
             checks=args.check,
             base=args.base,

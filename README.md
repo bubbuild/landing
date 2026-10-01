@@ -22,7 +22,7 @@ export BUB_API_KEY="your-provider-api-key"
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
 ```
 
-Model configuration uses Bub's existing `BUB_*` settings, including `BUB_API_BASE`, `BUB_MAX_STEPS`, and `BUB_MODEL_TIMEOUT_SECONDS`. Landing pins Bub 0.5.0 and explicitly registers its SDK hooks. Installed Bub plugins and ambient skills are not discovered or loaded.
+Model configuration uses Bub's existing `BUB_*` settings, including `BUB_API_BASE` and `BUB_MODEL_TIMEOUT_SECONDS`. Landing imposes no step budget; Bub's SDK default allows the agent to finish naturally. Landing pins Bub 0.5.0 and explicitly registers its SDK hooks. Installed Bub plugins and ambient skills are not discovered or loaded.
 
 ## Use from a terminal or CI
 
@@ -79,8 +79,10 @@ A bot comment never delegates new work. Put a command on its own line:
 Fixer works in a separate Git worktree. Required tests, typing and documentation checks run
 before code commits, pushes and opens or updates a `landing/fix-<issue>` candidate PR through gh.
 Failed checks preserve the changes and reply to the original work item without publishing a PR.
-It never merges. Bot-created PRs must actually enter native CI; GitHub may require a maintainer
-to approve workflow execution when the workflow token creates them. Comment and schedule workflows
+It never merges. Workflow-token publication explicitly dispatches the existing **Main** workflow
+through `gh workflow run`, carrying the PR number and candidate head; this runs native checks
+and gatekeeper even though GitHub suppresses ordinary PR events from `GITHUB_TOKEN`.
+The repository must allow Actions to create PRs. Comment, dispatch and schedule workflows
 start handling events after their definitions are on the default branch.
 
 Mode prompts require evidence, issue reuse, reproduction, the right repair layer and concrete
@@ -93,7 +95,7 @@ These are tool restrictions, not an operating-system sandbox for trusted workspa
 Configure the real model with repository variables and a secret. The DeepSeek example disables thinking:
 
 ```bash
-/usr/bin/gh variable set LANDING_MODEL --repo PsiACE/landing --body "deepseek:deepseek-flash"
+/usr/bin/gh variable set LANDING_MODEL --repo PsiACE/landing --body "deepseek:deepseek-v4-pro"
 /usr/bin/gh variable set LANDING_API_BASE --repo PsiACE/landing --body "https://api.deepseek.com"
 /usr/bin/gh variable set LANDING_COMPLETION_ARGS --repo PsiACE/landing --body '{"reasoning_effort":"none"}'
 /usr/bin/gh secret set LANDING_API_KEY --repo PsiACE/landing
@@ -123,7 +125,7 @@ Worktrees must remain available while inspecting or retrying saved changes. CI i
 separate databases and retain evidence for 30 days; they are not a shared distributed queue.
 Long-lived feedback belongs in issues and regression tests, rather than expiring artifacts alone.
 
-Each action has a ten-minute execution limit, 30 Bub steps and a 120-second model request timeout
+Each action has a ten-minute execution limit and a 120-second model request timeout
 in dogfood CI. Missing configuration fails the delegated job; automatic feedback skips until a
 model is configured. Fork PRs run native CI without model credentials. No automatic repair loop
 or model-driven merge is installed.
@@ -268,6 +270,12 @@ uv build
 ```
 
 Tests replace only external model requests: Bub's agent loop, native tool execution, tape merging, SQLite persistence, real shell validation, and the local HTTP transport execute normally. Model quality and downstream platform delivery require separate real-task acceptance.
+
+Keep behavior tests for user-visible CLI, HTTP and workflow outcomes, and regression tests for
+actual mistakes that can recur. Prefer end-to-end acceptance for platform wiring. Tests should
+survive an implementation rewrite that preserves the user's experience; avoid assertions about
+helper structure, internal step counts or argument order. Straightforward glue can be inspected
+directly and accepted through an actual workflow run.
 
 The container job builds the image and checks health, authentication, graceful shutdown, a paused-volume restore, and recovery onto an empty primary volume from a real Litestream file replica. Run it locally with Docker or Podman:
 

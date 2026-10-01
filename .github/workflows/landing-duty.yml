@@ -14,7 +14,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  actions: read
+  actions: write
 
 concurrency:
   group: landing-duty-${{ github.event.issue.number || github.event.workflow_run.id || 'daily' }}
@@ -37,11 +37,11 @@ jobs:
       - name: Handle the event or daily maintenance
         env:
           GH_TOKEN: ${{ github.token }}
+          LANDING_CHECK_WORKFLOW: main.yml
           BUB_MODEL: ${{ vars.LANDING_MODEL }}
           BUB_API_KEY: ${{ secrets.LANDING_API_KEY }}
           BUB_API_BASE: ${{ vars.LANDING_API_BASE }}
           BUB_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
-          BUB_MAX_STEPS: '30'
           BUB_MODEL_TIMEOUT_SECONDS: '120'
           LANDING_DELIVERY_KEY: ${{ format('{0}:{1}', github.event.comment.id || github.run_id, github.run_attempt) }}
         run: |

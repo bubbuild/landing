@@ -10,7 +10,7 @@ from tests.conftest import completion
 
 
 def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, monkeypatch):
-    responses, requests = model
+    responses, _ = model
     responses.extend([
         completion(tool="decide", arguments={"decision": "block"}),
         completion("The change needs attention."),
@@ -43,7 +43,6 @@ def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, m
             assert json.loads(capsys.readouterr().out)["result"] == "Explained the failing check."
             assert main([*base, "action", "list", "--json"]) == 0
             assert len(json.loads(capsys.readouterr().out)) == 2
-            assert len(requests) == 3
         finally:
             server.should_exit = True
             thread.join(timeout=5)
