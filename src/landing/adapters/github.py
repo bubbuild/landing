@@ -149,7 +149,9 @@ def git(args: list[str], workspace: Path) -> str:
     ).stdout
 
 
-def publish_fix(repository: str, number: int, workspace: Path, action: Action, revision: str) -> str | None:
+def publish_fix(
+    repository: str, number: int, workspace: Path, action: Action, revision: str, base: str = ""
+) -> str | None:
     dirty = git(["status", "--porcelain"], workspace).strip()
     if not dirty and git(["rev-parse", "HEAD"], workspace).strip() == revision:
         return None
@@ -185,9 +187,10 @@ def publish_fix(repository: str, number: int, workspace: Path, action: Action, r
     if existing:
         gh(["pr", "edit", existing[0]["url"]], repository, body=body)
         return existing[0]["url"]
-    return gh(
-        ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"], repository, body=body
-    ).strip()
+    args = ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"]
+    if base:
+        args += ["--base", base]
+    return gh(args, repository, body=body).strip()
 
 
 async def run(  # noqa: C901 -- linear admission, execution, and delivery around the existing runtime.
@@ -202,6 +205,7 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
     run_id: str = "",
     key: str,
     checks: list[str],
+    base: str = "",
 ) -> Action:
     if mode == "fixer" and not number:
         message = "Delegate fixer to a specific issue or PR."
@@ -233,15 +237,16 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
                 raise ValueError(message)
         else:
             target = db.parent / "checkout"
-            revision = head or "HEAD"
+            revision = head or base or "HEAD"
             if mode == "fixer" and not head:
                 candidates = json.loads(
                     gh(["pr", "list", "--head", f"landing/fix-{number}", "--json", "headRefOid"], repository)
                 )
                 if candidates:
                     revision = candidates[0]["headRefOid"]
-            if head:
-                git(["fetch", "origin", head], workspace)
+            if revision != "HEAD":
+                git(["fetch", f"https://github.com/{repository}.git", revision], workspace)
+                revision = "FETCH_HEAD"
             git(["worktree", "add", "--detach", str(target), revision], workspace)
             inspected = git(["rev-parse", "HEAD"], target).strip()
             inputs.append(
@@ -291,7 +296,9 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
             ):
                 message = "The delegated PR advanced; inspect the saved changes before publishing."
                 raise ValueError(message)
-            url = publish_fix(repository, number, Path(target_record["workspace"]), action, target_record["revision"])
+            url = publish_fix(
+                repository, number, Path(target_record["workspace"]), action, target_record["revision"], base
+            )
             text += "\n\n" + (f"Candidate: {url}" if url else "No code changes were produced.")
         db.parent.joinpath("summary.md").write_text(text + "\n")
         if number and not delivered:
@@ -318,6 +325,7 @@ def main() -> None:
     )
     parser.add_argument("--number", type=int, default=0)
     parser.add_argument("--head", default="")
+    parser.add_argument("--base", default="", help="Base branch for the isolated checkout and fix PR")
     parser.add_argument("--run-id", default="")
     parser.add_argument(
         "--instruction",
@@ -361,6 +369,7 @@ def main() -> None:
             run_id=args.run_id,
             key=args.delivery_key,
             checks=args.check,
+            base=args.base,
         )
     )
     print(action.model_dump_json(indent=2))
