@@ -1,8 +1,6 @@
 # Replication and recovery
 
-Plan recovery for the database and workspaces separately. SQLite contains
-actions, events, request snapshots, idempotency keys, results, and model history.
-Workspace files and requested output files are ordinary filesystem artifacts.
+Plan recovery for the database and workspaces separately. SQLite contains actions, events, request snapshots, idempotency keys, results, and model history. Workspace files and requested output files are ordinary filesystem artifacts.
 
 ## Replicate the database
 
@@ -35,14 +33,8 @@ To recover a lost database, stop the old container, retain its replica, and star
 4. Check `/up`, then inspect action history and interrupted work.
 5. Run a task against the restored workspace and verify the relevant native checks.
 
-Do not remove the original replica while exercising recovery. File replicas on
-the same host cover primary-volume loss, not host loss. Test your chosen remote
-storage and credentials in their actual environment.
+Do not remove the original replica while exercising recovery. File replicas on the same host cover primary-volume loss, not host loss. Test your chosen remote storage and credentials in their actual environment.
 
 ## Cover workspace recovery
 
-Use your infrastructure's filesystem backup or checkout provisioning process.
-With ONCE, enable full-volume backups to cover workspace files as well as SQLite.
-The image uses ONCE's default paused-container backup behavior; it has no live
-workspace-copy hook. A Litestream replica and a full-volume backup address
-different recovery needs. See [Deploy Landing](deploy.md).
+Use your infrastructure's filesystem backup or checkout provisioning process. With ONCE, enable full-volume backups to cover workspace files as well as SQLite. The image uses ONCE's default paused-container backup behavior; it has no live workspace-copy hook. A Litestream replica and a full-volume backup address different recovery needs. See [Deploy Landing](deploy.md).

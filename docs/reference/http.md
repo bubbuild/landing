@@ -1,14 +1,10 @@
 # HTTP reference
 
-The service admits the same action used by the CLI. Admission and execution are
-separate: a successful POST records queued work, not a completed result. Provider
-webhook verification and payload translation belong to the caller's adapter.
+The service admits the same action used by the CLI. Admission and execution are separate: a successful POST records queued work, not a completed result. Provider webhook verification and payload translation belong to the caller's adapter.
 
 ## Authorization and admission
 
-When `LANDING_TOKEN` is set, requests require `Authorization: Bearer TOKEN`, except
-`/healthz` and `/up`. Submit action requests as `application/json`. The request
-limit is 16 MiB. Fields are strict and unknown fields are rejected.
+When `LANDING_TOKEN` is set, requests require `Authorization: Bearer TOKEN`, except `/healthz` and `/up`. Submit action requests as `application/json`. The request limit is 16 MiB. Fields are strict and unknown fields are rejected.
 
 ```json
 {
@@ -31,11 +27,7 @@ limit is 16 MiB. Fields are strict and unknown fields are rejected.
 | `input` | Array of inline text or file snapshots; default empty. A file requires `name` and `content`; `media_type` defaults to `text/plain`. |
 | `checks` | Array of nonblank shell commands; default empty. Only fixer and gatekeeper support checks. |
 
-`POST /v1/actions` commits the request and queued event before returning
-`201 Created` with an action record and `Location: /v1/actions/{id}`.
-`Idempotency-Key` is optional and accepts 1–256 characters. Reusing a key with the
-same request returns the existing action with `200`; conflicting content returns
-`409`. Retry admission also supports this header.
+`POST /v1/actions` commits the request and queued event before returning `201 Created` with an action record and `Location: /v1/actions/{id}`. `Idempotency-Key` is optional and accepts 1–256 characters. Reusing a key with the same request returns the existing action with `200`; conflicting content returns `409`. Retry admission also supports this header.
 
 ## Resources
 
@@ -51,10 +43,7 @@ same request returns the existing action with `200`; conflicting content returns
 | `GET /up` | Worker and SQLite readiness. |
 | `GET /openapi.json` | Generated schema; requires authorization when configured. |
 
-Collections are JSON arrays. `limit` accepts 1–100, default 50. Follow the `Link`
-header with `rel="next"` for subsequent pages. Action cursors use IDs; event
-pagination uses the last numeric event ID as `after` (nonnegative, default 0).
-`BASE_URL` sets the public origin for pagination links behind a proxy.
+Collections are JSON arrays. `limit` accepts 1–100, default 50. Follow the `Link` header with `rel="next"` for subsequent pages. Action cursors use IDs; event pagination uses the last numeric event ID as `after` (nonnegative, default 0). `BASE_URL` sets the public origin for pagination links behind a proxy.
 
 ## Action records
 
@@ -69,15 +58,9 @@ pagination uses the last numeric event ID as `after` (nonnegative, default 0).
 | `created_at`, `updated_at` | Record timestamps. |
 | `started_at`, `completed_at`, `cancel_requested_at` | Lifecycle timestamps, or null. |
 
-Poll the action resource until it reaches `completed`, `failed`, `cancelled`, or
-`interrupted`. Completion does not establish correct advice, successful platform
-delivery, or human acceptance. Events expose `id`, `type`, `created_at`, and `data`;
-validation records include command, output, exit code, and timeout status.
+Poll the action resource until it reaches `completed`, `failed`, `cancelled`, or `interrupted`. Completion does not establish correct advice, successful platform delivery, or human acceptance. Events expose `id`, `type`, `created_at`, and `data`; validation records include command, output, exit code, and timeout status.
 
-Cancellation returns `202` while active work is stopping and `200` for terminal
-work. Retries require a terminal action, create a new record, and do not reset
-workspace files. On worker restart, active work becomes `interrupted`, queued
-work resumes, and completed work is not replayed.
+Cancellation returns `202` while active work is stopping and `200` for terminal work. Retries require a terminal action, create a new record, and do not reset workspace files. On worker restart, active work becomes `interrupted`, queued work resumes, and completed work is not replayed.
 
 ## Errors
 
@@ -103,5 +86,4 @@ Errors use `application/problem+json` with `type`, `title`, `status`, and `detai
 | `422` | Invalid fields, checks, workspace, or query values. |
 | `503` | Worker or database unavailable. |
 
-Read [Run the server](../guides/server.md) for deployment prerequisites and an
-end-to-end request example.
+Read [Run the server](../guides/server.md) for deployment prerequisites and an end-to-end request example.

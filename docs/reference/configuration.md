@@ -1,13 +1,10 @@
 # Configuration
 
-Configure Landing in the environment where its worker runs. Remote clients need
-the server URL and bearer token; model settings belong on the server. CLI options
-override their corresponding environment settings.
+Configure Landing in the environment where its worker runs. Remote clients need the server URL and bearer token; model settings belong on the server. CLI options override their corresponding environment settings.
 
 ## Model
 
-Landing currently uses `BUB_*` names for model settings. Set them directly for
-Landing; no separate application, configuration file, or plugin setup is required.
+Landing currently uses `BUB_*` names for model settings. Set them directly for Landing; no separate application, configuration file, or plugin setup is required.
 
 | Variable | Purpose |
 | --- | --- |
@@ -24,9 +21,7 @@ export BUB_API_KEY="your-provider-api-key"
 export BUB_COMPLETION_ARGS='{"reasoning_effort":"none"}'
 ```
 
-Choose a model identifier and options supported by your provider. Landing sets
-no agent step budget. Request timeouts, required-check timeouts, cancellation,
-and CI job timeouts still apply.
+Choose a model identifier and options supported by your provider. Landing sets no agent step budget. Request timeouts, required-check timeouts, cancellation, and CI job timeouts still apply.
 
 ## Execution and service
 
@@ -38,8 +33,7 @@ and CI job timeouts still apply.
 | `LANDING_GITHUB_REPOSITORY` | Optional `OWNER/REPO` for scoped gh tools. |
 | `BASE_URL` | Public HTTP(S) origin for service pagination links. No credentials, path, query, or fragment. |
 
-The default workspace is the current directory locally. A service registers
-workspace names with `serve --workspace NAME=PATH`.
+The default workspace is the current directory locally. A service registers workspace names with `serve --workspace NAME=PATH`.
 
 ## GitHub workflows and runner
 
@@ -52,10 +46,7 @@ workspace names with `serve --workspace NAME=PATH`.
 | `GH_TOKEN` or gh login | Platform authorization, independent of model configuration. |
 | `LANDING_CHECK_WORKFLOW` | Workflow to dispatch after workflow-token candidate publication; the bundled setup uses `main.yml`. |
 
-See [GitHub](../guides/github.md) for event wiring and permissions. For the Bash
-dogfood wrapper, `LANDING_BASE_REVISION` selects the base diff,
-`LANDING_ACTION_TIMEOUT_SECONDS` defaults to 600, and
-`LANDING_EXPLANATION_TIMEOUT_SECONDS` defaults to 300.
+See [GitHub](../guides/github.md) for event wiring and permissions. For the Bash dogfood wrapper, `LANDING_BASE_REVISION` selects the base diff, `LANDING_ACTION_TIMEOUT_SECONDS` defaults to 600, and `LANDING_EXPLANATION_TIMEOUT_SECONDS` defaults to 300.
 
 ## Container replication
 
@@ -65,8 +56,4 @@ dogfood wrapper, `LANDING_BASE_REVISION` selects the base diff,
 | `LITESTREAM_CONFIG` | Optional mounted Litestream configuration path. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` | Storage credentials and region when using the corresponding replica provider. |
 
-Compose passes only the variables listed in `compose.yaml`. To use
-`BUB_API_BASE`, `BUB_COMPLETION_ARGS`, or another additional setting in that
-container, add it to the service's `environment` through a Compose override.
-Exporting it on the host alone does not forward it into the container.
-See [Deploy Landing](../guides/deploy.md) and [Replication and recovery](../guides/recovery.md).
+Compose passes only the variables listed in `compose.yaml`. To use `BUB_API_BASE`, `BUB_COMPLETION_ARGS`, or another additional setting in that container, add it to the service's `environment` through a Compose override. Exporting it on the host alone does not forward it into the container. See [Deploy Landing](../guides/deploy.md) and [Replication and recovery](../guides/recovery.md).

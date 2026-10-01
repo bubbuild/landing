@@ -1,7 +1,6 @@
 # Troubleshooting
 
-Begin with the action record, its events, and the native evidence. Use the same
-database or server as the original request:
+Begin with the action record, its events, and the native evidence. Use the same database or server as the original request:
 
 ```bash
 uv run landing action view act_example --json
@@ -21,13 +20,8 @@ uv run landing action logs act_example --after 0
 | CI passes but advice is wrong | Supplied evidence and the model's interpretation | Record the mistake and its consequence in the work item; improve instructions, tools, or code at the responsible layer. |
 | Restored action is interrupted | Worker stopped while the action was active | Inspect workspace files and history before an explicit retry. |
 
-`action retry` creates a new action using the original request snapshot. It does
-not undo workspace changes. Completed work is never automatically replayed.
+`action retry` creates a new action using the original request snapshot. It does not undo workspace changes. Completed work is never automatically replayed.
 
-For GitHub reviews, compare the candidate head, native checkout revision, and
-deployed revision separately. A CI run's triggering head does not establish what
-was checked out. For backup problems, readiness is not replication health;
-inspect Litestream logs and the configured replica.
+For GitHub reviews, compare the candidate head, native checkout revision, and deployed revision separately. A CI run's triggering head does not establish what was checked out. For backup problems, readiness is not replication health; inspect Litestream logs and the configured replica.
 
-Retain a minimal reproducer, observed user impact, relevant revisions, and useful
-logs when reporting a problem. Remove credentials from material you share.
+Retain a minimal reproducer, observed user impact, relevant revisions, and useful logs when reporting a problem. Remove credentials from material you share.

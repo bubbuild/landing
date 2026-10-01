@@ -4,8 +4,7 @@
 landing [--db PATH | --server URL] [--github-repository OWNER/REPO] COMMAND
 ```
 
-Put global options before the subcommand. Local execution requires Python 3.12
-or later and a POSIX host. From a source checkout, prefix commands with `uv run`.
+Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. From a source checkout, prefix commands with `uv run`.
 
 ## Global options
 
@@ -23,9 +22,7 @@ See [Configuration](configuration.md) for environment defaults and authorization
 landing {issuer,fixer,gatekeeper,explainer} [INSTRUCTION] [OPTIONS]
 ```
 
-Provide a nonblank instruction or at least one input. Results are plain text by
-default; `--json` returns an action record. Commands wait for completion unless
-remote creation uses `--detach`.
+Provide a nonblank instruction or at least one input. Results are plain text by default; `--json` returns an action record. Commands wait for completion unless remote creation uses `--detach`.
 
 | Option | Meaning |
 | --- | --- |
@@ -36,11 +33,7 @@ remote creation uses `--detach`.
 | `--output PATH` | Also write the displayed result to a local file; its parent directory must exist. |
 | `--detach` | Return on remote admission; requires `--server` or `LANDING_SERVER`. |
 
-Issuer, explainer, and gatekeeper have read tools. Fixer additionally has file
-editing and shell tools. Gatekeeper checks execute before evaluation, and a failed
-check forces `block`. Fixer checks execute after the agent finishes; a failure
-marks the action failed and preserves changes and any returned explanation.
-An empty completion is a failure.
+Issuer, explainer, and gatekeeper have read tools. Fixer additionally has file editing and shell tools. Gatekeeper checks execute before evaluation, and a failed check forces `block`. Fixer checks execute after the agent finishes; a failure marks the action failed and preserves changes and any returned explanation. An empty completion is a failure.
 
 ## Inspect and control actions
 
@@ -53,9 +46,7 @@ An empty completion is a failure.
 | `action cancel ID` | Cancel queued work or request active cancellation. |
 | `action retry ID` | Create a new action referencing a terminal action; remote `--detach` is supported. |
 
-All commands accept `--json`. Retries use the original request snapshot and do
-not revert existing workspace changes. Local view, logs, list, and cancellation
-can access the database while its worker runs; execution uses a single owner.
+All commands accept `--json`. Retries use the original request snapshot and do not revert existing workspace changes. Local view, logs, list, and cancellation can access the database while its worker runs; execution uses a single owner.
 
 ## Serve
 
@@ -63,9 +54,7 @@ can access the database while its worker runs; execution uses a single owner.
 landing [GLOBAL OPTIONS] serve [--host HOST] [--port PORT] [--workspace NAME=PATH]
 ```
 
-Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable;
-`default` initially points to the current directory. `serve` cannot combine with
-`--server`. Listening beyond localhost requires `LANDING_TOKEN`.
+Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. `serve` cannot combine with `--server`. Listening beyond localhost requires `LANDING_TOKEN`.
 
 ## Exit codes and interruption
 
@@ -76,7 +65,4 @@ Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatab
 | `2` | Invalid arguments, input, local configuration, or a missing local action. |
 | `130` | Waiting was interrupted with Ctrl-C. |
 
-Ctrl-C during local creation cancels its action and closes owned shell processes.
-Ctrl-C during remote waiting leaves the action running; request cancellation
-explicitly. The [GitHub event runner](../guides/github.md) has separate advisory
-decision semantics.
+Ctrl-C during local creation cancels its action and closes owned shell processes. Ctrl-C during remote waiting leaves the action running; request cancellation explicitly. The [GitHub event runner](../guides/github.md) has separate advisory decision semantics.

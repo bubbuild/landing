@@ -1,9 +1,6 @@
 # Develop and dogfood
 
-Landing's own development uses the same CLI, mode guidance, SQLite records, and
-GitHub adapter offered to users. Native checks, work items, release evidence,
-and human acceptance form a continuous process. The goal is to learn from real
-work and retain that feedback in the repository.
+Landing's own development uses the same CLI, mode guidance, SQLite records, and GitHub adapter offered to users. Native checks, work items, release evidence, and human acceptance form a continuous process. The goal is to learn from real work and retain that feedback in the repository.
 
 ## Work on the project
 
@@ -18,25 +15,15 @@ make docs-test
 uv build
 ```
 
-Use `make docs` to preview the documentation. Choose checks appropriate to the
-change; native CI covers tests and typing on Python 3.12, 3.13, and 3.14, quality,
-strict documentation builds, and container recovery.
+Use `make docs` to preview the documentation. Choose checks appropriate to the change; native CI covers tests and typing on Python 3.12, 3.13, and 3.14, quality, strict documentation builds, and container recovery.
 
 ## Keep tests about behavior and actual mistakes
 
-Write behavior tests for what users see through CLI, HTTP, and workflow outcomes.
-Write regression tests for actual mistakes likely to recur. Prefer end-to-end
-acceptance for platform wiring. Tests should survive an implementation rewrite
-that preserves the user's experience.
+Write behavior tests for what users see through CLI, HTTP, and workflow outcomes. Write regression tests for actual mistakes likely to recur. Prefer end-to-end acceptance for platform wiring. Tests should survive an implementation rewrite that preserves the user's experience.
 
-Avoid assertions about helper structure, internal step counts, argument order,
-or other incidental details. Straightforward glue can be inspected directly and
-accepted through a real workflow run. Adding a test merely because a file changed
-does not improve the contract.
+Avoid assertions about helper structure, internal step counts, argument order, or other incidental details. Straightforward glue can be inspected directly and accepted through a real workflow run. Adding a test merely because a file changed does not improve the contract.
 
-The test suite replaces external model requests with deterministic responses;
-the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally.
-These tests verify behavior, not real-model quality or downstream delivery.
+The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. These tests verify behavior, not real-model quality or downstream delivery.
 
 ## Run the continuous loop
 
@@ -48,19 +35,11 @@ These tests verify behavior, not real-model quality or downstream delivery.
 | Fixer candidate | Runner validates and publishes a separate PR. | Main checks and review evaluate it again before human acceptance. |
 | Release completion and daily maintenance | Issuer follows existing problems and release evidence. | A build or merged PR is not proof of deployed recovery. |
 
-The workflows are `.github/workflows/main.yml`, `landing.yml`, and
-`landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration,
-permissions, comment delegation, publication, and workflow-token dispatch.
-There is no model-driven merge or automatic chain that repairs every finding.
+The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 
-After each useful or failed delegation, retain the observations in the issue or
-PR: the evidence it used, mistaken assumptions, proposed repair layer, rejected
-changes, human edits, and eventual results. Improve project instructions, tools,
-code, or meaningful regression cases based on those observations.
+After each useful or failed delegation, retain the observations in the issue or PR: the evidence it used, mistaken assumptions, proposed repair layer, rejected changes, human edits, and eventual results. Improve project instructions, tools, code, or meaningful regression cases based on those observations.
 
-Use native checks and actual human outcomes to evaluate changes. A model's own
-`allow` is not a quality metric. Per-job databases and artifacts expire after
-30 days; lasting lessons belong in work items and the repository.
+Use native checks and actual human outcomes to evaluate changes. A model's own `allow` is not a quality metric. Per-job databases and artifacts expire after 30 days; lasting lessons belong in work items and the repository.
 
 ## Cases worth retaining
 
@@ -85,7 +64,4 @@ docker build -t landing:local .
 uv run python tests/container_smoke.py --image landing:local
 ```
 
-This acceptance checks health, authentication, graceful shutdown, paused-volume
-restore, and recovery onto an empty primary volume from a real Litestream file
-replica. Remote object storage and ONCE deployment need acceptance in their own
-environments. See [Replication and recovery](guides/recovery.md).
+This acceptance checks health, authentication, graceful shutdown, paused-volume restore, and recovery onto an empty primary volume from a real Litestream file replica. Remote object storage and ONCE deployment need acceptance in their own environments. See [Replication and recovery](guides/recovery.md).
