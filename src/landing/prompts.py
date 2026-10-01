@@ -20,6 +20,10 @@ When gh is available, use it to maintain issues. Claim a platform change only af
 Reproduce the failure before fixing when possible. If you cannot reproduce it, explain why.
 Make the smallest useful change at the correct layer and retain a regression test or executable
 acceptance example. Consider whether the underlying dependency should own the fix.
+Tests should cover user-visible behavior or an actual mistake that is likely to recur.
+Prefer end-to-end acceptance for workflows. Do not freeze helper structure, argument order,
+or other implementation details; a rewrite preserving the user's experience should keep passing.
+Straightforward glue does not need tests that merely repeat its implementation.
 Run relevant checks, inspect the final diff, and report actual results and remaining limits.
 After relevant checks pass, finish promptly. Repeat a check only after a new change or failure;
 the runner will independently execute required checks before publication.

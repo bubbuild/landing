@@ -271,6 +271,12 @@ uv build
 
 Tests replace only external model requests: Bub's agent loop, native tool execution, tape merging, SQLite persistence, real shell validation, and the local HTTP transport execute normally. Model quality and downstream platform delivery require separate real-task acceptance.
 
+Keep behavior tests for user-visible CLI, HTTP and workflow outcomes, and regression tests for
+actual mistakes that can recur. Prefer end-to-end acceptance for platform wiring. Tests should
+survive an implementation rewrite that preserves the user's experience; avoid assertions about
+helper structure, internal step counts or argument order. Straightforward glue can be inspected
+directly and accepted through an actual workflow run.
+
 The container job builds the image and checks health, authentication, graceful shutdown, a paused-volume restore, and recovery onto an empty primary volume from a real Litestream file replica. Run it locally with Docker or Podman:
 
 ```bash

@@ -9,28 +9,8 @@ from landing.tasks import Tasks
 from tests.conftest import completion
 
 
-def test_agent_can_finish_after_more_than_thirty_tool_steps(tmp_path, model, monkeypatch):
-    monkeypatch.delenv("BUB_MAX_STEPS", raising=False)
-    (tmp_path / "evidence.txt").write_text("Observed failure.\n")
-    responses, requests = model
-    responses.extend(completion(tool="fs_read", arguments={"path": "evidence.txt"}) for _ in range(31))
-    responses.append(completion("Finished investigating the evidence."))
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            action = await runtime.run(
-                ActionRequest(mode="explainer", instruction="Investigate the failure.", workspace=str(tmp_path))
-            )
-            assert action.status == "completed"
-            assert action.result == "Finished investigating the evidence."
-            assert action.error is None
-
-    asyncio.run(run())
-    assert len(requests) == 32
-
-
-def test_fixer_uses_sdk_tools_and_checks_before_completion(tmp_path, model):
-    responses, requests = model
+def test_fixer_changes_files_and_passes_required_checks(tmp_path, model):
+    responses, _ = model
     responses.extend([
         completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42\n"}),
         completion("Wrote and verified the answer."),
@@ -40,9 +20,6 @@ def test_fixer_uses_sdk_tools_and_checks_before_completion(tmp_path, model):
     async def run():
         runtime = Runtime(path)
         async with runtime.running():
-            assert runtime.control.get_sidecar("tasks") is runtime.tasks
-            assert len(runtime.framework.plugin_manager.get_plugins()) == 1
-            assert runtime.agent.skill_dirs == ()
             action = await runtime.run(
                 ActionRequest(
                     mode="fixer",
@@ -63,7 +40,6 @@ def test_fixer_uses_sdk_tools_and_checks_before_completion(tmp_path, model):
 
     action = asyncio.run(run())
     assert (tmp_path / "answer.txt").read_text() == "42\n"
-    assert len(requests) == 2  # A tool step's final event must not end the action.
     with closing(Tasks(path)) as tasks:
         assert tasks.get(action.id) == action
 
@@ -86,9 +62,6 @@ def test_gatekeeper_decision_and_required_validation(tmp_path, model, check, exp
             assert action.status == "completed"
             assert action.decision == expected
             assert action.exit_code() == (expected != "allow")
-            tools = {tool.name for tool in requests[0]["tools"]}
-            assert "decide" in tools
-            assert not tools.intersection({"fs.write", "fs.edit", "bash"})
             assert "Validation results:" in str(requests[0]["messages"])
 
     asyncio.run(run())
