@@ -37,7 +37,7 @@ Landing discovers skills in the selected workspace's `.agents/skills` and your `
 uv run landing explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
-Add trusted skill roots with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, followed by your home skills. Skills are instructions and resources; they do not install plugins or grant shell or editing access to read-only modes.
+Save trusted skill roots as `skill_dirs` in your Landing YAML configuration or set `LANDING_SKILL_DIRS` to a JSON list. Add roots for an individual command with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, configured roots, and your home skills, in that order. Skills are instructions and resources; they do not install plugins or grant shell or editing access to read-only modes. See [Skills configuration](reference/configuration.md#skills).
 
 ```bash
 uv run landing --skill-dir ~/.local/share/landing/team-skills explainer "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log

@@ -38,6 +38,21 @@ Environment settings take precedence over YAML. For existing installations, corr
 
 Choose a model identifier and options supported by your provider. Landing sets no agent step budget. Request timeouts, required-check timeouts, cancellation, and CI job timeouts still apply.
 
+## Skills
+
+`LANDING_SKILL_DIRS` accepts a JSON list of trusted local skill roots. The same setting is `skill_dirs` in the YAML configuration and follows the configuration precedence above. Existing `BUB_SKILL_DIRS` values remain supported as an alias.
+
+```bash
+export LANDING_SKILL_DIRS='["/srv/team-skills/.agents/skills"]'
+```
+
+```yaml
+skill_dirs:
+  - /srv/team-skills/.agents/skills
+```
+
+Skill discovery searches the selected workspace's `.agents/skills` first, repeatable `--skill-dir` roots next, configured roots next, and `~/.agents/skills` last. The first matching skill name wins. The Python `Runtime` and `create_app` APIs accept explicit `skill_dirs` with the same precedence as CLI roots. Configure these directories on the executing host; remote clients cannot add directories to a server. See [Use skills](../make-it-yours.md#use-skills) for the file layout and GitHub-hosted skill checkouts.
+
 ## Execution and service
 
 | Variable | Purpose or default |

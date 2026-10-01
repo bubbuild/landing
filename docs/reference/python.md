@@ -23,7 +23,7 @@ Inspect the returned action's status, decision, result, and error separately. Us
 
 `Runtime(path, workspaces={"candidate": Path("/srv/candidate")})` selects registered names instead of arbitrary local paths. `create_app()` accepts the same mapping, a bearer token, a public origin, and an optional GitHub repository. See the [HTTP contract](http.md) for service behavior.
 
-`Runtime(path, skill_dirs=[Path("/srv/team-skills")])` and `create_app(path, skill_dirs=[...])` add trusted skill roots. Discovery uses the selected workspace's `.agents/skills`, these roots in order, and `~/.agents/skills`. The SDK's native skill catalogue, `skill` tool, and `$skill-name` expansion load skill instructions without adding plugins or changing mode permissions.
+`Runtime(path, skill_dirs=[Path("/srv/team-skills")])` and `create_app(path, skill_dirs=[...])` add trusted skill roots. Discovery uses the selected workspace's `.agents/skills`, these explicit roots in order, configured `skill_dirs`, and `~/.agents/skills`. The SDK's native skill catalogue, `skill` tool, and `$skill-name` expansion load skill instructions without adding plugins or changing mode permissions.
 
 ## Additional tools
 

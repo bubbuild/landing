@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from landing.cli import main
 from landing.models import ActionRequest
 from landing.runtime import Runtime
@@ -85,6 +87,36 @@ def test_registered_workspaces_keep_their_own_skills_and_user_fallback(tmp_path,
             assert global_.result == "Deployment reference: global"
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("source", ["environment", "yaml"])
+def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch, model, capsys, source):
+    project = tmp_path / "project"
+    project.mkdir()
+    configured, explicit = tmp_path / "configured", tmp_path / "explicit"
+    write_skill(configured, "deploy", "configured")
+    write_skill(explicit, "deploy", "explicit")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    config = tmp_path / "landing.yml"
+    monkeypatch.setenv("LANDING_CONFIG", str(config))
+    if source == "environment":
+        monkeypatch.setenv("LANDING_SKILL_DIRS", json.dumps([str(configured)]))
+    else:
+        monkeypatch.delenv("LANDING_SKILL_DIRS", raising=False)
+        config.write_text("skill_dirs: " + json.dumps([str(configured)]) + "\n")
+    responses, _ = model
+    responses.extend([
+        report_reference,
+        completion(tool="skill", arguments={"name": "deploy"}),
+        report_reference,
+    ])
+    command = ["explainer", "Use $deploy to identify deployment.", "--workspace", str(project), "--json"]
+    database = ["--db", str(tmp_path / "landing.sqlite3")]
+    assert main([*database, *command]) == 0
+    assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: configured"
+    command[1] = "Identify deployment."
+    assert main([*database, "--skill-dir", str(explicit), *command]) == 0
+    assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: explicit"
 
 
 def test_skill_guidance_does_not_grant_read_mode_shell_access(tmp_path, model):

@@ -76,7 +76,7 @@ class Runtime:
         self.settings = ensure_config(Settings)
         self.framework.plugin_manager.register(SDKHooks(self.framework, self.tasks, self.store), name="landing")
         self.extra_tools = tuple(tools)
-        self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in skill_dirs)
+        self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self.framework,
             tools=[*READ_TOOLS, *WRITE_TOOLS, DECIDE, *self.extra_tools],
