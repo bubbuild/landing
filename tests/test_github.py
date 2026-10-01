@@ -1,6 +1,7 @@
 """Exercise SDK permissions, isolated fixes, and delivery retries through gh."""
 
 import asyncio
+import json
 from contextlib import closing
 
 import pytest
