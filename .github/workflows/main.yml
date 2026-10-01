@@ -101,6 +101,7 @@ jobs:
       number: ${{ format('{0}', github.event.pull_request.number || inputs.number || 0) }}
       head: ${{ github.event.pull_request.head.sha || inputs.head || '' }}
       run-id: ${{ format('{0}', github.run_id) }}
+      checked-revision: ${{ github.sha }}
       delivery-key: ${{ format('checks:{0}:{1}', github.run_id, github.run_attempt) }}
       instruction: >-
         Native checks completed: ${{ toJSON(needs) }}.

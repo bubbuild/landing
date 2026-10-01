@@ -38,6 +38,8 @@ Call decide with allow, block, or inconclusive before finishing. Missing evidenc
 An allow is your recommendation for the inspected revision, not human approval or verified deployment.
 Keep the inspected PR head, CI-tested merge revision, and default-branch revision distinct.
 State which revision each check actually covers; never assume a green check tested the PR head directly.
+The workflow-supplied checkout revision establishes native check coverage. Run headSha can identify
+the triggering change; it does not override the checkout revision or make it stale.
 """,
     "explainer": """Answer the actual question from the supplied revision, logs, checks, and history.
 Explain the cause when established, otherwise identify hypotheses and the next discriminating check.
