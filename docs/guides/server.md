@@ -6,8 +6,7 @@ Use a service when callers need a shared queue or an HTTP admission point. Prepa
 
 ```bash
 export LANDING_TOKEN="your-server-token"
-uv run landing --db /var/lib/landing/landing.sqlite3 serve \
-  --host 127.0.0.1 --port 8080 --workspace candidate=/srv/landing/candidate
+uv run landing --db /var/lib/landing/landing.sqlite3 serve --host 127.0.0.1 --port 8080 --workspace candidate=/srv/landing/candidate
 ```
 
 The service also registers `default` as its current directory. A remote request selects a registered name, not an arbitrary filesystem path. Checkout preparation belongs to the caller or its platform adapter. The service runs one worker per database and executes actions serially. Use the remote interface to submit work to that worker rather than starting another local worker on its database.
@@ -21,10 +20,8 @@ In another terminal with the same token:
 ```bash
 export LANDING_TOKEN="your-server-token"
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing gatekeeper "Review the prepared checkout." \
-  --workspace candidate --check "make acceptance" --json
-uv run landing explainer "Explain this failure." \
-  --workspace candidate --input test-output.txt --detach --json
+uv run landing gatekeeper "Review the prepared checkout." --workspace candidate --check "make acceptance" --json
+uv run landing explainer "Explain this failure." --workspace candidate --input test-output.txt --detach --json
 ```
 
 Detached creation returns an action record immediately. Copy its ID to wait or cancel explicitly:
@@ -39,11 +36,7 @@ Ctrl-C during a remote wait stops waiting and leaves the action running. Ctrl-C 
 ## Admit webhook work
 
 ```bash
-curl -i http://127.0.0.1:8080/v1/actions \
-  -H "Authorization: Bearer $LANDING_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: delivery-example-1" \
-  -d '{"mode":"explainer","instruction":"Explain the failed validation.","workspace":"candidate","input":[{"type":"text","text":"The CLI exited with code 0 for invalid arguments."}]}'
+curl -i http://127.0.0.1:8080/v1/actions -H "Authorization: Bearer $LANDING_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: delivery-example-1" -d '{"mode":"explainer","instruction":"Explain the failed validation.","workspace":"candidate","input":[{"type":"text","text":"The CLI exited with code 0 for invalid arguments."}]}'
 ```
 
 Landing persists admission before returning `201` and a `Location` header. Read the action at that location for its result. The endpoint accepts Landing's normalized contract; a provider integration verifies its own signature, translates the payload, and delivers the eventual result. It is not a raw GitHub or Linear webhook receiver.

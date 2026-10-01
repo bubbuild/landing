@@ -7,9 +7,7 @@ Authenticate with gh's normal login or `GH_TOKEN`, prepare a checkout, and confi
 ## Enable repository tools
 
 ```bash
-uv run landing --github-repository example/team-project issuer \
-  "Investigate the evidence, reuse an existing issue or create an actionable one." \
-  --input report.txt
+uv run landing --github-repository example/team-project issuer "Investigate the evidence, reuse an existing issue or create an actionable one." --input report.txt
 ```
 
 All modes can read issues, PRs, and runs. Issuer can create, edit, and comment on issues. The tool enforces repository scope and excludes arbitrary API writes, merges, approvals, and credential changes. Enabling this tool alone does not install event handling or automatic PR replies.
@@ -19,11 +17,7 @@ All modes can read issues, PRs, and runs. Issuer can create, edit, and comment o
 The runner can be invoked locally with the active gh login:
 
 ```bash
-uv run python -m landing.adapters.github fixer \
-  --repository example/team-project --number 42 \
-  --instruction "Fix the issue against its acceptance criteria and retain a meaningful regression check." \
-  --delivery-key "issue-42-maintainer-request-1" --db ./evidence/landing.sqlite3 \
-  --check "make acceptance"
+uv run python -m landing.adapters.github fixer --repository example/team-project --number 42 --instruction "Fix the issue against its acceptance criteria and retain a meaningful regression check." --delivery-key "issue-42-maintainer-request-1" --db ./evidence/landing.sqlite3 --check "make acceptance"
 ```
 
 Fixer works in an isolated Git worktree. The runner independently executes the required checks, then commits, pushes, and opens or updates a `landing/fix-<number>` candidate PR. It replies to the original issue or PR. Failed checks preserve edits and return a failure reply without publishing a candidate. The runner never merges; a fixer request on a PR can publish a separate candidate rather than editing that PR's original branch.

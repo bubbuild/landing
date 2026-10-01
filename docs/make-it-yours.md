@@ -32,8 +32,7 @@ These instructions guide the agent; they do not add permissions or enforce an op
 ## Use your existing checks
 
 ```bash
-uv run landing fixer "Resolve the reported compatibility problem." \
-  --input acceptance.txt --check "make acceptance" --check "make benchmark"
+uv run landing fixer "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
 ```
 
 Checks run in the target workspace using the host environment. You provide the language runtimes, project dependencies, credentials, and baseline data they need. A command's exit status determines whether that check passed. For a benchmark, the command must enforce your performance criterion; a report-only command returning zero does not prove that performance is acceptable.

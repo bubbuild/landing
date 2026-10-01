@@ -19,8 +19,7 @@ docker compose up -d
 The bundled `/etc/litestream.yml` keeps snapshots for seven days and enables a local control socket at `/run/landing/litestream.sock`. For S3-compatible endpoints or other provider settings, mount a standard Litestream config and set `LITESTREAM_CONFIG` to its path. That config must replicate the same `LANDING_DB` used by Landing. A bare server container requires `LITESTREAM_REPLICA_URL` or an explicit config; it fails startup when neither is configured. CLI commands use the normal entry point and do not start replication automatically.
 
 ```bash
-docker compose exec landing litestream sync -wait \
-  -socket /run/landing/litestream.sock /storage/landing.sqlite3
+docker compose exec landing litestream sync -wait -socket /run/landing/litestream.sock /storage/landing.sqlite3
 ```
 
 To recover a lost database, stop the old container, retain its replica, and start the service with a fresh primary volume and the same replica configuration. Restored active actions become `interrupted`; queued actions resume. Restoring SQLite does not restore workspace files, so prepare the same registered checkouts before restarting the service. Single-use CI containers can explicitly back up a closed database with `litestream replicate -once -force-snapshot DB_PATH REPLICA_URL` using the image's binary.

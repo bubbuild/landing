@@ -12,9 +12,7 @@ Run your native check and retain its exit status. Provide its log to Landing:
 status=0
 make acceptance > acceptance.log 2>&1 || status=$?
 if [ "$status" -ne 0 ]; then
-  uv run landing explainer \
-    "Explain this failure from the supplied evidence and identify the next check." \
-    --input acceptance.log --json --output explanation.json || true
+uv run landing explainer "Explain this failure from the supplied evidence and identify the next check." --input acceptance.log --json --output explanation.json || true
 fi
 exit "$status"
 ```
@@ -25,9 +23,7 @@ The explanation cannot turn a failed native check into a passing job. Store its 
 
 ```bash
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
-uv run landing gatekeeper "Review the candidate against the acceptance criteria." \
-  --input acceptance.txt --input candidate.diff --check "make acceptance" \
-  --json --output review.json
+uv run landing gatekeeper "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
 ```
 
 Required checks run before evaluation. The CLI exits nonzero for execution failure, `block`, or `inconclusive`. To use advisory feedback, capture that status in a separate step and keep native check statuses authoritative. Human acceptance remains a separate decision.
@@ -41,9 +37,7 @@ Retain results, input reports, logs, diffs, and the SQLite database after the ac
 Landing's checkout includes a Bash wrapper for this process:
 
 ```bash
-bash scripts/dogfood.sh gatekeeper \
-  "Review this candidate using independent checks." \
-  .ci-state/review "uv run pytest tests" "uv run ty check"
+bash scripts/dogfood.sh gatekeeper "Review this candidate using independent checks." .ci-state/review "uv run pytest tests" "uv run ty check"
 ```
 
 It saves checks, execution logs, patches, and SQLite history, and asks an explainer about failure while preserving the original exit status. The wrapper requires `timeout`. It runs from the Landing checkout and does not deliver platform replies.

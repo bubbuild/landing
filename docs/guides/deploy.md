@@ -19,8 +19,7 @@ After preparing the workspace, call the service from a Landing source checkout w
 
 ```bash
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing explainer "Explain the latest validation failure." \
-  --workspace default --input check.log
+uv run landing explainer "Explain the latest validation failure." --workspace default --input check.log
 ```
 
 Use a saved UTF-8 failure log for `check.log`.
@@ -36,14 +35,7 @@ After publishing your image to your own registry, deploy it with the standard ON
 Configure a replica destination and its credentials first as described in [Replication and recovery](recovery.md).
 
 ```bash
-once deploy registry.example.com/team/landing:0.0.0 --host landing.example.com \
-  --env "LANDING_TOKEN=$LANDING_TOKEN" \
-  --env "BUB_MODEL=$BUB_MODEL" \
-  --env "BUB_API_KEY=$BUB_API_KEY" \
-  --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" \
-  --env "AWS_REGION=$AWS_REGION" \
-  --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" \
-  --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+once deploy registry.example.com/team/landing:0.0.0 --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "BUB_MODEL=$BUB_MODEL" --env "BUB_API_KEY=$BUB_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 ```
 
 Enable ONCE's full-volume backups in its settings to cover workspace files as well as SQLite. The image uses ONCE's default paused-container backup behavior; it has no pre-backup hook claiming mutable workspaces are safe to copy live. Litestream's SQLite replica and ONCE's full-volume backups serve different recovery needs. See [Litestream's container guide](https://litestream.io/guides/docker/) and [replication command](https://litestream.io/reference/replicate/) for the upstream lifecycle and restore behavior.
