@@ -1,6 +1,16 @@
 name: Main
 
 on:
+  workflow_dispatch:
+    inputs:
+      number:
+        description: Candidate PR number (zero for branch maintenance)
+        type: string
+        default: '0'
+      head:
+        description: Candidate head to review
+        type: string
+        default: ''
   push:
     branches:
       - main
@@ -84,12 +94,12 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/landing.yml
     with:
-      mode: ${{ github.event_name == 'pull_request' && 'gatekeeper' || 'issuer' }}
-      number: ${{ format('{0}', github.event.pull_request.number || 0) }}
-      head: ${{ github.event.pull_request.head.sha || '' }}
+      mode: ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'gatekeeper' || 'issuer' }}
+      number: ${{ format('{0}', github.event.pull_request.number || inputs.number || 0) }}
+      head: ${{ github.event.pull_request.head.sha || inputs.head || '' }}
       run-id: ${{ format('{0}', github.run_id) }}
       delivery-key: ${{ format('checks:{0}:{1}', github.run_id, github.run_attempt) }}
       instruction: >-

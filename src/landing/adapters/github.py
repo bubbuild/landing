@@ -65,6 +65,14 @@ def github_tool(repository: str) -> Tool:
         if any(arg.startswith(("-R", "--repo", "--hostname", "http://", "https://")) for arg in args):
             message = "Use identifiers in the configured repository."
             raise ValueError(message)
+        if (
+            pair == ("repo", "view")
+            and len(args) > 2
+            and not args[2].startswith("-")
+            and args[2].lower() != repository.lower()
+        ):
+            message = "Use the configured repository."
+            raise ValueError(message)
         if "--body" in args or "--body-file" in args or any(arg.startswith("--body=") for arg in args):
             message = "Supply the message through the body parameter."
             raise ValueError(message)
@@ -76,7 +84,9 @@ def github_tool(repository: str) -> Tool:
                 raise ValueError(message)
             args = [*args, "--method", "GET"]
         output = gh(args, repository, body=body, env=credentials)
-        return output[-100000:] if output.strip() else "Command succeeded; no matching results."
+        if len(output) > 100000:
+            return "[Earlier output omitted; narrow the query for complete evidence.]\n" + output[-100000:]
+        return output if output.strip() else "Command succeeded; no matching results."
 
     return Tool.from_callable(invoke, name="gh", context=True)
 
@@ -186,11 +196,32 @@ def publish_fix(
     body = f"Addresses #{number}.\n\n{action.result}\n\nAction `{action.id}`. Independent CI and human review are required."
     if existing:
         gh(["pr", "edit", existing[0]["url"]], repository, body=body)
-        return existing[0]["url"]
-    args = ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"]
-    if base:
-        args += ["--base", base]
-    return gh(args, repository, body=body).strip()
+        url = existing[0]["url"]
+    else:
+        args = ["pr", "create", "--head", branch, "--title", f"fix: address issue {number}"]
+        if base:
+            args += ["--base", base]
+        url = gh(args, repository, body=body).strip()
+    # GITHUB_TOKEN-created PRs do not emit another CI run. Dispatch the repository's
+    # existing checks explicitly; ordinary OAuth pushes already trigger PR checks.
+    workflow = os.getenv("LANDING_CHECK_WORKFLOW")
+    if os.getenv("GITHUB_ACTIONS") and workflow:
+        head = git(["rev-parse", "HEAD"], workspace).strip()
+        gh(
+            [
+                "workflow",
+                "run",
+                workflow,
+                "--ref",
+                branch,
+                "-f",
+                f"number={url.rsplit('/', 1)[-1]}",
+                "-f",
+                f"head={head}",
+            ],
+            repository,
+        )
+    return url
 
 
 async def run(  # noqa: C901 -- linear admission, execution, and delivery around the existing runtime.

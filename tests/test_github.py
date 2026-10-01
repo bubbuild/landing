@@ -18,6 +18,7 @@ from tests.conftest import completion
     [
         ("issuer", ["issue", "create", "--title", "A verified problem"], True),
         ("explainer", ["issue", "view", "2"], True),
+        ("explainer", ["repo", "view", "other/repository"], False),
         ("gatekeeper", ["pr", "merge", "2"], False),
         ("fixer", ["auth", "token"], False),
         ("issuer", ["issue", "create", "-Rother/repository"], False),
@@ -237,3 +238,45 @@ def test_existing_candidate_commit_needs_no_anonymous_fetch(tmp_path, checkout, 
     )
     assert action.status == "completed"
     assert not any("fetch" in args for args in commands)
+
+
+def test_workflow_token_publication_explicitly_dispatches_native_ci(checkout, monkeypatch):
+    revision = github.git(["rev-parse", "HEAD"], checkout).strip()
+    (checkout / "source.txt").write_text("Verified candidate.\n")
+    original = github.git
+    monkeypatch.setattr(github, "git", lambda args, workspace: "" if "push" in args else original(args, workspace))
+    calls = []
+
+    def command(args, *a, **kwargs):
+        calls.append(args)
+        return "[]" if args[:2] == ["pr", "list"] else "https://github.com/example/landing/pull/4"
+
+    monkeypatch.setattr(github, "gh", command)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("LANDING_CHECK_WORKFLOW", "main.yml")
+    action = Action(
+        id="act_example",
+        mode="fixer",
+        status="completed",
+        instruction="Fix the delegated issue.",
+        workspace=str(checkout),
+        result="Fixed and verified.",
+        created_at="2026-10-02T00:00:00Z",
+        updated_at="2026-10-02T00:00:00Z",
+    )
+    assert (
+        github.publish_fix("example/landing", 3, checkout, action, revision)
+        == "https://github.com/example/landing/pull/4"
+    )
+    head = original(["rev-parse", "HEAD"], checkout).strip()
+    assert calls[-1] == [
+        "workflow",
+        "run",
+        "main.yml",
+        "--ref",
+        "landing/fix-3",
+        "-f",
+        "number=4",
+        "-f",
+        f"head={head}",
+    ]

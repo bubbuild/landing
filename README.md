@@ -79,8 +79,10 @@ A bot comment never delegates new work. Put a command on its own line:
 Fixer works in a separate Git worktree. Required tests, typing and documentation checks run
 before code commits, pushes and opens or updates a `landing/fix-<issue>` candidate PR through gh.
 Failed checks preserve the changes and reply to the original work item without publishing a PR.
-It never merges. Bot-created PRs must actually enter native CI; GitHub may require a maintainer
-to approve workflow execution when the workflow token creates them. Comment and schedule workflows
+It never merges. Workflow-token publication explicitly dispatches the existing **Main** workflow
+through `gh workflow run`, carrying the PR number and candidate head; this runs native checks
+and gatekeeper even though GitHub suppresses ordinary PR events from `GITHUB_TOKEN`.
+The repository must allow Actions to create PRs. Comment, dispatch and schedule workflows
 start handling events after their definitions are on the default branch.
 
 Mode prompts require evidence, issue reuse, reproduction, the right repair layer and concrete
@@ -93,7 +95,7 @@ These are tool restrictions, not an operating-system sandbox for trusted workspa
 Configure the real model with repository variables and a secret. The DeepSeek example disables thinking:
 
 ```bash
-/usr/bin/gh variable set LANDING_MODEL --repo PsiACE/landing --body "deepseek:deepseek-flash"
+/usr/bin/gh variable set LANDING_MODEL --repo PsiACE/landing --body "deepseek:deepseek-v4-pro"
 /usr/bin/gh variable set LANDING_API_BASE --repo PsiACE/landing --body "https://api.deepseek.com"
 /usr/bin/gh variable set LANDING_COMPLETION_ARGS --repo PsiACE/landing --body '{"reasoning_effort":"none"}'
 /usr/bin/gh secret set LANDING_API_KEY --repo PsiACE/landing
