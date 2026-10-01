@@ -190,3 +190,18 @@ def test_commit_survives_publish_failure_without_a_second_commit(checkout, monke
     assert github.publish_fix("example/landing", 2, checkout, action, revision) == "https://example.test/pull/3"
     assert original(["rev-parse", "HEAD"], checkout).strip() == committed
     assert len(pushes) == 2
+
+
+def test_repo_view_uses_explicit_repository_without_reconfiguring_auth(monkeypatch):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def command(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout='{"name":"landing"}', stderr="")
+
+    monkeypatch.setattr(github.subprocess, "run", command)
+    assert json.loads(github.gh(["repo", "view", "--json", "name"], "example/landing"))["name"] == "landing"
+    assert calls[0][0] == ["/usr/bin/gh", "repo", "view", "example/landing", "--json", "name"]
+    assert calls[0][1]["env"]["GH_REPO"] == "example/landing"

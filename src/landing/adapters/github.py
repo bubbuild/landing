@@ -32,6 +32,8 @@ ISSUER = {("issue", "create"), ("issue", "edit"), ("issue", "comment")}
 
 def gh(args: list[str], repository: str, *, body: str | None = None, env: dict | None = None) -> str:
     """Use gh's active OAuth login locally and the workflow token in CI."""
+    if args[:2] == ["repo", "view"] and (len(args) == 2 or args[2].startswith("-")):
+        args = [*args[:2], repository, *args[2:]]
     with NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8") as text:
         if body is not None:
             text.write(body)
@@ -73,7 +75,8 @@ def github_tool(repository: str) -> Tool:
                 message = "The gh API tool supports repository GET requests only."
                 raise ValueError(message)
             args = [*args, "--method", "GET"]
-        return gh(args, repository, body=body, env=credentials)[-100000:]
+        output = gh(args, repository, body=body, env=credentials)
+        return output[-100000:] if output.strip() else "Command succeeded; no matching results."
 
     return Tool.from_callable(invoke, name="gh", context=True)
 
@@ -136,7 +139,13 @@ def reply(
 
 def git(args: list[str], workspace: Path) -> str:
     return subprocess.run(  # noqa: S603 -- explicit argv, checked status, no shell.
-        ["/usr/bin/git", *args], cwd=workspace, capture_output=True, text=True, check=True, timeout=120
+        ["/usr/bin/git", *args],
+        cwd=workspace,
+        env={**os.environ, "GIT_CONFIG_COUNT": "0"},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
     ).stdout
 
 
@@ -161,8 +170,6 @@ def publish_fix(repository: str, number: int, workspace: Path, action: Action, r
         )
     git(
         [
-            "-c",
-            f"url.https://github.com/{repository}.insteadOf=https://github.com/{repository}",
             "-c",
             "credential.helper=",
             "-c",

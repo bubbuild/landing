@@ -225,7 +225,9 @@ class Runtime:
             self.tasks.finish(action_id, status)
             raise
         except Exception as exc:
-            return self.tasks.finish(action_id, "failed", error={"code": type(exc).__name__, "message": str(exc)})
+            return self.tasks.finish(
+                action_id, "failed", error={"code": type(exc).__name__, "message": str(exc) or type(exc).__name__}
+            )
         else:
             return self.tasks.finish(action_id, "completed", result=output, decision=decision)
 
