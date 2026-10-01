@@ -22,12 +22,14 @@ def command(*args, cwd=None, env=None):
 
 
 @contextmanager
-def provider(responses):
+def provider(responses, *, authorization=None):
     pending = deque(responses)
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
+            if authorization is not None:
+                authorization.append(self.headers.get("Authorization"))
             requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
             response = pending.popleft().model_dump()
             choice = response["choices"][0]
@@ -84,11 +86,11 @@ def checkout(tmp_path):
 def dogfood(workspace, base, evidence, api_base, mode, check):
     environment = {key: value for key, value in os.environ.items() if not key.startswith(("BUB_", "LANDING_"))}
     environment.update(
-        BUB_MODEL="openai:test-model",
-        BUB_API_KEY="test-key",
-        BUB_API_BASE=api_base,
-        BUB_CLIENT_ARGS='{"max_retries":0}',
-        BUB_MODEL_TIMEOUT_SECONDS="5",
+        LANDING_MODEL="openai:test-model",
+        LANDING_API_KEY="test-key",
+        LANDING_API_BASE=api_base,
+        LANDING_CLIENT_ARGS='{"max_retries":0}',
+        LANDING_MODEL_TIMEOUT_SECONDS="5",
         LANDING_BASE_REVISION=base,
         LANDING_ACTION_TIMEOUT_SECONDS="20",
         LANDING_EXPLANATION_TIMEOUT_SECONDS="20",

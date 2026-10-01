@@ -21,8 +21,8 @@ From a source checkout, with Python 3.12 or later, uv, and a POSIX host:
 
 ```bash
 uv sync
-export BUB_MODEL="openai:gpt-4.1"
-export BUB_API_KEY="your-provider-api-key"
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
 uv run landing explainer "Explain this failure and the next useful check." --input check.log
 ```
 

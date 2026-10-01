@@ -8,8 +8,8 @@ You need a POSIX host, Python 3.12 or later, uv, a Landing source checkout, and 
 
 ```bash
 uv sync
-export BUB_MODEL="openai:gpt-4.1"
-export BUB_API_KEY="your-provider-api-key"
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
 export LANDING_DB="$PWD/.ci-state/tutorial.sqlite3"
 ```
 

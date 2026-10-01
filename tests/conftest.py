@@ -34,7 +34,7 @@ def completion(text=None, *, tool=None, arguments=None):
 def model(monkeypatch):
     responses = deque()
     requests = []
-    monkeypatch.setenv("BUB_MODEL", "openai:test-model")
+    monkeypatch.setenv("LANDING_MODEL", "openai:test-model")
 
     async def complete(self, **kwargs):
         requests.append(kwargs)

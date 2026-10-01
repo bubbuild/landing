@@ -861,6 +861,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
 
@@ -881,6 +882,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.12" },
+    { name = "pydantic-settings", specifier = ">=2.12" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 

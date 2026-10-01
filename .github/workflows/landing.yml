@@ -60,15 +60,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-python-env
-      - name: Carry out the delegated action using Bub and gh
+      - name: Carry out the delegated action using Landing and gh
         env:
           GH_TOKEN: ${{ github.token }}
           LANDING_CHECK_WORKFLOW: main.yml
-          BUB_MODEL: ${{ vars.LANDING_MODEL }}
-          BUB_API_KEY: ${{ secrets.LANDING_API_KEY }}
-          BUB_API_BASE: ${{ vars.LANDING_API_BASE }}
-          BUB_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
-          BUB_MODEL_TIMEOUT_SECONDS: '120'
+          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
+          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
+          LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
+          LANDING_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
+          LANDING_MODEL_TIMEOUT_SECONDS: '120'
           LANDING_MODE: ${{ inputs.mode || 'gatekeeper' }}
           LANDING_NUMBER: ${{ inputs.number || '0' }}
           LANDING_HEAD: ${{ inputs.head }}
@@ -77,8 +77,7 @@ jobs:
           LANDING_DELIVERY_KEY: ${{ inputs.delivery-key || format('manual:{0}:{1}', github.run_id, github.run_attempt) }}
           LANDING_INSTRUCTION: ${{ inputs.instruction }}
         run: |
-          test -n "$BUB_MODEL" && test -n "$BUB_API_KEY"
-          if [[ -z "$BUB_API_BASE" ]]; then unset BUB_API_BASE; fi
+          test -n "$LANDING_MODEL" && test -n "$LANDING_API_KEY"
           uv run python -m landing.adapters.github "$LANDING_MODE"             --number "$LANDING_NUMBER" --head "$LANDING_HEAD" --run-id "$LANDING_NATIVE_RUN" --checked-revision "$LANDING_CHECKED_REVISION"             --instruction "$LANDING_INSTRUCTION" --delivery-key "$LANDING_DELIVERY_KEY"             --db "$RUNNER_TEMP/landing/landing.sqlite3"             --check 'uv run pytest tests' --check 'uv run ty check' --check 'uv run zensical build -s'
       - name: Publish evidence summary
         if: always()

@@ -6,8 +6,8 @@ Build the image from the Landing checkout. No prebuilt registry image is require
 
 ```bash
 export LANDING_TOKEN="your-server-token"
-export BUB_MODEL="openai:gpt-4.1"
-export BUB_API_KEY="your-provider-api-key"
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
 docker compose up --build -d
 ```
 
@@ -35,7 +35,7 @@ After publishing your image to your own registry, deploy it with the standard ON
 Configure a replica destination and its credentials first as described in [Replication and recovery](recovery.md).
 
 ```bash
-once deploy registry.example.com/team/landing:0.0.0 --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "BUB_MODEL=$BUB_MODEL" --env "BUB_API_KEY=$BUB_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+once deploy registry.example.com/team/landing:0.0.0 --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 ```
 
 Enable ONCE's full-volume backups in its settings to cover workspace files as well as SQLite. The image uses ONCE's default paused-container backup behavior; it has no pre-backup hook claiming mutable workspaces are safe to copy live. Litestream's SQLite replica and ONCE's full-volume backups serve different recovery needs. See [Litestream's container guide](https://litestream.io/guides/docker/) and [replication command](https://litestream.io/reference/replicate/) for the upstream lifecycle and restore behavior.

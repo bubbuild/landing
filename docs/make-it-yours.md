@@ -4,11 +4,11 @@ Start with the built-in modes, then adjust the parts your team needs. You choose
 
 ## Choose a model
 
-Configure the provider model, API key, and optional endpoint in the environment where Landing runs. See [Configuration](reference/configuration.md) for the exact variables. These settings do not require another application or plugin setup.
+Configure the provider model, API key, and optional endpoint in the environment where Landing runs. You can also save these settings in `~/.landing/config.yml`; an existing configuration remains available as a fallback. See [Configuration](reference/configuration.md) for the exact variables. These settings do not require another application or plugin setup.
 
 ```bash
-export BUB_MODEL="openai:gpt-4.1"
-export BUB_API_KEY="your-provider-api-key"
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
 ```
 
 Landing sends the task and relevant tool results to that provider. Choose a provider and execution environment suitable for the material you give it. Local storage and self-hosting do not change the provider's data handling.

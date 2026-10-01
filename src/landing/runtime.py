@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from bub import BubFramework, hookimpl
+from bub import BubFramework, ensure_config, hookimpl
 from bub.builtin import Agent
 from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.shell_manager import shell_manager
@@ -19,6 +19,7 @@ from bub.turn import TurnState
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import COMMON
 from landing.prompts import MODES as PROMPTS
+from landing.settings import ConfigurationFile, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
 
@@ -63,7 +64,8 @@ class Runtime:
         self.tasks = Tasks(path)
         self.store = SQLiteTapeStore(self.tasks.path)
         self.workspaces = workspaces
-        self.framework = BubFramework()
+        self.framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
+        self.settings = ensure_config(Settings)
         self.framework.plugin_manager.register(SDKHooks(self.framework, self.tasks, self.store), name="landing")
         self.extra_tools = tuple(tools)
         self.agent = Agent(

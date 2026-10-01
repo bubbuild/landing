@@ -38,15 +38,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           LANDING_CHECK_WORKFLOW: main.yml
-          BUB_MODEL: ${{ vars.LANDING_MODEL }}
-          BUB_API_KEY: ${{ secrets.LANDING_API_KEY }}
-          BUB_API_BASE: ${{ vars.LANDING_API_BASE }}
-          BUB_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
-          BUB_MODEL_TIMEOUT_SECONDS: '120'
+          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
+          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
+          LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
+          LANDING_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
+          LANDING_MODEL_TIMEOUT_SECONDS: '120'
           LANDING_DELIVERY_KEY: ${{ format('{0}:{1}', github.event.comment.id || github.run_id, github.run_attempt) }}
         run: |
-          test -n "$BUB_MODEL" && test -n "$BUB_API_KEY"
-          if [[ -z "$BUB_API_BASE" ]]; then unset BUB_API_BASE; fi
+          test -n "$LANDING_MODEL" && test -n "$LANDING_API_KEY"
           uv run python -m landing.adapters.github issuer             --event "$GITHUB_EVENT_PATH" --delivery-key "$LANDING_DELIVERY_KEY"             --db "$RUNNER_TEMP/landing/landing.sqlite3"             --instruction 'Review recent default-branch checks, releases, and open maintenance issues using gh. Follow up existing problems with evidence, including unresolved documentation or container failures. Record actionable acceptance criteria and the human decision needed. Do not invent work, duplicate issues, or claim deployment recovery from a build.'             --check 'uv run pytest tests' --check 'uv run ty check' --check 'uv run zensical build -s'
       - name: Publish evidence summary
         if: always()

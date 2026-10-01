@@ -8,7 +8,6 @@ mkdir -p "$3"
 evidence=$(cd "$3" && pwd)
 shift 3
 export LANDING_DB="$evidence/landing.sqlite3"
-if [[ -z "${BUB_API_BASE:-}" ]]; then unset BUB_API_BASE; fi
 
 if [[ -n "${LANDING_BASE_REVISION:-}" ]] && git cat-file -e "$LANDING_BASE_REVISION^{commit}" 2>/dev/null; then
   git diff --binary "$LANDING_BASE_REVISION" HEAD -- > "$evidence/candidate.diff"
