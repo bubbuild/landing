@@ -1,0 +1,13 @@
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/landing/
+!src/landing/*.py
+!src/landing/adapters/
+!src/landing/adapters/*.py
+!container/
+!container/entrypoint
+!container/litestream.yml
+!Dockerfile

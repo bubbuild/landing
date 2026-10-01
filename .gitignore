@@ -1,5 +1,13 @@
 docs/source
 
+# Local workspace attachments and Landing state
+.lody/
+.ci-state/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
 # From https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore
 
 # Byte-compiled / optimized / DLL files

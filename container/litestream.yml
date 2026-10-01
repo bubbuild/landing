@@ -1,0 +1,14 @@
+logging:
+  stderr: true
+snapshot:
+  interval: 24h
+  retention: 168h
+shutdown-sync-timeout: 10s
+socket:
+  enabled: true
+  path: /run/landing/litestream.sock
+  permissions: 0600
+dbs:
+  - path: ${LANDING_DB}
+    replica:
+      url: ${LITESTREAM_REPLICA_URL}

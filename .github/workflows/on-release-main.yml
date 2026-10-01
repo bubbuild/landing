@@ -13,7 +13,7 @@ jobs:
 
       - name: Export tag
         id: vars
-        run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
+        run: echo "tag=${GITHUB_REF#refs/*/}" >> "$GITHUB_OUTPUT"
         if: ${{ github.event_name == 'release' }}
 
       - name: Update project version

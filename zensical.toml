@@ -2,7 +2,7 @@
 site_name = "landing"
 repo_url = "https://github.com/PsiACE/landing"
 site_url = "https://PsiACE.github.io/landing"
-site_description = "Landing helps humans and agents build context."
+site_description = "Bub-powered development actions for people, CLI, and CI."
 site_author = "Chojan Shang"
 edit_uri = "edit/main/docs/"
 repo_name = "PsiACE/landing"

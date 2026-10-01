@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14"]
       fail-fast: false
     defaults:
       run:
@@ -62,3 +62,43 @@ jobs:
 
       - name: Check if documentation can be built
         run: uv run zensical build -s
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-env
+      - name: Build the ONCE-compatible image
+        run: docker build -t landing:ci .
+      - name: Check the container and both backup recovery paths
+        run: uv run python tests/container_smoke.py --image landing:ci
+
+  landing-feedback:
+    name: Landing feedback
+    needs: [quality, tests-and-type-check, check-docs, container]
+    if: >-
+      always() && !cancelled() && vars.LANDING_MODEL != '' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft))
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+    uses: ./.github/workflows/landing.yml
+    with:
+      mode: ${{ github.event_name == 'pull_request' && 'gatekeeper' || 'issuer' }}
+      number: ${{ format('{0}', github.event.pull_request.number || 0) }}
+      head: ${{ github.event.pull_request.head.sha || '' }}
+      run-id: ${{ format('{0}', github.run_id) }}
+      delivery-key: ${{ format('checks:{0}:{1}', github.run_id, github.run_attempt) }}
+      instruction: >-
+        Native checks completed: ${{ toJSON(needs) }}.
+        For a PR, review the full candidate and linked acceptance criteria using gh.
+        These checks ran on ${{ github.sha }}; inspect the candidate head separately.
+        Ignore the Landing feedback job when assessing check completion. Record a decision.
+        For the default branch, maintain one CI issue per recurring problem using gh:
+        search open and closed issues before creating, reopen a real recurrence,
+        and close only with native recovery evidence for the current default-branch revision.
+        Do not create work for healthy checks with no existing problem.
+    secrets: inherit

@@ -1,0 +1,29 @@
+services:
+  landing:
+    build: .
+    image: landing:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      LANDING_TOKEN: ${LANDING_TOKEN:?Set LANDING_TOKEN}
+      BUB_MODEL: ${BUB_MODEL:?Set BUB_MODEL}
+      BUB_API_KEY: ${BUB_API_KEY:?Set BUB_API_KEY}
+      BUB_MAX_STEPS: ${BUB_MAX_STEPS:-30}
+      BUB_MODEL_TIMEOUT_SECONDS: ${BUB_MODEL_TIMEOUT_SECONDS:-120}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-file:///replica/landing}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    volumes:
+      - landing:/storage
+      - replica:/replica
+    stop_grace_period: 30s
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
+
+volumes:
+  landing:
+  replica:
