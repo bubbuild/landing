@@ -30,6 +30,9 @@ def parser() -> Parser:
     app.add_argument("--db", type=Path, help="SQLite database path (local calls only)")
     app.add_argument("--server", default=os.getenv("LANDING_SERVER"), help="Remote Landing server URL")
     app.add_argument(
+        "--skill-dir", type=Path, action="append", default=[], help="Additional trusted skill root (repeatable)"
+    )
+    app.add_argument(
         "--github-repository", default=os.getenv("LANDING_GITHUB_REPOSITORY"), help="Enable scoped gh tools"
     )
     commands = app.add_subparsers(dest="command", required=True)
@@ -198,7 +201,11 @@ async def local(args) -> int:
         return 0
     from landing.adapters.github import github_tool
 
-    runtime = Runtime(database(args), tools=[github_tool(args.github_repository)] if args.github_repository else [])
+    runtime = Runtime(
+        database(args),
+        tools=[github_tool(args.github_repository)] if args.github_repository else [],
+        skill_dirs=args.skill_dir,
+    )
     async with runtime.running():
         request = build_request(args) if args.command in MODES else runtime.tasks.request(args.id)
         action = await runtime.run(request, retry_of=args.id if args.command == "action" else None)
@@ -209,6 +216,9 @@ async def local(args) -> int:
 def validate_args(args) -> None:
     if args.server and (args.db is not None or args.command == "serve"):
         message = "--server cannot be combined with --db or serve."
+        raise ValueError(message)
+    if args.server and args.skill_dir:
+        message = "--skill-dir configures local execution or serve; configure skills on the remote server."
         raise ValueError(message)
     if getattr(args, "detach", False) and not args.server:
         message = "--detach requires --server."
@@ -244,6 +254,7 @@ def serve(args) -> None:
             token=token,
             base_url=os.getenv("BASE_URL"),
             github_repository=args.github_repository,
+            skill_dirs=args.skill_dir,
         ),
         host=args.host,
         port=args.port,

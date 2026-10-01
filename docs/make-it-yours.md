@@ -15,7 +15,7 @@ Landing sends the task and relevant tool results to that provider. Choose a prov
 
 ## Write project instructions
 
-Landing reads the selected workspace's `AGENTS.md` as project instructions. Put durable conventions there and supply task-specific requirements in the instruction or `--input` files. For example:
+Landing reads the selected workspace's root `AGENTS.md` as project instructions. Its guidance asks the agent to read more specific `AGENTS.md` files along the paths it works on. Put durable conventions there and supply task-specific requirements in the instruction or `--input` files. For example:
 
 ```markdown
 # Project instructions
@@ -28,6 +28,29 @@ Landing reads the selected workspace's `AGENTS.md` as project instructions. Put 
 ```
 
 These instructions guide the agent; they do not add permissions or enforce an operating-system boundary. Built-in mode guidance lives in `src/landing/prompts.py` if you need to change it in your own distribution.
+
+## Use skills
+
+Landing discovers skills in the selected workspace's `.agents/skills` and your `~/.agents/skills`. Each skill has a directory matching its name and a `SKILL.md` with `name` and `description` YAML front matter. The agent can list and load applicable skills through its read-only `skill` tool. Name a skill as `$deployment-check` in your instruction to include its content directly.
+
+```bash
+uv run landing explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
+```
+
+Add trusted skill roots with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, followed by your home skills. Skills are instructions and resources; they do not install plugins or grant shell or editing access to read-only modes.
+
+```bash
+uv run landing --skill-dir ~/.local/share/landing/team-skills explainer "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log
+```
+
+For skills kept in GitHub, use your normal gh login to prepare a local checkout, then select its skill root. Update that checkout through your normal repository workflow; Landing does not fetch or execute remote skill repositories automatically.
+
+```bash
+/usr/bin/gh repo clone example/team-skills ~/.local/share/landing/team-skills
+uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
+```
+
+Configure skill roots on the host that executes the action. A remote CLI caller cannot supply local directories to a server. Repository instructions and skills should come from a checkout you trust, particularly when delegating fixer work.
 
 ## Use your existing checks
 

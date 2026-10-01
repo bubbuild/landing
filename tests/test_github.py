@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from contextlib import closing
 
 import pytest
@@ -94,6 +95,104 @@ def checkout(tmp_path):
     github.git(["add", "."], root)
     github.git(["commit", "-m", "Initial implementation"], root)
     return root
+
+
+def test_issuer_publishes_issue_form_fields_from_selected_checkout(tmp_path, checkout, monkeypatch, model):
+    form = checkout / ".github/ISSUE_TEMPLATE/bug.yml"
+    form.parent.mkdir(parents=True)
+    form.write_text(
+        "name: Bug report\nbody:\n  - type: textarea\n    attributes:\n      label: Reproduction\n    validations:\n      required: true\n  - type: textarea\n    attributes:\n      label: Expected behavior\n"
+    )
+    github.git(["add", "."], checkout)
+    github.git(["commit", "-m", "Add issue form"], checkout)
+    bodies = []
+
+    def gh(args, repository, *, body=None, **kwargs):
+        if args[:2] == ["issue", "create"]:
+            bodies.append(body)
+            return "https://example.test/issues/3"
+        return "test-login"
+
+    monkeypatch.setattr(github, "gh", gh)
+    responses, _ = model
+
+    async def issue(**kwargs):
+        fields = re.findall(r"label: ([^\\\n]+)", str(kwargs["messages"]))
+        body = "\n\n".join(f"### {field}\nVerified evidence." for field in fields)
+        return completion(
+            tool="gh", arguments={"args": ["issue", "create", "--title", "Reported behavior"], "body": body}
+        )
+
+    responses.extend([issue, completion("Created the actionable issue.")])
+    action = asyncio.run(
+        github.run(
+            "example/landing",
+            "issuer",
+            "Report the bug.",
+            tmp_path / "evidence/landing.sqlite3",
+            checkout,
+            key="issue-form",
+            checks=[],
+        )
+    )
+    assert action.status == "completed"
+    assert bodies == ["### Reproduction\nVerified evidence.\n\n### Expected behavior\nVerified evidence."]
+
+
+@pytest.mark.parametrize("template_path", ["docs/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE/patch.txt"])
+def test_fixer_publishes_template_shaped_body_with_checked_candidate(
+    tmp_path, checkout, monkeypatch, model, template_path
+):
+    template = checkout / template_path
+    template.parent.mkdir(parents=True)
+    template.write_text("## Summary\n\n## Validation\n\n- [ ] Human acceptance\n")
+    github.git(["add", "."], checkout)
+    github.git(["commit", "-m", "Add PR template"], checkout)
+    bodies = []
+    original_git = github.git
+
+    def git(args, workspace):
+        return "" if "push" in args else original_git(args, workspace)
+
+    def gh(args, repository, *, body=None, **kwargs):
+        if args[:2] == ["pr", "create"]:
+            bodies.append(body)
+            return "https://example.test/pull/3"
+        return "[]" if args[0] == "pr" else "{}" if args[0] == "issue" else "test-login"
+
+    monkeypatch.setattr(github, "git", git)
+    monkeypatch.setattr(github, "gh", gh)
+    monkeypatch.setattr(github, "reply", lambda *args, **kwargs: "https://example.test/comment")
+    responses, _ = model
+
+    async def summary(**kwargs):
+        headings = re.findall(r"## (Summary|Validation)", str(kwargs["messages"]))
+        return completion(
+            "\n\n".join(f"## {heading}\nVerified candidate." for heading in headings) + "\n\n- [ ] Human acceptance"
+        )
+
+    responses.extend([
+        completion(tool="fs_write", arguments={"path": "source.txt", "content": "Verified fix.\n"}),
+        summary,
+    ])
+    db = tmp_path / "evidence/landing.sqlite3"
+    action = asyncio.run(
+        github.run(
+            "example/landing",
+            "fixer",
+            "Fix the issue.",
+            db,
+            checkout,
+            number=2,
+            key="pr-template",
+            checks=['test "$(cat source.txt)" = "Verified fix."'],
+        )
+    )
+    assert action.status == "completed"
+    assert bodies[0].startswith("## Summary\nVerified candidate.\n\n## Validation\nVerified candidate.")
+    assert "- [ ] Human acceptance" in bodies[0]
+    assert "Addresses #2." in bodies[0]
+    assert (checkout / "source.txt").read_text() == "Initial implementation.\n"
 
 
 def test_failed_fix_preserves_isolated_changes_and_replies_without_a_pr(tmp_path, checkout, monkeypatch, model):

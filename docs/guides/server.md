@@ -13,6 +13,8 @@ The service also registers `default` as its current directory. A remote request 
 
 Tools and required checks use the host environment. This endpoint is intended for trusted callers and prepared workspaces. Binding beyond localhost requires `LANDING_TOKEN`; expose it through your chosen TLS proxy.
 
+Use global `--skill-dir PATH` options when starting the service to add trusted team skills. Each action discovers the registered workspace's `.agents/skills` and reads its root `AGENTS.md`; your home skills are a fallback. Remote callers select a workspace and cannot add arbitrary skill directories. See [Use skills](../make-it-yours.md#use-skills).
+
 ## Call it from the CLI
 
 In another terminal with the same token:

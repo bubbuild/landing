@@ -1,7 +1,7 @@
 # CLI reference
 
 ```text
-landing [--db PATH | --server URL] [--github-repository OWNER/REPO] COMMAND
+landing [--db PATH | --server URL] [--github-repository OWNER/REPO] [--skill-dir PATH] COMMAND
 ```
 
 Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. From a source checkout, prefix commands with `uv run`.
@@ -13,6 +13,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 | `--db PATH` | Local SQLite path; overrides `LANDING_DB`. Cannot combine with `--server`. |
 | `--server URL` | Remote service; defaults to `LANDING_SERVER`. |
 | `--github-repository OWNER/REPO` | Enable scoped gh tools locally or on `serve`; defaults to `LANDING_GITHUB_REPOSITORY`. A remote client cannot configure the server's tools. |
+| `--skill-dir PATH` | Repeatable additional trusted skill root for local execution or `serve`. Remote clients must configure skills on the server. Project skills take precedence over these roots, followed by `~/.agents/skills`. |
 
 See [Configuration](configuration.md) for environment defaults and authorization.
 

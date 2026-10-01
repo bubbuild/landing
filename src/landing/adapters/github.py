@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import cast
@@ -193,7 +194,7 @@ def publish_fix(
         workspace,
     )
     existing = json.loads(gh(["pr", "list", "--head", branch, "--json", "url"], repository))
-    body = f"Addresses #{number}.\n\n{action.result}\n\nAction `{action.id}`. Independent CI and human review are required."
+    body = f"{action.result}\n\nAddresses #{number}.\n\nAction `{action.id}`. Independent CI and human review are required."
     if existing:
         gh(["pr", "edit", existing[0]["url"]], repository, body=body)
         url = existing[0]["url"]
@@ -238,6 +239,7 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
     key: str,
     checks: list[str],
     base: str = "",
+    skill_dirs: Iterable[Path] = (),
 ) -> Action:
     if mode == "fixer" and not number:
         message = "Delegate fixer to a specific issue or PR."
@@ -264,7 +266,7 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
             )
         inputs.append(FileInput(name="failed-checks.log", content=logs[-100000:]))
     db.parent.mkdir(parents=True, exist_ok=True)
-    async with Runtime(db, tools=[github_tool(repository)]).running() as runtime:
+    async with Runtime(db, tools=[github_tool(repository)], skill_dirs=skill_dirs).running() as runtime:
         known = runtime.tasks.connection.execute(
             "SELECT id FROM actions WHERE idempotency_scope=? AND idempotency_key=?", (repository, key)
         ).fetchone()
@@ -398,6 +400,9 @@ def main() -> None:
     parser.add_argument("--event", type=Path)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--check", action="append", default=[])
+    parser.add_argument(
+        "--skill-dir", type=Path, action="append", default=[], help="Additional trusted skill root (repeatable)"
+    )
     parser.add_argument("--delivery-key", required=True)
     args = parser.parse_args()
     if args.event:
@@ -435,6 +440,7 @@ def main() -> None:
             key=args.delivery_key,
             checks=args.check,
             base=args.base,
+            skill_dirs=args.skill_dir,
         )
     )
     print(action.model_dump_json(indent=2))

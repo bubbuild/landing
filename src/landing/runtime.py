@@ -12,13 +12,14 @@ from bub import BubFramework, ensure_config, hookimpl
 from bub.builtin import Agent
 from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.shell_manager import shell_manager
-from bub.builtin.tools import bash, bash_output, fs_edit, fs_read, fs_write, kill_bash, web_fetch
+from bub.builtin.tools import bash, bash_output, fs_edit, fs_read, fs_write, kill_bash, skill_describe, web_fetch
 from bub.tools import Tool, ToolContext
 from bub.turn import TurnState
 
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import COMMON
 from landing.prompts import MODES as PROMPTS
+from landing.repository import templates
 from landing.settings import ConfigurationFile, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -31,7 +32,7 @@ def decide(decision: Decision, *, context: ToolContext) -> str:
 
 
 DECIDE = Tool.from_callable(decide, context=True)
-READ_TOOLS = (fs_read, web_fetch)
+READ_TOOLS = (fs_read, web_fetch, skill_describe)
 WRITE_TOOLS = (fs_write, fs_edit, bash, bash_output, kill_bash)
 
 
@@ -60,7 +61,14 @@ class SDKHooks(BuiltinImpl):
 
 
 class Runtime:
-    def __init__(self, path: Path, *, workspaces: Mapping[str, Path] | None = None, tools: Iterable[Tool] = ()) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        workspaces: Mapping[str, Path] | None = None,
+        tools: Iterable[Tool] = (),
+        skill_dirs: Iterable[Path] = (),
+    ) -> None:
         self.tasks = Tasks(path)
         self.store = SQLiteTapeStore(self.tasks.path)
         self.workspaces = workspaces
@@ -68,6 +76,7 @@ class Runtime:
         self.settings = ensure_config(Settings)
         self.framework.plugin_manager.register(SDKHooks(self.framework, self.tasks, self.store), name="landing")
         self.extra_tools = tuple(tools)
+        self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in skill_dirs)
         self.agent = Agent(
             self.framework,
             tools=[*READ_TOOLS, *WRITE_TOOLS, DECIDE, *self.extra_tools],
@@ -161,11 +170,14 @@ class Runtime:
         self, action_id: str, request: ActionRequest, workspace: Path, checks: list[dict]
     ) -> tuple[str, Decision | None]:
         state: TurnState = {"landing_mode": request.mode, "_runtime_workspace": str(workspace), "code_mode": False}
+        # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
+        self.agent.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
         prompt = request.instruction or PROMPTS[request.mode]
         for item in request.input:
             prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
         if checks:
             prompt += "\n\nValidation results:\n" + json.dumps(checks)
+        prompt += templates(workspace, request.mode)
         allowed = [*READ_TOOLS, *self.extra_tools]
         if request.mode == "fixer":
             allowed.extend(WRITE_TOOLS)

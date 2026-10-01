@@ -23,13 +23,15 @@ Inspect the returned action's status, decision, result, and error separately. Us
 
 `Runtime(path, workspaces={"candidate": Path("/srv/candidate")})` selects registered names instead of arbitrary local paths. `create_app()` accepts the same mapping, a bearer token, a public origin, and an optional GitHub repository. See the [HTTP contract](http.md) for service behavior.
 
+`Runtime(path, skill_dirs=[Path("/srv/team-skills")])` and `create_app(path, skill_dirs=[...])` add trusted skill roots. Discovery uses the selected workspace's `.agents/skills`, these roots in order, and `~/.agents/skills`. The SDK's native skill catalogue, `skill` tool, and `$skill-name` expansion load skill instructions without adding plugins or changing mode permissions.
+
 ## Additional tools
 
 An embedding application can pass Bub `Tool` instances to `Runtime(path, tools=[...])` for authorized operations. These additional tools are available to every mode. Enforce the capabilities and authorization you need in their implementation; project instructions are not an access-control mechanism.
 
 ## Runtime design
 
-Landing is powered by the Bub 0.5.0 SDK. All four modes share one agent runtime; mode guidance and code-owned permissions determine the task behavior. Landing explicitly registers its SDK hooks and does not discover installed Bub plugins or ambient skills. End users configure and call Landing directly.
+Landing is powered by the Bub 0.5.0 SDK. All four modes share one agent runtime; mode guidance and code-owned permissions determine the task behavior. Landing explicitly registers its SDK hooks and uses the SDK's skill discovery for project, user, and configured roots. Installed Bub plugins and packaged channel skills are not discovered. End users configure and call Landing directly.
 
 The task sidecar owns the `actions` and `action_events` SQLite tables. An inline tape store keeps model execution entries in the same database and reuses Bub's query implementation and async adapter. Model history resets do not remove task records. Completed work is not automatically replayed. See [HTTP reference](http.md#action-records) for lifecycle and [Replication and recovery](../guides/recovery.md) for storage boundaries.
 

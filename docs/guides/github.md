@@ -12,6 +12,14 @@ uv run landing --github-repository example/team-project issuer "Investigate the 
 
 All modes can read issues, PRs, and runs. Issuer can create, edit, and comment on issues. The tool enforces repository scope and excludes arbitrary API writes, merges, approvals, and credential changes. Enabling this tool alone does not install event handling or automatic PR replies.
 
+## Follow repository conventions
+
+Landing reads contribution templates from the selected checkout in [GitHub's standard locations](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates): root, `docs`, and `.github`, including single Markdown or text templates, `ISSUE_TEMPLATE` and `PULL_REQUEST_TEMPLATE` directories, and YAML issue forms. Issuer chooses an applicable issue template and fills its requested sections when publishing through gh. YAML form field labels become Markdown headings; gh does not submit the interactive web form, and Landing does not claim that GitHub validated its required fields. Template labels, assignees, and title guidance remain subject to repository permissions and the delegated task.
+
+Fixer uses the applicable PR template for its final reply. The runner publishes that reply as the candidate's body and appends the issue link and action provenance. Verification and human acceptance checkboxes must reflect what actually happened. Existing issue comments and ordinary explanations do not need to mimic a creation template.
+
+Templates and root `AGENTS.md` come from the isolated target checkout, rather than Landing's installation directory. Keep the contribution conventions in the revision you delegate; GitHub's web template chooser uses the default branch. Landing does not fetch organization-wide community templates automatically. More specific `AGENTS.md` instructions and [repository or user skills](../make-it-yours.md#use-skills) guide work within the task's existing permissions.
+
 ## Delegate through the event runner
 
 The runner can be invoked locally with the active gh login:
@@ -25,6 +33,8 @@ Fixer works in an isolated Git worktree. The runner independently executes the r
 Other modes post their result to the selected conversation. The adapter verifies the PR head before delivering revision-sensitive feedback. Its process exit status reports execution or delivery failure; a gatekeeper's `block` or `inconclusive` recommendation is advisory here. Ordinary gatekeeper CLI exit semantics are stricter.
 
 Reuse the same database and delivery key to retry delivery without rerunning the model. Use a new key for a new delegation. Keep worktrees available while inspecting or retrying saved changes.
+
+The runner also accepts repeatable `--skill-dir PATH` options for trusted user or team skills. Repository `.agents/skills` comes from the candidate checkout. Prepare GitHub-hosted skill checkouts with `gh repo clone` and pass their local skill root; the runner uses the same SDK discovery and loading behavior as the ordinary CLI.
 
 ## Wire GitHub events
 

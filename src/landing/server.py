@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import hmac
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from pathlib import Path
@@ -37,6 +37,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     token: str | None = None,
     base_url: str | None = None,
     github_repository: str | None = None,
+    skill_dirs: Iterable[Path] = (),
 ) -> FastAPI:
     public_url = URL(base_url) if base_url else None
     if public_url and (
@@ -58,6 +59,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
             path,
             workspaces=workspaces or {"default": Path.cwd()},
             tools=[github_tool(github_repository)] if github_repository else [],
+            skill_dirs=skill_dirs,
         )
         async with runtime.running():
             app.state.runtime = runtime
