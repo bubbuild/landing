@@ -245,8 +245,22 @@ async def run(  # noqa: C901 -- linear admission, execution, and delivery around
                 if candidates:
                     revision = candidates[0]["headRefOid"]
             if revision != "HEAD":
-                git(["fetch", f"https://github.com/{repository}.git", revision], workspace)
-                revision = "FETCH_HEAD"
+                try:
+                    revision = git(["rev-parse", "--verify", revision + "^{commit}"], workspace).strip()
+                except subprocess.CalledProcessError:
+                    git(
+                        [
+                            "-c",
+                            "credential.helper=",
+                            "-c",
+                            "credential.helper=!/usr/bin/gh auth git-credential",
+                            "fetch",
+                            f"https://github.com/{repository}.git",
+                            revision,
+                        ],
+                        workspace,
+                    )
+                    revision = "FETCH_HEAD"
             git(["worktree", "add", "--detach", str(target), revision], workspace)
             inspected = git(["rev-parse", "HEAD"], target).strip()
             inputs.append(

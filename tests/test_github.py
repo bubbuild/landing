@@ -206,3 +206,34 @@ def test_repo_view_uses_explicit_repository_without_reconfiguring_auth(monkeypat
     assert json.loads(github.gh(["repo", "view", "--json", "name"], "example/landing"))["name"] == "landing"
     assert calls[0][0] == ["/usr/bin/gh", "repo", "view", "example/landing", "--json", "name"]
     assert calls[0][1]["env"]["GH_REPO"] == "example/landing"
+
+
+def test_existing_candidate_commit_needs_no_anonymous_fetch(tmp_path, checkout, monkeypatch, model):
+    responses, _ = model
+    responses.append(completion("Explained the checked revision."))
+    revision = github.git(["rev-parse", "HEAD"], checkout).strip()
+    original = github.git
+    commands = []
+
+    def command(args, workspace):
+        commands.append(args)
+        return original(args, workspace)
+
+    monkeypatch.setattr(github, "git", command)
+    monkeypatch.setattr(github, "gh", lambda *a, **k: "{}" if a[0][0] == "issue" else "test-login")
+    monkeypatch.setattr(github, "reply", lambda *a, **k: "https://example.test/comment")
+    action = asyncio.run(
+        github.run(
+            "example/landing",
+            "explainer",
+            "Explain the candidate.",
+            tmp_path / "evidence" / "landing.sqlite3",
+            checkout,
+            number=2,
+            head=revision,
+            key="private-pr:1",
+            checks=[],
+        )
+    )
+    assert action.status == "completed"
+    assert not any("fetch" in args for args in commands)
