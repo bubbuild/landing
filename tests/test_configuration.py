@@ -13,7 +13,17 @@ from tests.test_dogfood import provider
 
 
 @pytest.mark.parametrize(
-    "source", ["landing-env", "legacy-env", "legacy-file", "landing-file", "precedence", "custom-file", "empty-env"]
+    "source",
+    [
+        "landing-env",
+        "legacy-env",
+        "legacy-file",
+        "landing-file",
+        "precedence",
+        "custom-file",
+        "empty-env",
+        "provider-specific",
+    ],
 )
 def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
     environment = {key: value for key, value in os.environ.items() if not key.startswith(("BUB_", "LANDING_"))}
@@ -40,7 +50,13 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
         else:
             legacy = tmp_path / ".bub"
             legacy.mkdir()
-            (legacy / "config.yml").write_text(json.dumps({**settings, "model": "openai:legacy-model"}))
+            legacy_settings = {**settings, "model": "openai:legacy-model"}
+            if source == "provider-specific":
+                del legacy_settings["api_key"], legacy_settings["api_base"]
+                environment.update(BUB_OPENAI_API_KEY="selected-key", BUB_OPENAI_API_BASE=api_base)
+            elif source == "legacy-file":
+                environment.update(BUB_OPENAI_API_KEY="ignored-key", BUB_OPENAI_API_BASE="http://127.0.0.1:9/v1")
+            (legacy / "config.yml").write_text(json.dumps(legacy_settings))
             if source in {"landing-file", "precedence", "custom-file"}:
                 landing = tmp_path / ".landing"
                 landing.mkdir()
@@ -48,7 +64,7 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
                 config_file.write_text(json.dumps({"model": "openai:selected-model"}))
                 if source == "custom-file":
                     environment["LANDING_CONFIG"] = str(config_file)
-            if source in {"legacy-file", "empty-env"}:
+            if source in {"legacy-file", "empty-env", "provider-specific"}:
                 settings["model"] = "openai:legacy-model"
             if source == "empty-env":
                 environment.update(LANDING_MODEL="", LANDING_API_BASE="")

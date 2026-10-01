@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from bub import config
-from bub.builtin.settings import AgentSettings
+from bub.builtin.settings import AgentSettings, ProviderSpecificEnvSource
 from pydantic import AliasChoices, AliasGenerator, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
@@ -45,5 +45,6 @@ class Settings(AgentSettings):
             init_settings,
             YamlConfigSettingsSource(settings_cls, yaml_file=ConfigurationFile().config_file.expanduser()),
             YamlConfigSettingsSource(settings_cls, yaml_file=Path.home() / ".bub" / "config.yml"),
+            ProviderSpecificEnvSource(settings_cls),
             file_secret_settings,
         )
