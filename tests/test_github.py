@@ -7,6 +7,7 @@ import os
 import pytest
 
 from landing.adapters import github
+from landing.tasks import ConflictError
 from tests.conftest import completion
 
 
@@ -149,11 +150,11 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
         completion("Published the retry finding on the candidate."),
     ])
 
-    async def run():
+    async def run(instruction="Review retry behavior."):
         return await github.run(
             "example/landing",
             "gatekeeper",
-            "Review retry behavior.",
+            instruction,
             tmp_path / "landing.sqlite3",
             tmp_path,
             number=42,
@@ -177,6 +178,8 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
     assert asyncio.run(run()).id == action.id
     assert len(requests) == calls
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
+    with pytest.raises(ConflictError, match="different request"):
+        asyncio.run(run("Review deployment behavior."))
 
 
 def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platform, invoke, model):

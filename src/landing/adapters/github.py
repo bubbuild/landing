@@ -223,9 +223,8 @@ async def run(
                 "SELECT id FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (repository, key)
             ).fetchone()
             # The receipt identifies this delivery; retain its original evidence snapshot on replay.
-            action = (
-                landing.tasks.get(row["id"]) if row else landing.tasks.create(request, scope=repository, key=key)[0]
-            )
+            snapshot = landing.tasks.request(row["id"]).input if row else request.input
+            action, _ = landing.tasks.create(request.model_copy(update={"input": snapshot}), scope=repository, key=key)
             verify(action)
             action = landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
             return action
