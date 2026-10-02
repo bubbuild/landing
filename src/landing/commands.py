@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from bub.tools import Tool, ToolContext
+from bub.tools import Tool, ToolContext, tool
 
 from landing.models import Action, ActionRequest, Mode
 from landing.tasks import Tasks
@@ -15,6 +15,7 @@ COMMANDS: dict[str, Mode] = {
 }
 
 
+@tool(context=True, agent_use=False)
 async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
     """Read or select this session's mode. Selection applies to subsequent tasks."""
     if value is not None:
@@ -24,6 +25,7 @@ async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
 
 
 def command_tool(name: str, selected: Mode) -> Tool:
+    @tool(name=name, context=True, agent_use=False)
     async def delegate(instruction: str = "", *, context: ToolContext) -> Action:
         """Delegate work in the prepared workspace and return its task receipt."""
         request = ActionRequest.model_validate({
@@ -38,14 +40,12 @@ def command_tool(name: str, selected: Mode) -> Tool:
             key=context.state.get("landing_delivery_key"),
             event=("sdk.invocation", context.state["landing_invocation"]),
         )
-        await mode(selected, context=context)
+        await mode.run(selected, context=context)
         context.state["landing_pending_action"] = action.id
         return action
 
-    return Tool.from_callable(delegate, name=name, context=True, agent_use=False)
+    return delegate
 
 
-TOOLS = (
-    Tool.from_callable(mode, context=True, agent_use=False),
-    *(command_tool(name, selected) for name, selected in COMMANDS.items()),
-)
+for name, selected in COMMANDS.items():
+    command_tool(name, selected)

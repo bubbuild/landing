@@ -15,11 +15,11 @@ from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.errors import BubError, ErrorKind
 from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
-from bub.tools import REGISTRY, Tool, ToolContext
+from bub.tools import REGISTRY, Tool, ToolContext, tool
 from bub.turn import TurnState
 
 from landing.agent import Agent
-from landing.commands import COMMANDS, TOOLS
+from landing.commands import COMMANDS
 from landing.hooks import LandingHooks, SDKDefaults
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import MODES as PROMPTS
@@ -28,15 +28,14 @@ from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
 
 
+@tool(context=True)
 def decide(decision: Decision, *, context: ToolContext) -> str:
     """Record whether the candidate can proceed: allow, block, or inconclusive."""
     context.state["landing_decision"] = decision
     return decision
 
 
-DECIDE = Tool.from_callable(decide, context=True)
-
-
+@tool(context=True)
 def no_update(reason: str, *, context: ToolContext) -> str:
     """Finish an unchanged issuer follow-up without a public update and record the reason."""
     if context.state.get("landing_mode") != "issuer" or not reason.strip():
@@ -44,9 +43,6 @@ def no_update(reason: str, *, context: ToolContext) -> str:
         raise ValueError(message)
     context.state["landing_no_update"] = reason
     return reason
-
-
-NO_UPDATE = Tool.from_callable(no_update, context=True)
 
 
 def checks_failed(checks: list[dict]) -> bool:
@@ -86,7 +82,7 @@ class Runtime:
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self,
-            tools=[*REGISTRY.values(), *TOOLS, DECIDE, NO_UPDATE, *tools],
+            tools=[*REGISTRY.values(), *tools],
             tape_store=self.store,
             skill_dirs=(),
         )
