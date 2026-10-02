@@ -13,10 +13,9 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response
+from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer
 from starlette.datastructures import URL
 
 from landing.adapters.github import repository_context
@@ -73,20 +72,11 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
                 with contextlib.suppress(asyncio.CancelledError):
                     await worker
 
-    app = FastAPI(title="Landing", version=version("landing"), lifespan=lifespan)
-    # Middleware validates credentials; the dependency documents bearer authentication.
-    api = APIRouter(dependencies=[Depends(HTTPBearer(auto_error=False))] if token else [])
+    app = FastAPI(title="Landing", version=version("landing"), lifespan=lifespan, docs_url=None, redoc_url=None)
 
     @app.middleware("http")
     async def admission(request: Request, call_next):
-        if request.url.path not in {
-            "/healthz",
-            "/up",
-            app.docs_url,
-            app.redoc_url,
-            app.openapi_url,
-            app.swagger_ui_oauth2_redirect_url,
-        }:
+        if request.url.path not in {"/healthz", "/up"}:
             if token and not hmac.compare_digest(request.headers.get("authorization", ""), "Bearer " + token):
                 response = problem(401, "A valid bearer token is required.")
                 response.headers["WWW-Authenticate"] = "Bearer"
@@ -139,7 +129,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
             url = url.replace(scheme=public_url.scheme, netloc=public_url.netloc)
         return f'<{url}>; rel="next"'
 
-    @api.post("/v1/actions", response_model=Action, status_code=201)
+    @app.post("/v1/actions", response_model=Action, status_code=201)
     async def create(
         body: ActionRequest,
         request: Request,
@@ -147,7 +137,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     ):
         return accept(request.app.state.runtime, body, idempotency_key)
 
-    @api.get("/v1/actions", response_model=list[Action])
+    @app.get("/v1/actions", response_model=list[Action])
     async def list_actions(
         request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
     ):
@@ -157,11 +147,11 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
             response.headers["Link"] = next_link(request, cursor=items[limit - 1].id, limit=limit)
         return items[:limit]
 
-    @api.get("/v1/actions/{action_id}", response_model=Action)
+    @app.get("/v1/actions/{action_id}", response_model=Action)
     async def view(action_id: str, request: Request):
         return request.app.state.runtime.tasks.get(action_id)
 
-    @api.get("/v1/actions/{action_id}/events", response_model=list[Event])
+    @app.get("/v1/actions/{action_id}/events", response_model=list[Event])
     async def events(
         action_id: str,
         request: Request,
@@ -174,12 +164,12 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
             response.headers["Link"] = next_link(request, after=items[limit - 1].id, limit=limit)
         return items[:limit]
 
-    @api.post("/v1/actions/{action_id}/cancellation", response_model=Action, status_code=202)
+    @app.post("/v1/actions/{action_id}/cancellation", response_model=Action, status_code=202)
     async def cancel(action_id: str, request: Request):
         action = request.app.state.runtime.cancel(action_id)
         return JSONResponse(action.model_dump(), status_code=200 if action.status in TERMINAL else 202)
 
-    @api.post("/v1/actions/{action_id}/retries", response_model=Action, status_code=201)
+    @app.post("/v1/actions/{action_id}/retries", response_model=Action, status_code=201)
     async def retry(
         action_id: str,
         request: Request,
@@ -187,8 +177,6 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     ):
         runtime = request.app.state.runtime
         return accept(runtime, runtime.tasks.request(action_id), idempotency_key, action_id)
-
-    app.include_router(api)
 
     @app.get("/healthz")
     async def health():

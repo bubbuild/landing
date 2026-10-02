@@ -13,10 +13,6 @@ Requests select registered names rather than arbitrary paths. `default` points t
 
 Tools and checks use the host environment. Add trusted skills with global `--skill-dir` options; each action also loads its workspace's instructions and skills. Remote callers cannot add local skill roots. Binding beyond localhost requires `LANDING_TOKEN`; provide TLS through your proxy.
 
-## Explore the API
-
-Open [Swagger UI](http://127.0.0.1:8080/docs) to inspect requests and try the API. When `LANDING_TOKEN` is configured, select **Authorize** and enter the token value without the `Bearer` prefix. [ReDoc](http://127.0.0.1:8080/redoc) provides a reading view; `/openapi.json` provides the schema. These documentation endpoints are public and contain no task history or credentials; API calls still require the token.
-
 ## Submit from the CLI
 
 In another terminal with the same token:
