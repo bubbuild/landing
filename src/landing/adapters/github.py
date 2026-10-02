@@ -85,13 +85,15 @@ def delegation(event: dict, repository: str, prefix: str = "/landing") -> tuple[
     return command, instruction, target["number"]
 
 
-def publication(repository: str, number: int, stamp: str, *, review: bool, thread: int = 0) -> dict | None:
+def publication(
+    repository: str, number: int, stamp: str, *, review: bool, thread: int = 0
+) -> tuple[dict | None, list[dict]]:
     if not number:
-        return None
+        return None, []
     resource = "comments" if thread else "reviews" if review else "comments"
     kind = "pulls" if thread or review else "issues"
     records = rows(f"repos/{repository}/{kind}/{number}/{resource}", repository)
-    return next(
+    receipt = next(
         (
             item
             for item in records
@@ -101,6 +103,7 @@ def publication(repository: str, number: int, stamp: str, *, review: bool, threa
         ),
         None,
     )
+    return receipt, records
 
 
 def repository_context(repository: str) -> FileInput:
@@ -110,17 +113,18 @@ def repository_context(repository: str) -> FileInput:
     )
 
 
-def pull_target(repository: str, number: int, head: str, event: dict | None) -> tuple[bool, int, str]:
+def pull_target(repository: str, number: int, head: str, event: dict | None) -> tuple[bool, int, str, dict]:
     comment = (event or {}).get("comment", {})
     thread = (comment.get("in_reply_to_id") or comment["id"]) if "pull_request_review_id" in comment else 0
     is_pr = bool(head) or "pull_request" in (event or {}) or "pull_request" in (event or {}).get("issue", {})
+    target = (event or {}).get("pull_request") or (event or {}).get("issue", {})
     if number and not is_pr:
         target = json.loads(gh(["api", f"repos/{repository}/issues/{number}"], repository))
         is_pr = "pull_request" in target
     if is_pr and not head:
         target = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
         head = target["head"]["sha"]
-    return is_pr, thread, head
+    return is_pr, thread, head, target
 
 
 async def run(
@@ -140,7 +144,7 @@ async def run(
     skill_dirs: Iterable[Path] = (),
 ) -> Action:
     stamp = marker(mode, key)
-    is_pr, thread, head = pull_target(repository, number, head, event)
+    is_pr, thread, head, target = pull_target(repository, number, head, event)
     expected_review = is_pr and mode == "gatekeeper" and not thread
     source = {
         "repository": repository,
@@ -150,6 +154,31 @@ async def run(
         "native_run_id": run_id,
         "thread_comment_id": thread,
         "publication_marker": stamp,
+        "target": {name: target[name] for name in ("title", "body", "html_url", "state") if name in target},
+        "revisions": {
+            name: {field: target[name][field] for field in ("sha", "ref") if field in target[name]}
+            for name in ("head", "base")
+            if name in target
+        },
+        "comment": {
+            name: value
+            for name, value in (event or {}).get("comment", {}).items()
+            if name
+            in {
+                "id",
+                "body",
+                "html_url",
+                "path",
+                "line",
+                "side",
+                "start_line",
+                "start_side",
+                "original_line",
+                "diff_hunk",
+                "in_reply_to_id",
+                "pull_request_review_id",
+            }
+        },
     }
     guidance = (
         f"Use the prepared gh CLI for {repository}. Investigation and publication are part of this task. "
@@ -176,7 +205,7 @@ async def run(
     def verify(action: Action) -> None:
         if not number:
             return
-        receipt = publication(repository, number, stamp, review=expected_review, thread=thread)
+        receipt, _ = publication(repository, number, stamp, review=expected_review, thread=thread)
         if receipt is None or (expected_review and head and receipt.get("commit_id") != head):
             message = "The agent completed without a confirmed publication at the requested destination."
             raise RuntimeError(message)
@@ -188,12 +217,40 @@ async def run(
         landing.tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
 
     async with Runtime(db, skill_dirs=skill_dirs, verify=verify).running() as landing:
-        existing = publication(repository, number, stamp, review=expected_review, thread=thread)
+        existing, records = publication(repository, number, stamp, review=expected_review, thread=thread)
         if existing:
-            action, _ = landing.tasks.create(request, scope=repository, key=key)
+            row = landing.tasks.connection.execute(
+                "SELECT id FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (repository, key)
+            ).fetchone()
+            # The receipt identifies this delivery; retain its original evidence snapshot on replay.
+            action = (
+                landing.tasks.get(row["id"]) if row else landing.tasks.create(request, scope=repository, key=key)[0]
+            )
             verify(action)
             action = landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
             return action
+        history = [
+            {
+                name: item[name]
+                for name in (
+                    "id",
+                    "body",
+                    "html_url",
+                    "commit_id",
+                    "state",
+                    "path",
+                    "line",
+                    "side",
+                    "diff_hunk",
+                    "in_reply_to_id",
+                )
+                if name in item
+            }
+            for item in records
+            if item.get("state") != "PENDING"
+            and (not thread or item.get("id") == thread or item.get("in_reply_to_id") == thread)
+        ]
+        request.input.append(FileInput(name="github-history.json", content=json.dumps(history)))
         command = next(name for name, value in COMMANDS.items() if value == mode)
         action = await landing.command(
             command, request, session_id=f"github:{number or key}", scope=repository, key=key
@@ -231,6 +288,7 @@ def main(argv: list[str] | None = None) -> Action | None:
         if "pull_request" in event or "pull_request" in event.get("issue", {}):
             pull = json.loads(gh(["api", f"repos/{args.repository}/pulls/{args.number}"], args.repository))
             args.head = pull["head"]["sha"]
+            event = {**event, "pull_request": pull}
     elif event and "workflow_run" in event:
         run_event = event["workflow_run"]
         default = event["repository"]["default_branch"]

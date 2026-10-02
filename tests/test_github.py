@@ -45,7 +45,7 @@ elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     for record in state[kind]:
         print(json.dumps(record))
 else:
-    print(json.dumps({"head": {"sha": state.get("head", "candidate-head")}}))
+    print(json.dumps({**state.get("target", {}), "head": {"sha": state.get("head", "candidate-head")}}))
 """)
     executable.chmod(0o755)
     monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
@@ -170,15 +170,23 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
     assert published[0]["commit_id"] == "candidate-head"
     assert published[0]["comments"][0]["path"] == "candidate.py"
     assert published[0]["comments"][0]["line"] == 2
+    state = json.loads(platform.read_text())
+    state["reviews"].append({"id": 9, "body": "A later independent review.", "state": "COMMENTED"})
+    platform.write_text(json.dumps(state))
     calls = len(requests)
     assert asyncio.run(run()).id == action.id
     assert len(requests) == calls
-    assert len(json.loads(platform.read_text())["reviews"]) == 1
+    assert json.loads(platform.read_text())["reviews"] == state["reviews"]
 
 
 def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platform, invoke, model):
     state = json.loads(platform.read_text())
     state["reviews"] = [{"id": 9, "body": github.marker("gatekeeper", "earlier") + "\nA retry finding."}]
+    state["target"] = {"title": "Bound retries", "body": "Keep the initial request outside the retry loop."}
+    state["comments"] = [
+        {"id": 17, "body": "The loop controls only retry requests.", "path": "retry.py", "line": 7},
+        {"id": 20, "in_reply_to_id": 19, "body": "Unrelated deployment discussion."},
+    ]
     platform.write_text(json.dumps(state))
     event = {
         "repository": {"full_name": "example/landing"},
@@ -188,19 +196,34 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
             "in_reply_to_id": 17,
             "pull_request_review_id": 9,
             "body": "Does this affect the initial attempt?",
+            "path": "retry.py",
+            "line": 7,
             "user": {"type": "User", "login": "maintainer"},
         },
     }
     stamp = github.marker("gatekeeper", "comment:18")
     responses, _ = model
+
+    async def reply_from_evidence(**kwargs):
+        evidence = str(kwargs["messages"])
+        informed = (
+            all(
+                text in evidence
+                for text in (
+                    "Keep the initial request outside the retry loop.",
+                    "The loop controls only retry requests.",
+                    "retry.py",
+                )
+            )
+            and "Unrelated deployment discussion." not in evidence
+        )
+        answer = "The initial attempt is unaffected." if informed else "The thread evidence is unavailable."
+        return completion(
+            tool="fs_write", arguments={"path": "reply.json", "content": json.dumps({"body": stamp + "\n" + answer})}
+        )
+
     responses.extend([
-        completion(
-            tool="fs_write",
-            arguments={
-                "path": "reply.json",
-                "content": json.dumps({"body": stamp + "\nThe initial attempt is unaffected."}),
-            },
-        ),
+        reply_from_evidence,
         completion(
             tool="bash",
             arguments={"command": "gh api repos/example/landing/pulls/42/comments/17/replies --input reply.json"},
@@ -213,8 +236,8 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
     assert action.status == "completed"
     state = json.loads(platform.read_text())
     assert len(state["reviews"]) == 1
-    assert state["comments"][0]["in_reply_to_id"] == 17
-    assert "initial attempt is unaffected" in state["comments"][0]["body"]
+    assert state["comments"][-1]["in_reply_to_id"] == 17
+    assert "initial attempt is unaffected" in state["comments"][-1]["body"]
 
 
 def test_text_without_required_publication_is_failed_work(tmp_path, platform, model):

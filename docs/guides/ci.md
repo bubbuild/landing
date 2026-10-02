@@ -51,6 +51,16 @@ Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns
 
 Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, select per-mode capabilities with `LANDING_CONFIG: .github/landing.yml`, then retain the database as an artifact.
 
+## Choose the review scope
+
+Use your CI system's existing path filters and job conditions to select work before invoking Landing. For GitHub Actions, use `paths` or `paths-ignore` for a whole workflow, or an existing action such as [dorny/paths-filter](https://github.com/dorny/paths-filter) for individual jobs and file groups. Keep required native checks independent. Pass the selected scope, exclusions, matched files and recorded check results through `instruction`; the agent uses them without implementing another filter language. Documentation review still uses `review`.
+
+```text
+Review the selected documentation changes for accurate commands and configuration. Generated site/** output is excluded; inspect related source when it resolves a specific claim. Native checks have passed for the supplied checkout revision.
+```
+
+Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Native failures still receive feedback. Default-branch triage and explicit workflow dispatch remain available regardless of these automatic PR filters.
+
 ## Ordinary CI commands
 
 Install Landing and configure the model on the executing host. From its source checkout use `uv sync` and prefix commands with `uv run`; use `--workspace` for another checkout.

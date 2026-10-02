@@ -18,6 +18,35 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
+  feedback-scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      implementation: ${{ steps.paths.outputs.implementation }}
+      documentation: ${{ steps.paths.outputs.documentation }}
+      implementation-files: ${{ steps.paths.outputs.implementation_files }}
+      documentation-files: ${{ steps.paths.outputs.documentation_files }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: paths
+        with:
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: |
+            implementation:
+              - '**'
+              - '!docs/**'
+              - '!README.md'
+              - '!CONTRIBUTING.md'
+              - '!site/**'
+            documentation:
+              - 'docs/**'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -85,11 +114,13 @@ jobs:
 
   landing-feedback:
     name: Landing feedback
-    needs: [quality, tests-and-type-check, check-docs, container]
+    needs: [quality, tests-and-type-check, check-docs, container, feedback-scope]
     if: >-
       always() && !cancelled() && vars.LANDING_MODEL != '' &&
       (github.event_name != 'pull_request' ||
-       (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft))
+       (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft &&
+        (needs.feedback-scope.outputs.implementation == 'true' ||
+         needs.feedback-scope.outputs.documentation == 'true' || contains(needs.*.result, 'failure'))))
     permissions:
       contents: write
       issues: write
@@ -107,4 +138,5 @@ jobs:
         Native check results: ${{ toJSON(needs) }}. Actual checkout revision: ${{ github.sha }}.
         Ignore the Landing feedback job when assessing native check completion.
         ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'Review this PR and its linked acceptance criteria using the prepared gh CLI.' || 'Maintain one issue per recurring CI problem on this default-branch revision using the prepared gh CLI.' }}
+        ${{ github.event_name == 'pull_request' && format('Selected implementation files: {0}. Selected documentation files: {1}. Generated site/** output is outside the review scope; inspect its source when needed. For documentation, assess command, configuration and workflow accuracy. For implementation, assess affected user behavior.', needs.feedback-scope.outputs.implementation-files || '[]', needs.feedback-scope.outputs.documentation-files || '[]') || '' }}
     secrets: inherit

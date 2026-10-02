@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from bub import hookimpl
 from bub.builtin.hook_impl import BuiltinImpl
+from bub.utils import workspace_from_state
 
 from landing.prompts import COMMON, MODES
 
@@ -41,7 +42,8 @@ class LandingHooks:
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
-        return COMMON + MODES[state.get("landing_mode", "explainer")]
+        workspace = workspace_from_state(state)
+        return COMMON + MODES[state.get("landing_mode", "explainer")] + f"\nTask workspace: {workspace}\n"
 
     @hookimpl
     def provide_tape_store(self):
