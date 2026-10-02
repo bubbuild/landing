@@ -8,6 +8,7 @@ keywords = ['python']
 requires-python = ">=3.12,<4.0"
 dependencies = [
     "bub==0.5.0",
+    "bub-mcp==0.3.0",
     "fastapi>=0.132",
     "httpx>=0.28",
     "pydantic>=2.12",

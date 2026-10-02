@@ -16,6 +16,7 @@ nav = [
     { "Guides" = [
         { "Local use" = "guides/local.md" },
         { "CI" = "guides/ci.md" },
+        { "MCP servers" = "guides/mcp.md" },
         { "GitHub" = "guides/github.md" },
         { "Server and webhooks" = "guides/server.md" },
         { "Containers and ONCE" = "guides/deploy.md" },

@@ -48,6 +48,8 @@ gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA
 
 Candidate self-checks install Landing from that checkout. A duty task using the default-branch runtime does not reload it when the selected workspace changes.
 
+Documentation pages, site configuration, and API contract changes enable Playwright preparation in Main's candidate review job. Other changes skip it. To request a candidate browser review explicitly, add `-f browser=true` to the command above. The workflow builds a separate preview from that candidate, reuses the runner's Chrome, and saves browser output in the Landing artifact. If browser preparation fails, review continues without claiming browser verification. `.agents/skills/landing-review/SKILL.md` owns the evidence and screenshot publication rules.
+
 Bundled jobs use a 120-second model request timeout. Main's feedback Action has a 20-minute step timeout inside a 25-minute job, leaving time for warnings and artifact upload. Duty has a 20-minute job timeout. Per-job SQLite artifacts expire after 30 days. Retain lasting findings in issues, project guidance, code, and meaningful regression cases. Update work items when evidence or outcomes change; avoid repeated status reports.
 
 ## Publish a release

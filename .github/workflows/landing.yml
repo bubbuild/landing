@@ -17,6 +17,10 @@ on:
         description: Keep automatic feedback failures advisory
         type: boolean
         default: false
+      browser:
+        description: Prepare Playwright and a candidate documentation preview
+        type: boolean
+        default: false
       trust:
         type: string
         default: repository
@@ -43,6 +47,10 @@ on:
         default: Carry out the delegated action using repository guidance and supplied evidence.
   workflow_dispatch:
     inputs:
+      browser:
+        description: Prepare Playwright and a candidate documentation preview
+        type: boolean
+        default: false
       command:
         type: choice
         options: [triage, fix, review, explain]
@@ -107,7 +115,7 @@ jobs:
       - uses: ./.github/actions/setup-python-env
       - uses: sersoft-gmbh/setup-gh-cli-action@v3
         with:
-          version: 2.97.0
+          version: 2.102.0
           github-token: ${{ env.GH_TOKEN }}
       - name: Prepare agent skills
         run: |
@@ -118,13 +126,82 @@ jobs:
           git var GIT_AUTHOR_IDENT
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
+      - uses: actions/setup-node@v4
+        if: inputs.browser
+        with:
+          node-version: '22'
+      - name: Prepare browser tools and candidate preview
+        if: inputs.browser
+        id: browser
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ inputs.number || '0' }}
+          REQUESTED_HEAD: ${{ inputs.head }}
+        run: |
+          candidate="$REQUESTED_HEAD"
+          if [ -z "$candidate" ] && [ "$PR_NUMBER" != '0' ]; then
+            candidate="$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)"
+          fi
+          candidate="${candidate:-$(git rev-parse HEAD)}"
+          git fetch origin "$candidate"
+          git worktree add --detach "$RUNNER_TEMP/landing-preview" "$candidate"
+          echo "head=$candidate" >> "$GITHUB_OUTPUT"
+          npm install --prefix "$RUNNER_TEMP/landing-playwright" --no-save @playwright/mcp@0.0.83
+          export LANDING_BROWSER_EXECUTABLE="$(command -v google-chrome)"
+          uv run python - <<'PY'
+          import asyncio
+          import json
+          import os
+          from pathlib import Path
+
+          import yaml
+          from bub import BubFramework
+          from bub_mcp.plugin import MCPChannel
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          output = root / "landing/browser"
+          output.mkdir(parents=True, exist_ok=True)
+          config = json.loads(Path("examples/playwright/mcp.json").read_text())
+          server = config["mcpServers"]["playwright"]
+          server["command"] = str(root / "landing-playwright/node_modules/.bin/playwright-mcp")
+          server["args"] = ["--headless", "--isolated", "--no-sandbox", "--executable-path", os.environ["LANDING_BROWSER_EXECUTABLE"], "--output-dir", str(output), "--image-responses", "omit"]
+          config_path = root / "landing-mcp.json"
+          config_path.write_text(json.dumps(config))
+          settings = yaml.safe_load(Path(".github/landing.yml").read_text())
+          BubFramework(config_file=Path(".github/landing.yml"))
+
+          async def prepare():
+              channel = MCPChannel.from_server_configs(config["mcpServers"])
+              try:
+                  await channel.connect()
+                  if not all(server.connected for server in channel.list().values()):
+                      raise RuntimeError("Playwright MCP preparation failed.")
+                  for mode in settings["modes"].values():
+                      mode["allowed_tools"].extend(channel.tools)
+                      if "landing-review" not in mode["allowed_skills"]:
+                          mode["allowed_skills"].append("landing-review")
+              finally:
+                  await channel.stop()
+
+          asyncio.run(prepare())
+          settings_path = root / "landing-browser.yml"
+          settings_path.write_text(yaml.safe_dump(settings))
+          PY
+          cd "$RUNNER_TEMP/landing-preview"
+          uv sync --frozen
+          make docs-api
+          uv run zensical build
+          uv run python -m http.server 8765 --bind 127.0.0.1 --directory site > "$RUNNER_TEMP/landing/browser/preview.log" 2>&1 &
+          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:8765/ > /dev/null
+          echo "LANDING_MCP_CONFIG=$RUNNER_TEMP/landing-mcp.json" >> "$GITHUB_ENV"
+          echo "instruction=Candidate documentation preview: http://127.0.0.1:8765/ (revision ${candidate:0:7}). Browser evidence directory: $RUNNER_TEMP/landing/browser; retained in the Landing artifact after feedback. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Use the landing-review skill for browser findings." >> "$GITHUB_OUTPUT"
       - name: Carry out the delegated action
         id: landing
         timeout-minutes: 20
         continue-on-error: ${{ inputs.continue-on-error || false }}
         uses: ./
         env:
-          LANDING_CONFIG: .github/landing.yml
+          LANDING_CONFIG: ${{ steps.browser.outcome == 'success' && format('{0}/landing-browser.yml', runner.temp) || '.github/landing.yml' }}
           LANDING_MODEL: ${{ vars.LANDING_MODEL }}
           LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
           LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
@@ -134,11 +211,11 @@ jobs:
           trust: ${{ vars.LANDING_TRUST || inputs.trust || 'repository' }}
           command: ${{ inputs.command || 'review' }}
           number: ${{ inputs.number || '0' }}
-          head: ${{ inputs.head }}
+          head: ${{ inputs.head || steps.browser.outputs.head }}
           run-id: ${{ inputs.run-id }}
           checked-revision: ${{ inputs.checked-revision }}
           delivery-key: ${{ inputs.delivery-key || format('manual:{0}:{1}', github.run_id, github.run_attempt) }}
-          instruction: ${{ inputs.instruction }}
+          instruction: ${{ format('{0} {1}', inputs.instruction, steps.browser.outcome == 'failure' && 'Browser preparation failed; inspect its logs only when relevant and do not claim browser verification.' || steps.browser.outputs.instruction) }}
       - name: Report unsuccessful feedback
         if: ${{ !cancelled() && inputs.continue-on-error && steps.landing.outcome == 'failure' }}
         run: echo "::warning::Landing feedback failed. Inspect the task logs and artifact; native checks determine acceptance."

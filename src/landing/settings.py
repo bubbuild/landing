@@ -39,6 +39,9 @@ class Settings(AgentSettings):
         ),
     )
     skill_dirs: list[Path] = Field(default_factory=list)
+    mcp_config: Path | None = Field(
+        default=None, validation_alias=AliasChoices("LANDING_MCP_CONFIG", "BUB_MCP_CONFIG_PATH")
+    )
     modes: dict[Mode, ModeSettings] = Field(default_factory=dict)
 
     @classmethod

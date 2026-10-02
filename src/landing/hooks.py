@@ -41,7 +41,7 @@ class LandingHooks:
         for entry in await tape.store.fetch_all(tape.query().kinds("event")):
             if entry.payload.get("name") == "landing_mode_switch":
                 selected = entry.payload["data"]["landing_mode"]
-        return {"landing_mode": selected}
+        return {"landing_mode": selected, "mcp": self.runtime.mcp}
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:

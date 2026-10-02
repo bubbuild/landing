@@ -68,6 +68,25 @@ Omitted or `null` lists are unrestricted; `[]` disables the collection. Tools ac
 
 Per-call SDK selections intersect with mode limits and cannot expand them. Settings apply to CLI, HTTP, SDK, hooks, and CI. Comma commands select modes outside the model loop without adding capabilities. Tool filtering is not a sandbox: shell or delegation tools may expose broader authority.
 
+## MCP servers
+
+`LANDING_MCP_CONFIG` or YAML `mcp_config` selects a trusted `mcp.json` file; relative paths resolve from the task workspace. `BUB_MCP_CONFIG_PATH` is a fallback environment alias. An explicit missing file fails the task. Without an explicit path, Landing selects the first existing workspace `.agents/mcp.json`, user `~/.agents/mcp.json`, or native bub-mcp configuration path (normally `~/.bub/mcp.json`). Files replace one another rather than merging; an empty `mcpServers` mapping disables servers. Missing default files leave MCP disabled.
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["--yes", "@playwright/mcp@0.0.83", "--headless", "--isolated"]
+    }
+  }
+}
+```
+
+The JSON format and transports come from bub-mcp and FastMCP. `.agents/mcp.json` is Landing's file convention; it does not load Agent Plugins. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
+
+Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `allowed_tools` and per-call limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use prepared MCP servers](../guides/mcp.md) for Playwright and CI preparation.
+
 ## Execution and service
 
 | Variable | Contract |
