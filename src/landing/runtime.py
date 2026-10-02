@@ -163,7 +163,7 @@ class Runtime:
             landing_scope=scope,
             landing_delivery_key=key,
         )
-        prompt = shlex.join([self.agent.bub.command_prefix + name, request.instruction or ""])
+        prompt = shlex.join([self.agent.bub.command_prefix + name, "instruction=" + (request.instruction or "")])
         stream = await self.agent.run_stream(session_id=session_id, prompt=prompt, state=state)
         async with contextlib.aclosing(stream):
             async for _ in stream:

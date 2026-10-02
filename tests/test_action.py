@@ -94,3 +94,20 @@ def test_action_does_not_attribute_unknown_checks_to_the_trigger_revision(tmp_pa
         )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["result"] == "The checked revision is unknown."
+
+
+def test_action_preserves_instruction_assignments_and_quotes(tmp_path):
+    instruction = 'Native checks: quality=success. Explain "key=value" in https://example.test/?page=2.'
+
+    def explain(request):
+        answer = (
+            "The quality check passed; key=value and page=2 remain task evidence."
+            if instruction in str(request["messages"])
+            else "The instruction is unavailable."
+        )
+        return completion(answer)
+
+    with provider([explain]) as (api_base, _):
+        result = delegate(tmp_path, api_base, "explain", "", extra_env={"INPUT_INSTRUCTION": instruction})
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["result"] == "The quality check passed; key=value and page=2 remain task evidence."
