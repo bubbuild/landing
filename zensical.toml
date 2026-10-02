@@ -26,6 +26,7 @@ nav = [
         { "CLI" = "reference/cli.md" },
         { "Configuration" = "reference/configuration.md" },
         { "HTTP" = "reference/http.md" },
+        { "API reference" = "reference/api.md" },
         { "Python API" = "reference/python.md" },
     ] },
     { "Develop and dogfood" = "development.md" },

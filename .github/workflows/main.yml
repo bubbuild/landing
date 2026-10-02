@@ -101,7 +101,7 @@ jobs:
         uses: ./.github/actions/setup-python-env
 
       - name: Check if documentation can be built
-        run: uv run zensical build -s
+        run: make docs-test
 
   container:
     runs-on: ubuntu-latest

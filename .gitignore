@@ -165,6 +165,7 @@ venv.bak/
 
 # mkdocs/zensical documentation
 /site
+/docs/assets/api/
 
 # mypy
 .mypy_cache/
