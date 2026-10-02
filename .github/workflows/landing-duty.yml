@@ -15,14 +15,9 @@ permissions:
   pull-requests: write
   actions: write
 
-concurrency:
-  group: landing-duty-${{ github.repository_id }}-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id }}
-  cancel-in-progress: false
-  queue: max
-
 jobs:
   admission:
-    if: vars.LANDING_MODEL != ''
+    if: vars.LANDING_MODEL != '' && (github.event_name == 'workflow_run' || contains(github.event.comment.body, '/landing'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +37,10 @@ jobs:
   duty:
     needs: admission
     if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
+    concurrency:
+      group: landing-duty-${{ github.repository_id }}-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id }}
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
