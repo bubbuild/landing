@@ -60,6 +60,8 @@ jobs:
         run: uv sync --locked && uv run pytest
       - uses: bubbuild/landing@0.1.0
         id: landing
+        timeout-minutes: 20
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           LANDING_MODEL: ${{ vars.LANDING_MODEL }}
@@ -67,9 +69,12 @@ jobs:
         with:
           command: review
           instruction: Review the candidate against repository guidance and the native checks. Publish actionable findings and record a decision.
+      - name: Report unsuccessful feedback
+        if: ${{ !cancelled() && steps.landing.outcome == 'failure' }}
+        run: echo "::warning::Landing feedback failed. Inspect the Action logs."
 ```
 
-Ubuntu's runner provides gh; use your normal setup action on other runners. The example publishes as `github-actions[bot]`. Keep existing required checks independent; this review is advisory. For owner-restricted execution, use a protected workflow source and the [GitHub trust controls](guides/github.md#choose-who-can-delegate).
+Ubuntu's runner provides gh; use your normal setup action on other runners. The example publishes as `github-actions[bot]`. Keep existing required checks independent; `continue-on-error` makes this automatic review advisory and the next step warns when it fails. Omit that property when a delegated task must fail the job. For owner-restricted execution, use a protected workflow source and the [GitHub trust controls](guides/github.md#choose-who-can-delegate).
 
 ## Open a PR and read the result
 
@@ -77,7 +82,7 @@ Put the workflow on your trusted branch, then open a same-repository PR with a s
 
 Check the workflow and PR together. `status: completed` means the task finished and its required publication was verified; `decision` records `allow`, `block`, or `inconclusive`. The recommendation does not merge the PR or change the result of your native checks. Review guidance asks the agent to leave the candidate unchanged.
 
-Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs skip this workflow's agent jobs. Execution or required publication failure fails the Action step. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
+Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs skip this workflow's agent jobs. Execution or required publication failure still gives the Action a failed outcome; this workflow reports it as a warning and continues. A successful workflow does not prove that Landing delivered a review. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
 
 Continue with [CI integration](guides/ci.md) for scope and concurrency, or [GitHub integration](guides/github.md#wire-commands-and-follow-ups) to delegate `/landing fix` and `/landing explain` from comments.
 

@@ -16,6 +16,7 @@ Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and gr
 
 ```yaml
 - uses: bubbuild/landing@0.1.0
+  continue-on-error: true
   env:
     GH_TOKEN: ${{ github.token }}
     LANDING_MODEL: ${{ vars.LANDING_MODEL }}
@@ -25,7 +26,7 @@ Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and gr
     instruction: Native checks passed for this checkout. Review this PR using repository guidance and publish actionable findings inline.
 ```
 
-The Action uses your authenticated `gh`, project tools, and skills. It checks who can delegate before starting the agent. See [CI integration](https://getlanding.dev/guides/ci/) for other CI systems and [GitHub integration](https://getlanding.dev/guides/github/) for `/landing` commands, publishing identities, and trust policy.
+`continue-on-error` keeps automatic feedback advisory; inspect the Action logs if no review appears. The Action uses your authenticated `gh`, project tools, and skills. It checks who can delegate before starting the agent. See [CI integration](https://getlanding.dev/guides/ci/) for other CI systems and [GitHub integration](https://getlanding.dev/guides/github/) for `/landing` commands, publishing identities, and trust policy.
 
 To build the same review and delegated-fix experience, ask your agent to read [Landing's workflows](https://github.com/bubbuild/landing/tree/main/.github/workflows) and [development guide](https://getlanding.dev/development/), then adapt the CI setup to your repository's tools and checks.
 
