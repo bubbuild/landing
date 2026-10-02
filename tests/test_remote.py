@@ -9,6 +9,17 @@ from landing.server import create_app
 from tests.conftest import completion
 
 
+def test_remote_connection_failure_has_a_diagnostic(capsys):
+    with socket.socket() as unavailable:
+        unavailable.bind(("127.0.0.1", 0))
+        port = unavailable.getsockname()[1]
+        assert main(["--server", f"http://127.0.0.1:{port}", "action", "list", "--json"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Remote request failed" in captured.err
+    assert "connect" in captured.err.lower()
+
+
 def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, monkeypatch):
     responses, _ = model
     responses.extend([

@@ -367,7 +367,10 @@ def execute(ctx: typer.Context, **parameters) -> NoReturn:
             print(json.dumps({"error": {"code": "invalid_request", "message": str(exc)}}))
         typer.echo(str(exc), err=True)
         code = 2
-    except httpx.HTTPError:
+    except httpx.RequestError as exc:
+        typer.echo(f"Remote request failed: {str(exc) or type(exc).__name__}", err=True)
+        code = 1
+    except httpx.HTTPStatusError:
         code = 1
     raise typer.Exit(code)
 
