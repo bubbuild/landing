@@ -59,7 +59,7 @@ uv run landing --skill-dir ~/.local/share/landing/team-skills explainer 'Use $de
 A normal gh checkout also works when you prefer to manage the repository yourself:
 
 ```bash
-/usr/bin/gh repo clone example/team-skills ~/.local/share/landing/team-skills
+gh repo clone example/team-skills ~/.local/share/landing/team-skills
 uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
