@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: PsiACE/landing
+          repository: bubbuild/landing
           ref: YOUR_REVIEWED_COMMIT
           persist-credentials: false
       - id: admission
@@ -58,7 +58,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Run native checks
         run: uv sync --locked && uv run pytest
-      - uses: PsiACE/landing@YOUR_REVIEWED_COMMIT
+      - uses: bubbuild/landing@YOUR_REVIEWED_COMMIT
         id: landing
         env:
           GH_TOKEN: ${{ github.token }}

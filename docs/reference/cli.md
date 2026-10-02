@@ -76,7 +76,7 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 
 ## GitHub Action
 
-`PsiACE/landing@REVIEWED_REF` runs the same event adapter. [Get started](../get-started.md) shows complete admission and environment preparation.
+`bubbuild/landing@REVIEWED_REF` runs the same event adapter. [Get started](../get-started.md) shows complete admission and environment preparation.
 
 | Input | Contract |
 | --- | --- |

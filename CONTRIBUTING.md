@@ -1,6 +1,6 @@
 # Contributing to Landing
 
-Questions, bug reports, documentation, and code contributions are welcome. You can report a problem without volunteering to implement the fix. Use [GitHub issues](https://github.com/PsiACE/landing/issues) to discuss the behavior you need.
+Questions, bug reports, documentation, and code contributions are welcome. You can report a problem without volunteering to implement the fix. Use [GitHub issues](https://github.com/bubbuild/landing/issues) to discuss the behavior you need.
 
 ## Report a problem
 

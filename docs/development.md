@@ -15,7 +15,7 @@ make docs-test
 uv build
 ```
 
-Use `make docs` for preview. Run checks appropriate to the change; native CI owns the full Python 3.12–3.14 matrix, quality, strict documentation build, and container recovery. See [Contributing](https://github.com/PsiACE/landing/blob/main/CONTRIBUTING.md) for discussion and submission.
+Use `make docs` for preview. Run checks appropriate to the change; native CI owns the full Python 3.12–3.14 matrix, quality, strict documentation build, and container recovery. See [Contributing](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) for discussion and submission.
 
 ## Test what people observe
 

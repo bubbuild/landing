@@ -57,7 +57,7 @@ Listen for `issue_comment` and `pull_request_review_comment` and pass the event 
 
 The prefix is configurable and can use your actual bot mention. Every delegation, including a thread follow-up, requires an explicit command. Ordinary status replies and Landing's marked output do not trigger work. Authorized machine accounts can delegate; a bot name or installation ID grants no authority by itself.
 
-Listeners must exist on the default branch to receive events. Landing's [duty workflow](https://github.com/PsiACE/landing/blob/main/.github/workflows/landing-duty.yml) is a project example, not a requirement for using the Action.
+Listeners must exist on the default branch to receive events. Landing's [duty workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing-duty.yml) is a project example, not a requirement for using the Action.
 
 ## Choose who can delegate
 

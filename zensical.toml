@@ -1,11 +1,11 @@
 [project]
 site_name = "Landing"
-repo_url = "https://github.com/PsiACE/landing"
-site_url = "https://PsiACE.github.io/landing"
+repo_url = "https://github.com/bubbuild/landing"
+site_url = "https://bubbuild.github.io/landing"
 site_description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 site_author = "Chojan Shang"
 edit_uri = "edit/main/docs/"
-repo_name = "PsiACE/landing"
+repo_name = "bubbuild/landing"
 copyright = 'Maintained by <a href="https://PsiACE.com">PsiACE</a>. Powered by <a href="https://bub.build/">Bub</a> and <a href="https://tape.systems/">tape.systems</a>.'
 
 nav = [
@@ -85,7 +85,7 @@ toggle.name = "Switch to system preference"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/PsiACE/landing"
+link = "https://github.com/bubbuild/landing"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/python"

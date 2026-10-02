@@ -9,7 +9,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable --no-cache
 
 FROM python:3.12-slim-bookworm
-LABEL org.opencontainers.image.source="https://github.com/PsiACE/landing"
+LABEL org.opencontainers.image.source="https://github.com/bubbuild/landing"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git gh ca-certificates \
