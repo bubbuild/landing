@@ -60,6 +60,7 @@ jobs:
         run: uv sync --locked && uv run pytest
       - uses: bubbuild/landing@0.1.0
         id: landing
+        timeout-minutes: 20
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

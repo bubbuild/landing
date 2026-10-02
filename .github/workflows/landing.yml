@@ -91,7 +91,7 @@ jobs:
     if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
     name: Landing action
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       GH_ADMISSION_TOKEN: ${{ secrets.LANDING_ADMISSION_TOKEN || github.token }}
       GH_TOKEN: ${{ secrets.LANDING_GITHUB_TOKEN || github.token }}
@@ -120,6 +120,7 @@ jobs:
           gh auth setup-git
       - name: Carry out the delegated action
         id: landing
+        timeout-minutes: 20
         continue-on-error: ${{ inputs.continue-on-error || false }}
         uses: ./
         env:
