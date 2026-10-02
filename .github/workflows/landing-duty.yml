@@ -71,6 +71,7 @@ jobs:
           LANDING_MODEL_TIMEOUT_SECONDS: '120'
         with:
           command: triage
+          checked-revision: ${{ github.event_name != 'workflow_run' && github.sha || '' }}
           delivery-key: ${{ format('duty:{0}', github.event.comment.id || github.run_id) }}
           instruction: >-
             ${{ github.event_name == 'workflow_run' && format('Follow up release run {0}, conclusion {1}. Inspect its failed jobs or verify recovery for a matching open issue; other runs are outside this task.', github.event.workflow_run.id, github.event.workflow_run.conclusion) || 'Follow up these current open issues using their acceptance criteria and the latest relevant evidence. Update or close issues when supported; investigate missing evidence only for the affected issue. Do not scan resolved historical failures for new work.' }}

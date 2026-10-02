@@ -314,3 +314,16 @@ def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platfo
     assert action.status == "failed"
     assert action.error is not None
     assert "PR head changed" in action.error["message"]
+
+
+def test_release_tag_event_delegates_maintenance(invoke, model):
+    responses, _ = model
+    responses.append(completion("Documentation deployment needs its repository Pages configuration."))
+    action = invoke({
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {"id": 123, "head_branch": "0.0.0", "event": "release"},
+    })
+    assert action is not None
+    assert action.status == "completed"
+    assert action.mode == "issuer"
+    assert action.result == "Documentation deployment needs its repository Pages configuration."
