@@ -16,6 +16,9 @@ from tests.conftest import completion
 
 @pytest.fixture
 def platform(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith("GITHUB_") or name == "GH_ADMISSION_TOKEN":
+            monkeypatch.delenv(name)
     database = tmp_path / "github.json"
     database.write_text(json.dumps({"reviews": [], "comments": [], "permission": "write"}))
     binary = tmp_path / "bin"

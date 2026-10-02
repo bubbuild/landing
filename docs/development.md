@@ -23,7 +23,7 @@ Write behavior tests for what users see through CLI, HTTP, and workflow outcomes
 
 Assert public fields when they establish what the user observes, such as a result, gate decision, cancellation, or published comment location. Avoid assertions about helper structure, event positions, exception class names, raw database rows, provider option spelling, or other incidental details. Do not repeat the upstream SDK's query, chunking, or parameter-translation tests. Straightforward glue can be inspected directly and accepted through a real workflow run. Adding a test merely because a file changed does not improve the contract.
 
-The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. GitHub behavior tests use a local platform emulator. Real workflow runs establish downstream delivery and model quality.
+The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. GitHub behavior tests use a local platform emulator and isolate the runner's GitHub environment; native event cases supply their own identity and repository inputs. Real workflow runs establish downstream delivery and model quality.
 
 ## Run the continuous loop
 
