@@ -37,7 +37,7 @@ publish: ## Publish a release to PyPI.
 build-and-publish: build publish ## Build and publish.
 
 .PHONY: docs-api
-docs-api: ## Export the OpenAPI schema and Scalar reference
+docs-api: ## Export the OpenAPI schema
 	@uv run python scripts/export_api_docs.py
 
 .PHONY: docs-test

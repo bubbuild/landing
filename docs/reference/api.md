@@ -1,5 +1,12 @@
-# API reference
+---
+hide:
+  - toc
+---
 
-Browse the generated request and response schemas below, [open the full-page reference](../assets/api/index.html), or [download OpenAPI JSON](../assets/api/openapi.json). For authenticated requests, use `/docs` on your running [server](../guides/server.md). [HTTP semantics](http.md) explains admission, lifecycle, pagination, and errors.
+<!-- Scalar reserves "api-reference" for its automatic initializer. -->
 
-<iframe src="../assets/api/index.html" title="Landing API reference" style="width: 100%; height: 80vh; border: 0;"></iframe>
+# API reference {#landing-api}
+
+Browse the generated request and response schemas below or <a id="landing-openapi" href="../assets/api/openapi.json">download OpenAPI JSON</a>. For authenticated requests, use `/docs` on your running [server](../guides/server.md). [HTTP semantics](http.md) explains admission, lifecycle, pagination, and errors.
+
+<div id="landing-api-reference"></div>

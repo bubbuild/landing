@@ -4,6 +4,8 @@ repo_url = "https://github.com/bubbuild/landing"
 site_url = "https://getlanding.dev/"
 site_description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 site_author = "Chojan Shang"
+extra_javascript = ["assets/javascripts/api-reference.js"]
+extra_css = ["assets/stylesheets/api-reference.css"]
 edit_uri = "edit/main/docs/"
 repo_name = "bubbuild/landing"
 copyright = 'Maintained by <a href="https://github.com/PsiACE">PsiACE</a>. Powered by <a href="https://bub.build/">Bub</a> and <a href="https://tape.systems/">tape.systems</a>.'
@@ -100,3 +102,5 @@ generic = true
 
 [project.markdown_extensions.toc]
 permalink = true
+
+[project.markdown_extensions.attr_list]

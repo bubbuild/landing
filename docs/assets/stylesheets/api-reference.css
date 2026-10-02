@@ -1,0 +1,22 @@
+/* Keep search visible when Scalar returns keyboard focus after selection. */
+#landing-api-reference .references-classic-header-container {
+  position: sticky;
+  top: var(--md-header-height, 2.4rem);
+  z-index: 1;
+  background: var(--md-default-bg-color);
+}
+
+#landing-api-reference {
+  /* Reserve space for the site header and sticky API search. */
+  --scalar-custom-header-height: calc(var(--md-header-height, 2.4rem) + 4rem);
+  --scalar-font: var(--md-text-font-family);
+  --scalar-font-code: var(--md-code-font-family);
+  --scalar-color-1: var(--md-default-fg-color);
+  --scalar-color-2: var(--md-default-fg-color--light);
+  --scalar-color-3: var(--md-default-fg-color--lighter);
+  --scalar-color-accent: var(--md-typeset-a-color);
+  --scalar-background-1: var(--md-default-bg-color);
+  --scalar-background-2: var(--md-code-bg-color);
+  --scalar-background-3: var(--md-code-bg-color);
+  --scalar-border-color: var(--md-default-fg-color--lightest);
+}
