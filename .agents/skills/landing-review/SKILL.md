@@ -1,6 +1,6 @@
 ---
 name: landing-review
-description: Review Landing's public contracts, SDK reuse, SQLite lifecycle, GitHub delivery, and independent evidence.
+description: Review Landing's public contracts, SDK reuse, SQLite lifecycle, GitHub delivery, and browser evidence.
 ---
 
 Select the affected entry point and owning layer. Use these project constraints to resolve concrete questions, then conclude with the native check evidence. Read the relevant contract in `docs/reference/` when needed.
@@ -14,4 +14,6 @@ Select the affected entry point and owning layer. Use these project constraints 
 
 Use the source or a focused counterexample for an unresolved claim. Reuse completed checks that cover it. Follow `docs/development.md` for behavior testing and evaluate operational recovery against the relevant failure, rather than an unrelated healthy matrix.
 
-For browser-visible problems, use a prepared candidate preview and Playwright MCP to reproduce the affected interaction. Compare the preview revision with the selected candidate; a screenshot alone does not establish a bug, and binary image placeholders do not mean the model inspected the image. Capture one useful screenshot in the supplied browser artifact directory, using an absolute filename or omitting the filename to use the server's output directory. With gh 2.99 or later and an upload-capable prepared identity, use `gh pr comment NUMBER --body "Reproduction evidence." --attach "PATH#Short description"`, then link that comment from the native review or inline finding. GitHub App installation tokens, including the default workflow token, cannot upload attachments; link the workflow run and name its Landing artifact, which uploads after feedback. Keep the finding short, describe what the person sees, and avoid publishing duplicate evidence or changing credentials to upload it.
+When a candidate preview is supplied for browser-facing changes, check the affected interaction with Playwright MCP and compare its revision with the candidate. Report only reproduced problems; a screenshot alone does not establish a bug, and binary image placeholders do not mean the model inspected the image.
+
+Save one useful screenshot in the browser artifact directory, using an absolute filename or omitting it to use the server's output directory. With gh 2.99 or later and an upload-capable prepared identity, use `gh pr comment NUMBER --body "Reproduction evidence." --attach "PATH#Short description"` and link that comment from the review or thread reply. GitHub App installation tokens, including the default workflow token, cannot upload attachments; link the workflow run and name its Landing artifact, uploaded after feedback. Keep the finding short and describe what the person sees. Do not duplicate evidence or change credentials to upload it.

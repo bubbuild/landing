@@ -178,8 +178,9 @@ jobs:
                   if not all(server.connected for server in channel.list().values()):
                       raise RuntimeError("Playwright MCP preparation failed.")
                   for mode in settings["modes"].values():
-                      mode["allowed_tools"].extend(channel.tools)
-                      if "landing-review" not in mode["allowed_skills"]:
+                      if mode.get("allowed_tools") is not None:
+                          mode["allowed_tools"].extend(channel.tools)
+                      if mode.get("allowed_skills") is not None and "landing-review" not in mode["allowed_skills"]:
                           mode["allowed_skills"].append("landing-review")
               finally:
                   await channel.stop()
