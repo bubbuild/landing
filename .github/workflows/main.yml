@@ -104,13 +104,7 @@ jobs:
       checked-revision: ${{ github.sha }}
       delivery-key: ${{ format('checks:{0}:{1}', github.run_id, github.run_attempt) }}
       instruction: >-
-        Native checks completed: ${{ toJSON(needs) }}.
-        For a PR, review the full candidate and linked acceptance criteria using gh.
-        These checks ran on ${{ github.sha }}; inspect the candidate head separately.
-        Ignore the Landing feedback job when assessing check completion. Record a decision.
-        For the default branch, maintain one CI issue per recurring problem using gh:
-        search open and closed issues before creating, reopen a real recurrence,
-        and close only when the issue's acceptance criteria are verified at the current default-branch revision.
-        Keep the reply brief; report concrete findings instead of recapping the diff or listing all successful checks.
-        Do not create work for healthy checks with no existing problem.
+        Native check results: ${{ toJSON(needs) }}. Actual checkout revision: ${{ github.sha }}.
+        Ignore the Landing feedback job when assessing native check completion.
+        ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'Review this PR and its linked acceptance criteria using the prepared gh CLI.' || 'Maintain one issue per recurring CI problem on this default-branch revision using the prepared gh CLI.' }}
     secrets: inherit

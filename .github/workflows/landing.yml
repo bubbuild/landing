@@ -30,7 +30,7 @@ on:
         required: true
       instruction:
         type: string
-        default: Review the current candidate against acceptance criteria and independent native checks. Ignore this feedback job when assessing check completion. Use gh to inspect the full diff and linked issues. Record a decision and explain concrete findings.
+        default: Carry out the delegated action using repository guidance and supplied evidence.
   workflow_dispatch:
     inputs:
       command:

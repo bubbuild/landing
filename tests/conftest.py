@@ -1,5 +1,6 @@
 """Exercise the real Bub SDK; replace only the external model request."""
 
+import os
 from collections import deque
 
 import pytest
@@ -9,8 +10,9 @@ from bub.builtin.model_runner import ModelRunner
 
 @pytest.fixture(autouse=True)
 def local_cli_environment(monkeypatch):
-    monkeypatch.delenv("LANDING_SERVER", raising=False)
-    monkeypatch.delenv("LANDING_TOKEN", raising=False)
+    for name in tuple(os.environ):
+        if name.startswith(("LANDING_", "BUB_")):
+            monkeypatch.delenv(name)
 
 
 def completion(text=None, *, tool=None, arguments=None):
