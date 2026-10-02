@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import fcntl
 import json
+import subprocess
 from collections.abc import AsyncIterator, Iterable, Mapping
 from pathlib import Path
 from typing import cast
@@ -13,14 +14,18 @@ from bub.builtin import Agent
 from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import bash, bash_output, fs_edit, fs_read, fs_write, kill_bash, skill_describe, web_fetch
+from bub.hooks.interception import ToolCall, ToolCallDecision
+from bub.skills import discover_skills
 from bub.tools import Tool, ToolContext
 from bub.turn import TurnState
+from bub.utils import workspace_from_state
 
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import COMMON
 from landing.prompts import MODES as PROMPTS
 from landing.repository import templates
 from landing.settings import ConfigurationFile, Settings
+from landing.skills import DefaultSkills
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
 
@@ -43,13 +48,38 @@ def checks_failed(checks: list[dict]) -> bool:
 class SDKHooks(BuiltinImpl):
     """Reuse builtin hooks, replacing channel prompts and file-backed sidecars."""
 
-    def __init__(self, framework: BubFramework, tasks: Tasks, store: SQLiteTapeStore) -> None:
+    def __init__(self, framework: BubFramework, tasks: Tasks, store: SQLiteTapeStore, defaults: DefaultSkills) -> None:
         super().__init__(framework)
         self.tasks, self.store = tasks, store
+        self.defaults = defaults
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
-        return COMMON + PROMPTS[state["landing_mode"]] + "\n" + self._read_agents_file(state)
+        roots = tuple(Path(root) for root in state["landing_skill_roots"])
+        return (
+            COMMON
+            + PROMPTS[state["landing_mode"]]
+            + "\n"
+            + self._read_agents_file(state)
+            + self.defaults.prompt(workspace_from_state(state), roots)
+        )
+
+    @hookimpl
+    async def before_tool_call(self, call: ToolCall, state: TurnState) -> ToolCallDecision | None:
+        if call.tool != "skill":
+            return None
+        workspace = workspace_from_state(state)
+        roots = tuple(Path(root) for root in state["landing_skill_roots"])
+        name = call.arguments.get("name")
+        if name is None:
+            installed = [skill.name for skill in discover_skills(workspace, skill_dirs=roots)]
+            return ToolCallDecision.replace({"skills": [*installed, *self.defaults.available(workspace, roots)]})
+        if isinstance(name, str):
+            try:
+                await asyncio.to_thread(self.defaults.load, name.casefold(), workspace, roots)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                return ToolCallDecision.deny(f"Could not load default skill {name}: {exc}")
+        return None
 
     @hookimpl
     def provide_tape_store(self) -> SQLiteTapeStore:
@@ -74,7 +104,10 @@ class Runtime:
         self.workspaces = workspaces
         self.framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         self.settings = ensure_config(Settings)
-        self.framework.plugin_manager.register(SDKHooks(self.framework, self.tasks, self.store), name="landing")
+        self.defaults = DefaultSkills(self.settings.skill_cache, enabled=self.settings.default_skills)
+        self.framework.plugin_manager.register(
+            SDKHooks(self.framework, self.tasks, self.store, self.defaults), name="landing"
+        )
         self.extra_tools = tuple(tools)
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
@@ -171,13 +204,20 @@ class Runtime:
     ) -> tuple[str, Decision | None]:
         state: TurnState = {"landing_mode": request.mode, "_runtime_workspace": str(workspace), "code_mode": False}
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
-        self.agent.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
+        self.agent.skill_dirs = (
+            workspace / ".agents/skills",
+            *self.skill_dirs,
+            Path.home() / ".agents/skills",
+            *self.defaults.roots,
+        )
+        state["landing_skill_roots"] = [str(root) for root in self.agent.skill_dirs]
         prompt = request.instruction or PROMPTS[request.mode]
         for item in request.input:
             prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
         if checks:
             prompt += "\n\nValidation results:\n" + json.dumps(checks)
         prompt += templates(workspace, request.mode)
+        await self.defaults.prepare(prompt, workspace, self.agent.skill_dirs)
         allowed = [*READ_TOOLS, *self.extra_tools]
         if request.mode == "fixer":
             allowed.extend(WRITE_TOOLS)

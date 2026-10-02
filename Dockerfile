@@ -1,6 +1,9 @@
 FROM ghcr.io/astral-sh/uv:0.10.12 AS uv
 FROM docker.io/litestream/litestream:0.5.17 AS litestream
 FROM python:3.12-slim-bookworm AS builder
+ARG TARGETARCH
+ADD https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_${TARGETARCH}.tar.gz /tmp/gh.tar.gz
+RUN tar -xzf /tmp/gh.tar.gz --strip-components=2 -C /usr/local/bin gh_2.97.0_linux_${TARGETARCH}/bin/gh
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 WORKDIR /opt/landing
@@ -12,7 +15,7 @@ FROM python:3.12-slim-bookworm
 LABEL org.opencontainers.image.source="https://github.com/PsiACE/landing"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git gh ca-certificates \
+    && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 landing \
     && useradd --uid 1000 --gid 1000 --create-home landing \
@@ -20,6 +23,7 @@ RUN apt-get update \
     && chown -R 1000:1000 /storage /replica /run/landing \
     && chmod 700 /run/landing
 COPY --from=builder /opt/landing/.venv /opt/landing/.venv
+COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY container/litestream.yml /etc/litestream.yml

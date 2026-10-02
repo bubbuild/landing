@@ -60,6 +60,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-python-env
+      - uses: ./.github/actions/setup-gh
       - name: Carry out the delegated action using Landing and gh
         env:
           GH_TOKEN: ${{ github.token }}

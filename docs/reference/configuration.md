@@ -51,7 +51,21 @@ skill_dirs:
   - /srv/team-skills/.agents/skills
 ```
 
-Skill discovery searches the selected workspace's `.agents/skills` first, repeatable `--skill-dir` roots next, configured roots next, and `~/.agents/skills` last. The first matching skill name wins. The Python `Runtime` and `create_app` APIs accept explicit `skill_dirs` with the same precedence as CLI roots. Configure these directories on the executing host; remote clients cannot add directories to a server. See [Use skills](../make-it-yours.md#use-skills) for the file layout and GitHub-hosted skill checkouts.
+Skill discovery searches the selected workspace's `.agents/skills` first, repeatable `--skill-dir` roots next, configured roots next, `~/.agents/skills` next, and default skills last. The first matching skill name wins. The Python `Runtime` and `create_app` APIs accept explicit `skill_dirs` with the same precedence as CLI roots. Configure these directories on the executing host; remote clients cannot add directories to a server. See [Use skills](../make-it-yours.md#use-skills) for the file layout and GitHub-hosted skills.
+
+`LANDING_DEFAULT_SKILLS` enables the four pinned default skills, default `true`; set it to `false` to disable their catalog and downloads. `LANDING_SKILL_CACHE` sets the asset cache, default `~/.cache/landing/skills`. YAML uses `default_skills` and `skill_cache`. These are source assets, separate from the SQLite task database.
+
+Listing default skills needs no network. A named `skill` call or `$skill-name` mention fetches only that missing skill, then the SDK handles discovery, instruction loading and references. A matching local skill overrides the default and avoids downloading it. Cached skills remain usable offline. Cold downloads require a configured gh login; the three conventional skill directories use `gh skill install --pin` and require gh 2.97 or later. The root-level humanizer source uses the same gh login and the GitHub contents API at its pinned commit. There is no custom archive extractor, plugin installation or execution of skill scripts during download.
+
+| Default skill | GitHub source |
+| --- | --- |
+| `documentation-writer` | [github/awesome-copilot](https://github.com/github/awesome-copilot/tree/143a3d976b3c1603cc8932984d5e1f28501cb5fc/skills/documentation-writer) |
+| `humanizer` | [blader/humanizer](https://github.com/blader/humanizer/tree/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8) |
+| `piglet` and `friendly-python` | [PsiACE/skills](https://github.com/PsiACE/skills/tree/2265aed05caf199426a8062461e2c9901be996d8/skills) |
+
+Commit pins live in `src/landing/skills.py` and change through normal code review. gh records provenance for directory installs; Landing selects a separate cache root for each pinned revision. See [gh skill install](https://cli.github.com/manual/gh_skill_install) for native pinning and metadata behavior.
+
+gh's skills commands are in preview; the container and dogfood workflows use the verified 2.97.0 release. The runtime invokes gh from the executing host's PATH. If your environment wraps gh, select the intended binary through PATH; Landing does not bypass your credential policy or extract a token from gh.
 
 ## Execution and service
 
