@@ -6,6 +6,8 @@ landing [--db PATH | --server URL] [--github-repository OWNER/REPO] [--skill-dir
 
 Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. From a source checkout, prefix commands with `uv run`.
 
+Use `landing --help` or `landing COMMAND --help` to discover options; `-h` also works. `landing --version` prints the installed version. Typer provides shell completion through `--install-completion` and `--show-completion`. Commands run without interactive prompts, write results to stdout, and write diagnostics to stderr. `--json` supplies structured output for scripts.
+
 ## Global options
 
 | Option | Meaning |
@@ -14,6 +16,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 | `--server URL` | Remote service; defaults to `LANDING_SERVER`. |
 | `--github-repository OWNER/REPO` | Supply GitHub repository context locally or on `serve`; defaults to `LANDING_GITHUB_REPOSITORY`. A remote client cannot configure the server's environment. |
 | `--skill-dir PATH` | Repeatable additional trusted skill root for local execution or `serve`. Remote clients must configure skills on the server. Project skills take precedence over these roots, followed by configured roots and `~/.agents/skills`. |
+| `--version` | Print the installed version and exit. |
 
 See [Configuration](configuration.md) for environment defaults and authorization.
 
@@ -67,3 +70,5 @@ Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatab
 | `130` | Waiting was interrupted with Ctrl-C. |
 
 Ctrl-C during local creation cancels its action and closes owned shell processes. Ctrl-C during remote waiting leaves the action running; request cancellation explicitly. The [GitHub event runner](../guides/github.md) has separate advisory decision semantics.
+
+Syntax and option-validation errors use Typer's standard diagnostic on stderr with exit code `2`. A valid command that encounters invalid task input or local configuration also returns `2`; with `--json`, it writes an `error` object to stdout.

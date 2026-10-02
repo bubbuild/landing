@@ -862,6 +862,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "typer" },
     { name = "uvicorn" },
 ]
 
@@ -883,6 +884,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-settings", specifier = ">=2.12" },
+    { name = "typer", specifier = ">=0.27.2" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 

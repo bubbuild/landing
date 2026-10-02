@@ -52,7 +52,8 @@ Comment and scheduled workflows must exist on the default branch to receive even
 For the bundled workflows, set these repository values using your normal gh login:
 
 ```bash
-gh variable set LANDING_MODEL --repo example/team-project --body "openai:gpt-4.1"
+gh variable set LANDING_MODEL --repo example/team-project --body "deepseek:deepseek-flash"
+gh variable set LANDING_API_BASE --repo example/team-project --body "https://api.deepseek.com"
 gh secret set LANDING_API_KEY --repo example/team-project
 ```
 

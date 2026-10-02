@@ -1,8 +1,7 @@
-"""Conventional argparse commands; local and remote calls share action contracts."""
+"""Typer commands; local and remote calls share action contracts."""
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 import mimetypes
@@ -10,69 +9,142 @@ import os
 import sys
 from contextlib import closing
 from functools import partial
+from importlib.metadata import version
 from pathlib import Path
-from typing import NoReturn
+from types import SimpleNamespace
+from typing import Annotated, NoReturn
 
 import httpx
+import typer
 from pydantic import ValidationError
 
 from landing.commands import COMMANDS
 from landing.models import TERMINAL, Action, ActionRequest, FileInput
 from landing.tasks import Tasks
 
+app = typer.Typer(
+    help="Explain CI failures, delegate fixes, and review evidence.",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+actions = typer.Typer(help="Inspect and control recorded actions.", no_args_is_help=True)
+app.add_typer(actions, name="action")
 
-class Parser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:
-        raise ValueError(message)
+JsonOutput = Annotated[bool, typer.Option("--json", help="Print records as JSON.")]
+Limit = Annotated[int, typer.Option(min=1, max=100, help="Maximum records to return.")]
+ActionId = Annotated[str, typer.Argument(metavar="ID")]
 
 
-def parser() -> Parser:
-    app = Parser(prog="landing", description="Explain CI failures, delegate fixes, and review evidence.")
-    app.add_argument("--db", type=Path, help="SQLite database path (local calls only)")
-    app.add_argument("--server", default=os.getenv("LANDING_SERVER"), help="Remote Landing server URL")
-    app.add_argument(
-        "--skill-dir", type=Path, action="append", default=[], help="Additional trusted skill root (repeatable)"
+def show_version(value: bool) -> None:
+    if value:
+        typer.echo(version("landing"))
+        raise typer.Exit()
+
+
+@app.callback()
+def configure(
+    ctx: typer.Context,
+    db: Annotated[Path | None, typer.Option(help="Local SQLite path; overrides LANDING_DB.")] = None,
+    server: Annotated[str | None, typer.Option(envvar="LANDING_SERVER", help="Remote Landing server URL.")] = None,
+    skill_dir: Annotated[list[Path] | None, typer.Option(help="Additional trusted skill root (repeatable).")] = None,
+    github_repository: Annotated[
+        str | None,
+        typer.Option(envvar="LANDING_GITHUB_REPOSITORY", help="Repository context for the prepared gh CLI."),
+    ] = None,
+    version: Annotated[
+        bool,
+        typer.Option("--version", callback=show_version, is_eager=True, help="Print the installed version and exit."),
+    ] = False,
+) -> None:
+    ctx.obj = {"db": db, "server": server, "skill_dir": skill_dir or [], "github_repository": github_repository}
+
+
+def delegate(
+    ctx: typer.Context,
+    instruction: Annotated[str | None, typer.Argument(help="Work to delegate; alternatively supply --input.")] = None,
+    input_files: Annotated[
+        list[str] | None, typer.Option("--input", metavar="FILE", help="UTF-8 evidence; - reads stdin.")
+    ] = None,
+    workspace: Annotated[str | None, typer.Option(help="Local directory or registered remote workspace.")] = None,
+    check: Annotated[
+        list[str] | None, typer.Option(metavar="COMMAND", help="Required validation (repeatable).")
+    ] = None,
+    json_output: JsonOutput = False,
+    output: Annotated[Path | None, typer.Option(help="Also write the result to this file.")] = None,
+    detach: Annotated[bool, typer.Option(help="Return on remote admission.")] = False,
+) -> NoReturn:
+    execute(
+        ctx,
+        command=ctx.info_name,
+        instruction=instruction,
+        input=input_files or [],
+        workspace=workspace,
+        check=check or [],
+        json=json_output,
+        output=output,
+        detach=detach,
     )
-    app.add_argument(
-        "--github-repository",
-        default=os.getenv("LANDING_GITHUB_REPOSITORY"),
-        help="Supply GitHub repository context for the prepared gh CLI",
-    )
-    commands = app.add_subparsers(dest="command", required=True)
-    for name in COMMANDS:
-        cmd = commands.add_parser(name)
-        cmd.add_argument("instruction", nargs="?")
-        cmd.add_argument("--input", action="append", default=[], metavar="FILE")
-        cmd.add_argument("--workspace")
-        cmd.add_argument("--check", action="append", default=[], metavar="COMMAND", help="Required validation command")
-        cmd.add_argument("--json", action="store_true")
-        cmd.add_argument("--output", type=Path)
-        cmd.add_argument("--detach", action="store_true")
-    actions = commands.add_parser("action").add_subparsers(dest="operation", required=True)
-    for operation in ("list", "view", "logs", "watch", "cancel", "retry"):
-        cmd = actions.add_parser(operation)
-        if operation != "list":
-            cmd.add_argument("id")
-        if operation in {"list", "logs"}:
-            cmd.add_argument("--limit", type=int, default=50)
-        if operation == "list":
-            cmd.add_argument("--cursor")
-        if operation == "logs":
-            cmd.add_argument("--after", type=int, default=0)
-        if operation == "watch":
-            cmd.add_argument("--exit-status", action="store_true")
-        if operation == "retry":
-            cmd.add_argument("--detach", action="store_true")
-        cmd.add_argument("--json", action="store_true")
-    serve = commands.add_parser("serve")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8080)
-    serve.add_argument("--workspace", action="append", default=[], metavar="NAME=PATH")
-    return app
+
+
+for name, help_text in {
+    "triage": "Identify a problem and its acceptance criteria.",
+    "fix": "Repair the delegated problem and validate changes.",
+    "review": "Evaluate a candidate against independent evidence.",
+    "explain": "Explain the supplied question or evidence.",
+}.items():
+    app.command(name=name, help=help_text)(delegate)
+
+
+@actions.command("list")
+def list_actions(
+    ctx: typer.Context, limit: Limit = 50, cursor: str | None = None, json_output: JsonOutput = False
+) -> NoReturn:
+    execute(ctx, command="action", operation="list", limit=limit, cursor=cursor, json=json_output)
+
+
+@actions.command("logs")
+def logs(
+    ctx: typer.Context,
+    action_id: ActionId,
+    after: Annotated[int, typer.Option(min=0, help="Return events after this cursor.")] = 0,
+    limit: Limit = 50,
+    json_output: JsonOutput = False,
+) -> NoReturn:
+    execute(ctx, command="action", operation="logs", id=action_id, after=after, limit=limit, json=json_output)
+
+
+def inspect_action(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = False) -> NoReturn:
+    execute(ctx, command="action", operation=ctx.info_name, id=action_id, json=json_output)
+
+
+actions.command("view", help="Read an action's status and result.")(inspect_action)
+actions.command("cancel", help="Cancel queued or running work.")(inspect_action)
+
+
+@actions.command()
+def watch(
+    ctx: typer.Context,
+    action_id: ActionId,
+    exit_status: Annotated[bool, typer.Option(help="Use the action's completion and gate exit code.")] = False,
+    json_output: JsonOutput = False,
+) -> NoReturn:
+    """Wait for an action to finish."""
+    execute(ctx, command="action", operation="watch", id=action_id, exit_status=exit_status, json=json_output)
+
+
+@actions.command()
+def retry(
+    ctx: typer.Context,
+    action_id: ActionId,
+    detach: Annotated[bool, typer.Option(help="Return on remote admission.")] = False,
+    json_output: JsonOutput = False,
+) -> NoReturn:
+    """Retry a terminal action using its original request."""
+    execute(ctx, command="action", operation="retry", id=action_id, detach=detach, json=json_output)
 
 
 def database(args) -> Path:
-    return args.db or Path(os.getenv("LANDING_DB", "~/.local/share/landing/landing.sqlite3")).expanduser()
+    return (args.db or Path(os.getenv("LANDING_DB", "~/.local/share/landing/landing.sqlite3"))).expanduser()
 
 
 def build_request(args) -> ActionRequest:
@@ -234,15 +306,22 @@ def validate_args(args) -> None:
     if getattr(args, "detach", False) and not args.server:
         message = "--detach requires --server."
         raise ValueError(message)
-    if hasattr(args, "limit") and not 1 <= args.limit <= 100:
-        message = "--limit must be between 1 and 100."
-        raise ValueError(message)
-    if getattr(args, "after", 0) < 0:
-        message = "--after must be nonnegative."
-        raise ValueError(message)
 
 
-def serve(args) -> None:
+@app.command()
+def serve(
+    ctx: typer.Context,
+    host: Annotated[str, typer.Option(help="Listen address.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(min=1, max=65535, help="Listen port.")] = 8080,
+    workspace: Annotated[
+        list[str] | None, typer.Option(metavar="NAME=PATH", help="Register a workspace (repeatable).")
+    ] = None,
+) -> NoReturn:
+    """Run the HTTP service with registered workspaces."""
+    execute(ctx, command="serve", host=host, port=port, workspace=workspace or [], json=False)
+
+
+def start_server(args) -> None:
     import uvicorn
 
     from landing.server import create_app
@@ -272,21 +351,28 @@ def serve(args) -> None:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    arguments = sys.argv[1:] if argv is None else argv
+def execute(ctx: typer.Context, **parameters) -> NoReturn:
+    args = SimpleNamespace(**ctx.obj, **parameters)
     try:
-        args = parser().parse_args(arguments)
         validate_args(args)
         if args.command == "serve":
-            serve(args)
-            return 0
-        return asyncio.run(remote(args) if args.server else local(args))
+            start_server(args)
+            code = 0
+        else:
+            code = asyncio.run(remote(args) if args.server else local(args))
     except (ValueError, ValidationError, OSError, KeyError) as exc:
-        if "--json" in arguments:
+        if args.json:
             print(json.dumps({"error": {"code": "invalid_request", "message": str(exc)}}))
-        print(str(exc), file=sys.stderr)
-        return 2
+        typer.echo(str(exc), err=True)
+        code = 2
     except httpx.HTTPError:
-        return 1
-    except KeyboardInterrupt:
-        return 130
+        code = 1
+    raise typer.Exit(code)
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        app(args=argv, prog_name="landing")
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    return 0

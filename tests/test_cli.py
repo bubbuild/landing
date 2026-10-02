@@ -1,8 +1,9 @@
 import json
 
 import pytest
+from typer.testing import CliRunner
 
-from landing.cli import main
+from landing.cli import app, main
 from tests.conftest import completion
 
 
@@ -49,6 +50,26 @@ def test_usage_errors_have_exit_two_and_json(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_request"
     assert main(["explain", "Explain the failure.", "--detach"]) == 2
     assert "--detach requires --server" in capsys.readouterr().err
+    assert main(["action", "list", "--limit", "0", "--json"]) == 2
+    diagnostic = capsys.readouterr()
+    assert not diagnostic.out
+    assert "--limit" in diagnostic.err
+
+
+def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):
+    from tests.test_repository import report_reference
+
+    responses, _ = model
+    responses.append(report_reference)
+    destination = tmp_path / "result.json"
+    result = CliRunner().invoke(
+        app,
+        ["--db", str(tmp_path / "landing.sqlite3"), "explain", "--input", "-", "--output", str(destination), "--json"],
+        input="reference=approved",
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["result"] == "Deployment reference: approved"
+    assert json.loads(destination.read_text())["result"] == "Deployment reference: approved"
 
 
 def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, capsys):
