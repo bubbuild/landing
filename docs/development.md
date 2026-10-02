@@ -35,7 +35,7 @@ The test suite replaces external model requests with deterministic responses; th
 | Fixer candidate | The agent validates and publishes the delegated candidate using repository procedures. | Main checks and review evaluate it again before human acceptance. |
 | Release completion and daily maintenance | Issuer follows existing problems and release evidence. | A build or merged PR is not proof of deployed recovery. |
 
-The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
+The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./` and select independent tool and skill collections through `.github/landing.yml`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 
 After each useful or failed delegation, retain the observations in the issue or PR: the evidence it used, mistaken assumptions, proposed repair layer, rejected changes, human edits, and eventual results. Improve project instructions, tools, code, or meaningful regression cases based on those observations.
 

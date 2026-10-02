@@ -32,7 +32,7 @@ def delegate(tmp_path, api_base, command, checks):
         GITHUB_OUTPUT=str(tmp_path / "outputs.txt"),
         GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"),
     )
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 -- fixed Python module entry point in a disposable workspace.
         [sys.executable, "-m", "landing.action"],
         cwd=tmp_path,
         env=environment,

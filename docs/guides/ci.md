@@ -49,7 +49,7 @@ The Action installs its own runtime in an isolated environment. It uses the call
 
 Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns `status: skipped` without invoking the model. Failed execution or missing publication fails the step. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
 
-Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, then retain the database as an artifact.
+Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, select per-mode capabilities with `LANDING_CONFIG: .github/landing.yml`, then retain the database as an artifact.
 
 ## Ordinary CI commands
 
