@@ -29,6 +29,8 @@ The suite replaces external model requests with deterministic responses while ru
 
 Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
 
+The release workflow also deploys documentation from main on push or manual dispatch. Package publication runs only for a published release; documentation-only runs do not trigger issuer follow-up. Pages artifacts use attempt-specific names so deployment retries select one artifact.
+
 ```text
 Issue or failure -> Delegated work -> Candidate PR -> Native checks
       ^                                                 |

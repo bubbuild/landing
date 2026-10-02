@@ -1,12 +1,16 @@
 name: release-main
 
 on:
+  push:
+    branches: [main]
+  workflow_dispatch:
   release:
     types: [published]
 
 jobs:
 
   set-version:
+    if: github.event_name == 'release'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +34,7 @@ jobs:
           path: pyproject.toml
 
   publish:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     needs: [set-version]
     steps:
@@ -54,6 +59,10 @@ jobs:
 
   deploy-docs:
     needs: publish
+    if: ${{ !cancelled() && (github.event_name != 'release' || needs.publish.result == 'success') }}
+    concurrency:
+      group: landing-pages
+      cancel-in-progress: false
     permissions:
       contents: read
       pages: write
