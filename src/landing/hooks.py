@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from bub import hookimpl
 from bub.builtin.hook_impl import BuiltinImpl
-from bub.hooks.interception import LlmCallDecision, ToolCallDecision
+from bub.hooks.interception import LlmCallDecision
 from bub.utils import workspace_from_state
 from pydantic import ValidationError
 
@@ -52,11 +52,6 @@ class LandingHooks:
     def before_llm_call(self, request, state):
         if reason := state.get("landing_no_update"):
             return LlmCallDecision.finish(reason)
-
-    @hookimpl
-    def before_tool_call(self, call, state):
-        if reason := state.get("landing_no_update"):
-            return ToolCallDecision.replace(reason)
 
     @hookimpl
     def after_llm_call(self, request, result, state) -> None:
