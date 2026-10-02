@@ -267,7 +267,7 @@ def test_text_without_required_publication_is_failed_work(tmp_path, platform, mo
 
 
 def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platform, model):
-    responses, _ = model
+    responses, requests = model
     state = json.loads(platform.read_text())
     state["head"] = "new-candidate"
     platform.write_text(json.dumps(state))
@@ -276,16 +276,23 @@ def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platfo
         "event": "COMMENT",
         "body": github.marker("gatekeeper", "superseded") + "\nReviewed the original candidate.",
     }
+
+    async def replace_candidate(**kwargs):
+        state["head"] = "new-candidate"
+        platform.write_text(json.dumps(state))
+        return completion(tool="fs_write", arguments={"path": "review.json", "content": json.dumps(review)})
+
     responses.extend([
-        completion(tool="fs_write", arguments={"path": "review.json", "content": json.dumps(review)}),
+        replace_candidate,
         completion(
             tool="bash", arguments={"command": "gh api repos/example/landing/pulls/42/reviews --input review.json"}
         ),
         completion(tool="decide", arguments={"decision": "allow"}),
         completion("Published the original candidate review."),
     ])
-    action = asyncio.run(
-        github.run(
+
+    async def run():
+        return await github.run(
             "example/landing",
             "gatekeeper",
             "Review the candidate.",
@@ -296,7 +303,14 @@ def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platfo
             key="superseded",
             checks=[],
         )
-    )
+
+    with pytest.raises(ValueError, match="PR head changed"):
+        asyncio.run(run())
+    assert not requests
+    assert not json.loads(platform.read_text())["reviews"]
+    state["head"] = "candidate-head"
+    platform.write_text(json.dumps(state))
+    action = asyncio.run(run())
     assert action.status == "failed"
     assert action.error is not None
     assert "PR head changed" in action.error["message"]

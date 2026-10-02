@@ -113,7 +113,9 @@ def repository_context(repository: str) -> FileInput:
     )
 
 
-def pull_target(repository: str, number: int, head: str, event: dict | None) -> tuple[bool, int, str, dict]:
+def pull_target(
+    repository: str, number: int, head: str, event: dict | None, *, review: bool = False
+) -> tuple[bool, int, str, dict]:
     comment = (event or {}).get("comment", {})
     thread = (comment.get("in_reply_to_id") or comment["id"]) if "pull_request_review_id" in comment else 0
     is_pr = bool(head) or "pull_request" in (event or {}) or "pull_request" in (event or {}).get("issue", {})
@@ -121,10 +123,26 @@ def pull_target(repository: str, number: int, head: str, event: dict | None) -> 
     if number and not is_pr:
         target = json.loads(gh(["api", f"repos/{repository}/issues/{number}"], repository))
         is_pr = "pull_request" in target
-    if is_pr and not head:
+    if is_pr and (not head or (review and not thread)):
         target = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
+        if review and not thread and head and target["head"]["sha"] != head:
+            message = "The PR head changed; delegate a new review for the current candidate."
+            raise ValueError(message)
         head = target["head"]["sha"]
     return is_pr, thread, head, target
+
+
+def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool | None:
+    executable = shutil.which("git")
+    if not head or not checked_revision or not executable:
+        return None
+    ancestry = subprocess.run(  # noqa: S603 -- inspect existing local objects; never fetch or change the checkout.
+        [executable, "merge-base", "--is-ancestor", "--", head, checked_revision],
+        cwd=workspace,
+        capture_output=True,
+        timeout=10,
+    )
+    return ancestry.returncode == 0 if ancestry.returncode in {0, 1} else None
 
 
 async def run(
@@ -144,13 +162,14 @@ async def run(
     skill_dirs: Iterable[Path] = (),
 ) -> Action:
     stamp = marker(mode, key)
-    is_pr, thread, head, target = pull_target(repository, number, head, event)
+    is_pr, thread, head, target = pull_target(repository, number, head, event, review=mode == "gatekeeper")
     expected_review = is_pr and mode == "gatekeeper" and not thread
     source = {
         "repository": repository,
         "number": number,
         "candidate_head": head,
         "ci_checkout": checked_revision,
+        "ci_checkout_contains_candidate": checkout_contains(workspace, head, checked_revision),
         "native_run_id": run_id,
         "thread_comment_id": thread,
         "publication_marker": stamp,
@@ -185,7 +204,8 @@ async def run(
         f"Include {stamp} at the start of the published body to identify this delivery. "
         "Read the applicable templates and repository instructions. Do not merge or change credentials. "
         "Claim publication only after the API confirms it. Refresh the current PR head before publishing. "
-        "Keep the candidate head and the actual CI checkout revision distinct."
+        "Keep the candidate head and the actual CI checkout revision distinct. "
+        "Use supplied target details, review history and checkout relationship directly; fetch missing or changing facts only."
     )
     if thread:
         guidance += f" Reply to the question in the original inline thread using the review-comment replies API with comment ID {thread}; do not open a new review or conversation comment. Changing work mode requires explicit delegation."

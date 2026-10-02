@@ -202,8 +202,9 @@ class Runtime:
         self.capabilities(request.mode, invocation)
         if state is None:
             state = await self.framework.build_state({"_runtime_agent": self.agent.bub}, session_id)
-        state.update(landing_mode=request.mode, _runtime_workspace=str(workspace))
+        state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
         state.pop("landing_decision", None)
+        state.pop("landing_llm_call", None)
         state.pop("allowed_skills", None)
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
         self.agent.bub.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
@@ -223,7 +224,13 @@ class Runtime:
                     if event.kind == "final" and "text" in event.data:
                         output = str(event.data["text"])
                         self.tasks.output(action_id, output)
+        except Exception as exc:
+            self.hooks.record_failure(action_id, state, exc)
+            raise
         finally:
+            if stream.error is not None:
+                self.hooks.record_failure(action_id, state, stream.error)
+            state.pop("landing_llm_call", None)
             if stream_state is not None:
                 stream_state.error, stream_state.usage = stream.error, stream.usage
         if stream.error is not None:

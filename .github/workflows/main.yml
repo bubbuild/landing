@@ -120,7 +120,9 @@ jobs:
       (github.event_name != 'pull_request' ||
        (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft &&
         (needs.feedback-scope.outputs.implementation == 'true' ||
-         needs.feedback-scope.outputs.documentation == 'true' || contains(needs.*.result, 'failure'))))
+         needs.feedback-scope.outputs.documentation == 'true' || contains(needs.*.result, 'failure')))) &&
+      (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0') ||
+       contains(needs.*.result, 'failure'))
     permissions:
       contents: write
       issues: write
@@ -137,6 +139,6 @@ jobs:
       instruction: >-
         Native check results: ${{ toJSON(needs) }}. Actual checkout revision: ${{ github.sha }}.
         Ignore the Landing feedback job when assessing native check completion.
-        ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'Review this PR and its linked acceptance criteria using the prepared gh CLI.' || 'Maintain one issue per recurring CI problem on this default-branch revision using the prepared gh CLI.' }}
+        ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'Review the affected behavior in this PR. Use supplied check results and relevant review history; investigate only unresolved questions and publish useful findings or a brief clean verdict.' || 'Triage only the native failures in these supplied results. Read the affected job logs using gh, reuse a matching issue, and record an actionable current problem. Do not create issues for resolved historical failures.' }}
         ${{ github.event_name == 'pull_request' && format('Selected implementation files: {0}. Selected documentation files: {1}. Generated site/** output is outside the review scope; inspect its source when needed. For documentation, assess command, configuration and workflow accuracy. For implementation, assess affected user behavior.', needs.feedback-scope.outputs.implementation-files || '[]', needs.feedback-scope.outputs.documentation-files || '[]') || '' }}
     secrets: inherit

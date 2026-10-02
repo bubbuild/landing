@@ -30,10 +30,10 @@ The test suite replaces external model requests with deterministic responses; th
 | Trigger | Work | Evidence and human decision |
 | --- | --- | --- |
 | Candidate PR and native CI | Gatekeeper evaluates the diff and linked acceptance criteria. | Checks run first; the recommendation is advisory and states the inspected revision. |
-| Default-branch checks | Issuer maintains actionable CI work items. | Search existing issues, record recurrence, and require recovery evidence before closing. |
+| Failed default-branch checks | Issuer follows the affected native failures. | Healthy checks skip feedback; resolved historical defects do not create new work. |
 | Maintainer delegation | `explain` answers, `triage` tracks, `fix` repairs, or `review` evaluates. | The requested mode does one task; maintainers choose the next action. |
 | Fixer candidate | The agent validates and publishes the delegated candidate using repository procedures. | Main checks and review evaluate it again before human acceptance. |
-| Release completion and daily maintenance | Issuer follows existing problems and release evidence. | A build or merged PR is not proof of deployed recovery. |
+| Release completion and daily maintenance | Issuer follows the triggering release or current open issues. | Verify their acceptance criteria; a build or merged PR is not proof of deployed recovery. |
 
 The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./` and select independent tool and skill collections through `.github/landing.yml`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 

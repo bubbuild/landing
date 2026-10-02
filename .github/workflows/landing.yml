@@ -53,8 +53,8 @@ permissions:
   actions: write
 
 concurrency:
-  group: landing-${{ github.event_name }}-${{ inputs.number || github.event.issue.number || github.ref }}
-  cancel-in-progress: false
+  group: landing-${{ github.event_name }}-${{ inputs.command }}-${{ inputs.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && inputs.command == 'review' }}
 
 jobs:
   action:

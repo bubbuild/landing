@@ -117,3 +117,20 @@ def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkey
     assert json.loads(capsys.readouterr().out)["status"] == "completed"
     assert (candidate / "answer.txt").read_text() == "42"
     assert not (caller / "answer.txt").exists()
+
+
+def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tmp_path, model, capsys):
+    responses, _ = model
+    response = completion(tool="bash", arguments={"command": "unused"})
+    response.choices[0].message.tool_calls[0].function.arguments = '{"command": "sensitive-task-value"'
+    responses.append(response)
+    database = str(tmp_path / "landing.sqlite3")
+    assert main(["--db", database, "review", "Review the candidate.", "--json"]) == 1
+    action = json.loads(capsys.readouterr().out)
+    assert action["status"] == "failed"
+    assert action["decision"] is None
+    assert main(["--db", database, "action", "logs", action["id"]]) == 0
+    diagnostic = capsys.readouterr().out
+    assert "json_invalid" in diagnostic
+    assert "bash" in diagnostic
+    assert "sensitive-task-value" not in diagnostic

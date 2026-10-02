@@ -3,7 +3,7 @@ name: landing-review
 description: Review Landing changes against its CLI, HTTP and CI contracts, SDK reuse, SQLite lifecycle, permissions and independent acceptance evidence.
 ---
 
-Use the affected Landing entry point and its owning layer to select the relevant contracts below. An internal refactor does not require unrelated adapters to change.
+Select the affected Landing entry point and owning layer. The contracts below help identify an unresolved question; they are not a checklist to exhaust or copy into a review. An internal refactor does not require unrelated adapters to change. Once source inspection or a focused counterexample resolves the question, reuse the native checks and conclude.
 
 - CLI, HTTP and CI share the action contract. Check parity when the change affects that contract.
 - Issuer, fixer, gatekeeper and explainer use one Bub 0.5.0 SDK execution path. Reuse native configuration, tools, skill discovery, state and hooks rather than adding infrastructure or private-state patches.

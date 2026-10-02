@@ -56,6 +56,10 @@ jobs:
           git var GIT_AUTHOR_IDENT
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
+      - name: Prepare current maintenance issues
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        id: issues
+        run: gh issue list --state open --limit 100 --json number,title,body,url --jq '"issues=" + tojson' >> "$GITHUB_OUTPUT"
       - name: Handle the event or daily maintenance
         uses: ./
         env:
@@ -68,7 +72,10 @@ jobs:
         with:
           command: triage
           delivery-key: ${{ format('duty:{0}', github.event.comment.id || github.run_id) }}
-          instruction: Review default-branch checks, release evidence, and existing maintenance issues using gh. Reuse existing issues; reopen only a real recurrence and close only after verifying their acceptance criteria. Record concrete evidence and acceptance criteria. Do not create work for healthy checks or claim deployment recovery from a build.
+          instruction: >-
+            ${{ github.event_name == 'workflow_run' && format('Follow up release run {0}, conclusion {1}. Inspect its failed jobs or verify recovery for a matching open issue; other runs are outside this task.', github.event.workflow_run.id, github.event.workflow_run.conclusion) || 'Follow up these current open issues using their acceptance criteria and the latest relevant evidence. Update or close issues when supported; investigate missing evidence only for the affected issue. Do not scan resolved historical failures for new work.' }}
+            Current open issues: ${{ steps.issues.outputs.issues || '[]' }}.
+            Reuse the supplied issue details. Do not create work for healthy checks or claim deployment recovery from a build. Reply briefly with useful actions or unresolved limitations.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -53,6 +53,8 @@ async def explain():
 
 These are native SDK events: `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`. A `final` event ends a model step; consume the complete stream to finish the task. Native model errors and usage remain available on the stream. Landing's validation or publication failures also produce an error and persist in the action record. Task errors retain native SDK error kinds; other execution failures use `unknown`.
 
+For a failed model stream, action logs retain available `model.failure` diagnostics from the public `after_llm_call` hook: the last call's ID, completion status, tool names, argument sizes and hashes, and native validation error types when present. They omit argument contents and do not establish the provider as the cause. Read them with `landing action logs ID` or the HTTP events endpoint.
+
 The four action commands and `mode` are native agent tools available through comma command dispatch. `,mode` reads the session's current mode; `,mode gatekeeper` selects a mode for subsequent ordinary prompts without running a task. Each action command selects its mode before executing. Selection persists in the workspace's SQLite tape and is isolated by session. Content parts remain evidence and do not dispatch comma commands.
 
 Supplying `state` bypasses hook-based state loading, as in the native SDK. The runtime binds the current agent and selected task workspace; a supplied native `Environment` remains authoritative. Per-call tools and skills can only narrow the selected mode's [configured capabilities](configuration.md#mode-capabilities). The caller serializes turns within a session.

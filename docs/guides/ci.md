@@ -59,7 +59,9 @@ Use your CI system's existing path filters and job conditions to select work bef
 Review the selected documentation changes for accurate commands and configuration. Generated site/** output is excluded; inspect related source when it resolves a specific claim. Native checks have passed for the supplied checkout revision.
 ```
 
-Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Native failures still receive feedback. Default-branch triage and explicit workflow dispatch remain available regardless of these automatic PR filters.
+Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Healthy default-branch checks also skip feedback; native failures receive triage for the affected jobs. A new automatic PR review cancels superseded automatic feedback, leaving native checks independent. Explicit candidate dispatch and comment delegations remain available.
+
+Self-checks install Landing from the candidate checkout. A comment task can instead use the default-branch runtime with a selected PR workspace; changing that workspace does not reload the installed runtime. Start fresh candidate CI to verify changes to Landing itself.
 
 ## Ordinary CI commands
 
