@@ -1,7 +1,7 @@
 [project]
 site_name = "Landing"
 repo_url = "https://github.com/bubbuild/landing"
-site_url = "https://bubbuild.github.io/landing"
+site_url = "https://getlanding.dev/"
 site_description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 site_author = "Chojan Shang"
 edit_uri = "edit/main/docs/"

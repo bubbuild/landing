@@ -30,9 +30,9 @@ classifiers = [
 landing = "landing.cli:main"
 
 [project.urls]
-Homepage = "https://bubbuild.github.io/landing/"
+Homepage = "https://getlanding.dev/"
 Repository = "https://github.com/bubbuild/landing"
-Documentation = "https://bubbuild.github.io/landing/"
+Documentation = "https://getlanding.dev/"
 
 [dependency-groups]
 dev = [
