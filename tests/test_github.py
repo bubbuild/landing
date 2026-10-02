@@ -40,7 +40,8 @@ if "--input" in args:
 elif endpoint.endswith("/permission"):
     print(json.dumps({"permission": state["permission"]}))
 elif "/reviews/" in endpoint:
-    print(json.dumps(state["reviews"][0]))
+    number = int(endpoint.rsplit("/", 1)[-1])
+    print(json.dumps(next(record for record in state["reviews"] if record["id"] == number)))
 elif "/comments/" in endpoint:
     number = int(endpoint.rsplit("/", 1)[-1])
     print(json.dumps(next(record for record in state["comments"] if record["id"] == number)))
@@ -189,10 +190,19 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
 
 def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platform, invoke, model):
     state = json.loads(platform.read_text())
-    state["reviews"] = [{"id": 9, "body": github.marker("gatekeeper", "earlier") + "\nA retry finding."}]
+    state["reviews"] = [
+        {"id": 9, "body": github.marker("gatekeeper", "earlier") + "\nA retry finding."},
+        {"id": 10, "body": "", "user": {"login": "maintainer"}},
+    ]
     state["target"] = {"title": "Bound retries", "body": "Keep the initial request outside the retry loop."}
     state["comments"] = [
-        {"id": 17, "body": "The loop controls only retry requests.", "path": "retry.py", "line": 7},
+        {
+            "id": 17,
+            "body": "The loop controls only retry requests.",
+            "path": "retry.py",
+            "line": 7,
+            "pull_request_review_id": 9,
+        },
         {"id": 20, "in_reply_to_id": 19, "body": "Unrelated deployment discussion."},
     ]
     platform.write_text(json.dumps(state))
@@ -202,7 +212,7 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
         "comment": {
             "id": 18,
             "in_reply_to_id": 17,
-            "pull_request_review_id": 9,
+            "pull_request_review_id": 10,
             "body": "Does this affect the initial attempt?",
             "path": "retry.py",
             "line": 7,
@@ -245,7 +255,7 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
     assert action.mode == "gatekeeper"
     assert action.status == "completed"
     state = json.loads(platform.read_text())
-    assert len(state["reviews"]) == 1
+    assert len(state["reviews"]) == 2
     assert state["comments"][-1]["in_reply_to_id"] == 17
     assert "initial attempt is unaffected" in state["comments"][-1]["body"]
 

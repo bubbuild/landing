@@ -40,6 +40,15 @@ def marker(mode: Mode, key: str) -> str:
     return f"<!-- landing:{mode}:{digest} -->"
 
 
+def originating_review(repository: str, number: int, comment: dict) -> dict:
+    origin = comment
+    if parent := comment.get("in_reply_to_id"):
+        origin = json.loads(gh(["api", f"repos/{repository}/pulls/comments/{parent}"], repository))
+    return json.loads(
+        gh(["api", f"repos/{repository}/pulls/{number}/reviews/{origin['pull_request_review_id']}"], repository)
+    )
+
+
 def delegation(event: dict, repository: str, prefix: str = "/landing") -> tuple[str, str, int] | None:
     if event["repository"]["full_name"].lower() != repository.lower():
         message = "The event belongs to another repository."
@@ -58,15 +67,7 @@ def delegation(event: dict, repository: str, prefix: str = "/landing") -> tuple[
         command = parts[1]
         instruction = "\n".join([parts[2] if len(parts) > 2 else "", *first[1:]]).strip()
     elif "pull_request_review_id" in comment:
-        review = json.loads(
-            gh(
-                [
-                    "api",
-                    f"repos/{repository}/pulls/{event['pull_request']['number']}/reviews/{comment['pull_request_review_id']}",
-                ],
-                repository,
-            )
-        )
+        review = originating_review(repository, event["pull_request"]["number"], comment)
         if not (review.get("body") or "").startswith("<!-- landing:"):
             return None
         if not comment.get("in_reply_to_id") and comment["user"]["login"] == review.get("user", {}).get("login"):
