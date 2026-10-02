@@ -4,7 +4,7 @@
 landing [--db PATH | --server URL] [--github-repository OWNER/REPO] [--skill-dir PATH] COMMAND
 ```
 
-Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. Install the CLI with `uv tool install "landing==0.1.0"`; from a Landing source checkout, use `uv run landing`. See [Local use](../guides/local.md) for a task example.
+Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. Install the CLI with `uv tool install "landing==0.1.1"`; from a Landing source checkout, use `uv run landing`. See [Local use](../guides/local.md) for a task example.
 
 `--help` and `-h` show options; `--version` prints the installed version. Typer supplies `--install-completion` and `--show-completion`. Commands are noninteractive, write results to stdout, and diagnostics to stderr. `--json` returns structured records.
 
@@ -76,7 +76,7 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 
 ## GitHub Action
 
-`bubbuild/landing@0.1.0` runs the same event adapter. [Get started](../get-started.md) shows complete admission and environment preparation.
+`bubbuild/landing@0.1.1` runs the same event adapter. [Get started](../get-started.md) shows complete admission and environment preparation.
 
 | Input | Contract |
 | --- | --- |

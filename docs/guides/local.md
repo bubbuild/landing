@@ -3,7 +3,7 @@
 Run a task against your own checkout with Python 3.12 or later, uv, and a POSIX host. Install Landing as an isolated tool, then prepare your project dependencies and checks:
 
 ```bash
-uv tool install "landing==0.1.0"
+uv tool install "landing==0.1.1"
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 ```

@@ -28,7 +28,7 @@ For explicit delegations that must be preserved, GitHub.com supports `queue: max
 
 ## Use an ordinary CI command
 
-Install Landing with `uv tool install "landing==0.1.0"` and configure the model on the executing host. Run commands from your project checkout or select one with `--workspace`.
+Install Landing with `uv tool install "landing==0.1.1"` and configure the model on the executing host. Run commands from your project checkout or select one with `--workspace`.
 
 Preserve the native check's exit status when asking for an explanation:
 

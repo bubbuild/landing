@@ -1,5 +1,8 @@
-name: Landing
-description: Delegate reviews, fixes, issue triage, and explanations in your prepared environment.
+name: Landing CI
+description: Review code, triage issues, fix problems, and explain failures with your own model and tools.
+branding:
+  icon: check-circle
+  color: blue
 inputs:
   command:
     description: User action (review, fix, triage, or explain).

@@ -143,3 +143,31 @@ def test_public_origin_is_used_for_pagination(tmp_path, model):
 def test_public_origin_rejects_non_origin_urls(tmp_path, origin):
     with pytest.raises(ValueError, match=r"HTTP\(S\) origin"):
         create_app(tmp_path / "landing.sqlite3", base_url=origin)
+
+
+@pytest.mark.parametrize("token", [None, "test-secret"])
+def test_api_documentation_and_authenticated_requests(tmp_path, model, token):
+    responses, _ = model
+    responses.append(completion("Explained through the documented API."))
+    with TestClient(create_app(tmp_path / "landing.sqlite3", token=token)) as client:
+        for path in ("/docs", "/redoc"):
+            page = client.get(path)
+            assert page.status_code == 200
+            assert "/openapi.json" in page.text
+        schema = client.get("/openapi.json").json()
+        operation = schema["paths"]["/v1/actions"]["post"]
+        if token:
+            scheme_name = next(iter(operation["security"][0]))
+            scheme = schema["components"]["securitySchemes"][scheme_name]
+            assert scheme["type"] == "http" and scheme["scheme"] == "bearer"
+            assert "security" not in schema["paths"]["/healthz"]["get"]
+            assert token not in str(schema)
+            assert client.post("/v1/actions", json={"mode": "explainer", "instruction": "Explain."}).status_code == 401
+            client.headers["Authorization"] = "Bearer wrong-token"
+            assert client.get("/v1/actions").status_code == 401
+            client.headers["Authorization"] = "Bearer " + token
+        else:
+            assert "security" not in operation
+        created = client.post("/v1/actions", json={"mode": "explainer", "instruction": "Explain."})
+        assert created.status_code == 201
+        assert wait(client, created.headers["Location"])["result"] == "Explained through the documented API."
