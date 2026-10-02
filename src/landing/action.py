@@ -18,7 +18,7 @@ def main() -> int:
         "number": os.getenv("INPUT_NUMBER") or "0",
         "head": os.getenv("INPUT_HEAD") or "",
         "run-id": os.getenv("INPUT_RUN_ID") or os.getenv("GITHUB_RUN_ID", ""),
-        "checked-revision": os.getenv("INPUT_CHECKED_REVISION") or os.getenv("GITHUB_SHA", ""),
+        "checked-revision": os.getenv("INPUT_CHECKED_REVISION", os.getenv("GITHUB_SHA", "")),
         "command-prefix": os.getenv("INPUT_COMMAND_PREFIX") or "/landing",
         "delivery-key": os.getenv("INPUT_DELIVERY_KEY")
         or f"action:{os.environ['GITHUB_RUN_ID']}:{os.getenv('GITHUB_RUN_ATTEMPT', '1')}",

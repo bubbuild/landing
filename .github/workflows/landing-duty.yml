@@ -59,7 +59,7 @@ jobs:
       - name: Prepare current maintenance issues
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
         id: issues
-        run: gh issue list --state open --limit 100 --json number,title,body,url --jq '"issues=" + tojson' >> "$GITHUB_OUTPUT"
+        run: gh issue list --state open --limit 100 --json number,title,body,url,comments --jq '"issues=" + (map(.comments |= .[-2:]) | tojson)' >> "$GITHUB_OUTPUT"
       - name: Handle the event or daily maintenance
         uses: ./
         env:

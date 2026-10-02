@@ -13,7 +13,7 @@ from tests.conftest import completion
 from tests.provider import provider
 
 
-def delegate(tmp_path, api_base, command, checks):
+def delegate(tmp_path, api_base, command, checks, *, extra_env=None):
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith(("LANDING_", "BUB_", "GITHUB_", "INPUT_"))
     }
@@ -32,6 +32,7 @@ def delegate(tmp_path, api_base, command, checks):
         GITHUB_OUTPUT=str(tmp_path / "outputs.txt"),
         GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"),
     )
+    environment.update(extra_env or {})
     return subprocess.run(  # noqa: S603 -- fixed Python module entry point in a disposable workspace.
         [sys.executable, "-m", "landing.action"],
         cwd=tmp_path,
@@ -72,3 +73,24 @@ def test_action_retains_failed_fix_and_validation(tmp_path):
         assert saved.result == "Wrote the candidate; independent validation follows."
         assert saved.error is not None
         assert "validation failed" in saved.error["message"]
+
+
+def test_action_does_not_attribute_unknown_checks_to_the_trigger_revision(tmp_path):
+    def explain(request):
+        answer = (
+            "The checked revision is unknown."
+            if "unrelated-main-revision" not in str(request["messages"])
+            else "The checks covered unrelated-main-revision."
+        )
+        return completion(answer)
+
+    with provider([explain]) as (api_base, _):
+        result = delegate(
+            tmp_path,
+            api_base,
+            "triage",
+            "",
+            extra_env={"INPUT_CHECKED_REVISION": "", "GITHUB_SHA": "unrelated-main-revision"},
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["result"] == "The checked revision is unknown."

@@ -17,7 +17,8 @@ def provider(responses, *, authorization=None):
             if authorization is not None:
                 authorization.append(self.headers.get("Authorization"))
             requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            response = pending.popleft().model_dump()
+            response = pending.popleft()
+            response = (response(requests[-1]) if callable(response) else response).model_dump()
             choice = response["choices"][0]
             delta = {key: value for key, value in choice["message"].items() if value is not None}
             for index, tool in enumerate(delta.get("tool_calls", [])):
