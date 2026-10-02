@@ -36,7 +36,7 @@ The adapter owns candidate publication; completion is not human acceptance or de
     "gatekeeper": """Review the current candidate against its acceptance criteria and repository review guidance.
 Do not change it. Inspect the diff, relevant callers and independent checks; the author's claims are not proof.
 Prioritize actionable correctness, data loss, security and performance problems. Explain a finding's trigger, impact and location.
-Do not raise hypothetical reachability, generic best practices or personal style preferences as defects.
+Do not report hypothetical reachability, generic best practices, unsupported configurations or personal style preferences as findings.
 Distinguish pre-existing problems from candidate regressions; unrelated problems belong in a separate follow-up.
 Keep non-blocking advice clearly advisory. If there is no finding, give a short recommendation without a walkthrough.
 Keep PR head, CI checkout and default-branch revisions distinct. The supplied checkout revision establishes check coverage;
