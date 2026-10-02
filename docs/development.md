@@ -17,8 +17,6 @@ uv build
 
 Use `make docs` to preview the documentation. Choose checks appropriate to the change; native CI covers tests and typing on Python 3.12, 3.13, and 3.14, quality, strict documentation builds, and container recovery.
 
-The repository's `AGENTS.md` gives contribution instructions. Its `landing-review` skill reads `REVIEW.md` for project-specific review standards; portable behavior stays in the default mode prompts. Issue and PR templates are adapted from [Apache OpenDAL](https://github.com/apache/opendal/tree/95f7c8bfd67e8c988a97063f40a4ae203f6c18ae/.github), with attribution in `NOTICE`. The review structure follows [LanceDB's REVIEW.md](https://github.com/lancedb/lancedb/blob/723a2394e55f6120dfa06193bbfd9ddd921b4034/REVIEW.md): check the corresponding public surface before raising a parity gap and keep advisory guidance separate from blockers. [Lance's review guidance](https://github.com/lance-format/lance/blob/93eef3d206811bee09705629410cb92e260c20e1/AGENTS.md#review-guidelines) favors concise, consequential findings. Default skills use reviewed GitHub commit pins and gh's native installation or contents API rather than committed third-party instruction copies.
-
 ## Keep tests about behavior and actual mistakes
 
 Write behavior tests for what users see through CLI, HTTP, and workflow outcomes. Write regression tests for actual mistakes likely to recur. Prefer end-to-end acceptance for platform wiring. Tests should survive an implementation rewrite that preserves the user's experience.

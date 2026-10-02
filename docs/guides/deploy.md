@@ -15,8 +15,6 @@ The image serves HTTP on port 80 as UID 1000. `/up` checks the worker and databa
 
 The default workspace starts empty. Prepare a checkout under `/storage/workspace` using your normal provisioning process before delegating project work. The image includes Git, gh, uv, and Python; add other toolchains needed by your project.
 
-The image includes gh 2.97 for pinned default skills. Compose caches those source assets under `/storage/skills` and accepts `GH_TOKEN` for cold downloads. Basic actions and cached skills need no GitHub access. Set `LANDING_DEFAULT_SKILLS=false` to disable defaults, or provide your own skill roots. Outside Compose, the cache defaults to the container user's home; mount a cache directory if you need it to survive container replacement. Litestream replicates the SQLite database, not skill assets.
-
 After preparing the workspace, call the service from a Landing source checkout with `uv sync` completed and the same `LANDING_TOKEN`:
 
 ```bash

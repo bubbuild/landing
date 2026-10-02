@@ -29,8 +29,6 @@ class Settings(AgentSettings):
         ),
     )
     skill_dirs: list[Path] = Field(default_factory=list)
-    default_skills: bool = True
-    skill_cache: Path = Field(default_factory=lambda: Path.home() / ".cache" / "landing" / "skills")
 
     @classmethod
     def settings_customise_sources(

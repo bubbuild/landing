@@ -43,23 +43,10 @@ Save trusted skill roots as `skill_dirs` in your Landing YAML configuration or s
 uv run landing --skill-dir ~/.local/share/landing/team-skills explainer "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log
 ```
 
-Landing offers documentation-writer, humanizer, piglet and friendly-python as default skills. Their source commits are pinned; the first named use downloads the needed skill into the executing host's cache using gh. Basic actions and skill listing do not download them. The SDK loads their instructions and references, and your local skills take precedence. See [Skills configuration](reference/configuration.md#skills) to inspect sources, change the cache or disable defaults.
+For skills kept in GitHub, use your normal gh login to prepare a local checkout, then select its skill root. Update that checkout through your normal repository workflow; Landing does not fetch or execute remote skill repositories automatically.
 
 ```bash
-uv run landing explainer 'Use $humanizer to make this explanation clearer without changing its claims.' --input explanation.md
-```
-
-For other skills kept in GitHub, use `gh skill install` with a commit pin and a directory you select. Landing does not fetch repositories mentioned in logs or task evidence. Update your pins through your normal repository workflow.
-
-```bash
-gh skill install example/team-skills deployment-check --pin COMMIT_SHA --dir ~/.local/share/landing/team-skills
-uv run landing --skill-dir ~/.local/share/landing/team-skills explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
-```
-
-A normal gh checkout also works when you prefer to manage the repository yourself:
-
-```bash
-gh repo clone example/team-skills ~/.local/share/landing/team-skills
+/usr/bin/gh repo clone example/team-skills ~/.local/share/landing/team-skills
 uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
