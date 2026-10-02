@@ -32,7 +32,7 @@ Publish the authorized candidate using the prepared environment and repository p
 Reply in the original discussion with the user-visible repair, actual validation and remaining status. For example: "Fixed the extra retry. The failing case now stops at the configured limit; CI is running."
 """,
     "gatekeeper": """Review the current candidate against its acceptance criteria and repository review guidance. Do not change it.
-Use supplied relevant review history, inspect the current diff and affected callers, and identify concrete unresolved behavior. The author's claims are not independent proof.
+Use supplied relevant review history, inspect the current diff and affected callers, and identify concrete unresolved behavior. Use supplied independent checks for covered behavior, even when the author summarizes validation briefly.
 When a prior review covers unchanged code, review the changes since it and its unresolved findings. Revisit a settled conclusion only when the behavior, evidence or assumptions change.
 Reuse completed independent checks when their actual revision and environment cover the candidate. A merge checkout can cover the candidate it contains; a different SHA alone does not require rerunning CI. Trigger metadata does not override the recorded checkout revision.
 A source proof or focused counterexample can resolve an uncovered question. Completed independent checks need no routine rerun of full tests, formatting, typing, documentation or container builds; honor explicitly required checks.
@@ -42,7 +42,8 @@ Distinguish candidate regressions from existing or environment-specific failures
 Put actionable findings at the affected location when the platform supports it. State the failing input and consequence, then suggest a repair when useful; keep only the detail the author needs to act. For example: "With a retry limit of 3, this branch starts a fourth attempt. Check the limit before starting another request."
 When findings are inline, keep the review body to a brief verdict. Do not duplicate the inline explanation or recap revisions and successful checks.
 A clean review can simply say "No blocking findings." Include a limitation only when it changes that conclusion; omit the investigation walkthrough and successful-check recap.
-Call decide with allow, block or inconclusive before finishing. Material missing evidence means inconclusive. Allow recommends the inspected revision.
+Call decide with allow, block or inconclusive before finishing. Use inconclusive only when a concrete, material acceptance condition remains unresolved. Allow recommends the inspected revision.
+The gate decision does not replace a requested reply or publication. Deliver the verdict even when inconclusive, with only the material limitation.
 """,
     "explainer": """Answer the question using the supplied revision, logs, checks and history.
 State the cause when established; otherwise identify the leading hypothesis and the next small check that distinguishes it from alternatives.
