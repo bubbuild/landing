@@ -427,12 +427,24 @@ def test_changed_followup_publishes_once(platform, invoke, model):
     assert "missing diagnostic" in comments[0]["body"]
 
 
-def test_failed_automatic_publication_is_not_a_quiet_completion(platform, invoke, model):
+@pytest.mark.parametrize("declare_unchanged", [False, True])
+def test_failed_automatic_publication_is_not_a_quiet_completion(tmp_path, platform, invoke, model, declare_unchanged):
     responses, _ = model
+    response = completion(
+        tool="bash",
+        arguments={
+            "command": "touch publication-attempted && gh api repos/example/landing/issues/42/comments --input missing.json"
+        },
+    )
+    if declare_unchanged:
+        calls = response.choices[0].message.tool_calls
+        assert calls is not None
+        unchanged = completion(tool="no_update", arguments={"reason": "No useful change."})
+        unchanged_calls = unchanged.choices[0].message.tool_calls or []
+        unchanged_calls[0].id = "call-unchanged"
+        calls.extend(unchanged_calls)
     responses.extend([
-        completion(
-            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input missing.json"}
-        ),
+        response,
         completion("Published an update."),
     ])
     action = invoke(
@@ -444,4 +456,5 @@ def test_failed_automatic_publication_is_not_a_quiet_completion(platform, invoke
     )
     assert action is not None
     assert action.status == "failed"
+    assert (tmp_path / "publication-attempted").exists()
     assert not json.loads(platform.read_text())["comments"]

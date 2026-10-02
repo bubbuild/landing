@@ -217,6 +217,7 @@ class Runtime:
         state.pop("landing_decision", None)
         state.pop("landing_llm_call", None)
         state.pop("landing_no_update", None)
+        state.pop("landing_tool_failed", None)
         state.pop("allowed_skills", None)
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
         self.agent.bub.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
