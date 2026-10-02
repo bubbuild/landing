@@ -38,7 +38,7 @@ DECIDE = Tool.from_callable(decide, context=True)
 
 
 def no_update(reason: str, *, context: ToolContext) -> str:
-    """Record why existing issue conditions are unchanged; automatic follow-up needs no public update."""
+    """Finish an unchanged issuer follow-up without a public update and record the reason."""
     if context.state.get("landing_mode") != "issuer" or not reason.strip():
         message = "Only issuer can record no update, with a reason."
         raise ValueError(message)

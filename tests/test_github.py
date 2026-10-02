@@ -346,10 +346,19 @@ def test_release_tag_event_delegates_maintenance(invoke, model):
     assert action.result == "Documentation deployment needs its repository Pages configuration."
 
 
-def test_unchanged_automatic_followup_is_quiet_and_idempotent(platform, invoke, model):
+def test_unchanged_followup_completes_with_later_reads_and_remains_idempotent(tmp_path, platform, invoke, model):
     responses, requests = model
+    (tmp_path / "evidence.txt").write_text("The original response is missing.")
+    response = completion(
+        tool="no_update", arguments={"reason": "The original response is still missing; no new evidence."}
+    )
+    tool_calls = response.choices[0].message.tool_calls
+    assert tool_calls is not None
+    read_calls = completion(tool="fs_read", arguments={"path": "evidence.txt"}).choices[0].message.tool_calls or []
+    read_calls[0].id = "call-read"
+    tool_calls.extend(read_calls)
     responses.extend([
-        completion(tool="no_update", arguments={"reason": "The original response is still missing; no new evidence."}),
+        response,
         completion("No new evidence; the issue remains open."),
     ])
     event = {
@@ -418,10 +427,9 @@ def test_changed_followup_publishes_once(platform, invoke, model):
     assert "missing diagnostic" in comments[0]["body"]
 
 
-def test_failed_write_cannot_reuse_an_earlier_no_update(platform, invoke, model):
+def test_failed_automatic_publication_is_not_a_quiet_completion(platform, invoke, model):
     responses, _ = model
     responses.extend([
-        completion(tool="no_update", arguments={"reason": "No useful change."}),
         completion(
             tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input missing.json"}
         ),
