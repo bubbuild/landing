@@ -1,4 +1,4 @@
-name: Landing CI
+name: bubbuild/landing
 description: Review code, triage issues, fix problems, and explain failures with your own model and tools.
 branding:
   icon: check-circle
