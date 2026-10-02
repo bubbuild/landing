@@ -540,6 +540,7 @@ def test_native_admission_runs_before_runtime_installation(
     tmp_path, platform, trust, owner, actor_id, membership, allowed
 ):
     state = json.loads(platform.read_text())
+    state["owner"] = owner
     state["membership"] = membership
     platform.write_text(json.dumps(state))
     source = tmp_path / "event.json"
@@ -591,6 +592,7 @@ def test_unknown_permissions_fail_instead_of_skipping_or_invoking_agent(platform
 
 def test_owner_rerun_does_not_borrow_original_owners_authority(platform, invoke, model, monkeypatch):
     state = json.loads(platform.read_text())
+    state["owner"] = {"type": "User", "id": 1}
     state["user"] = {"id": 2, "login": "writer"}
     platform.write_text(json.dumps(state))
     monkeypatch.setenv("GITHUB_ACTOR", "owner")
@@ -627,4 +629,17 @@ def test_untrusted_upstream_does_not_delegate_even_when_successful(invoke, model
         },
     }
     assert invoke(event) is None
+    assert not model[1]
+
+
+def test_owner_admission_uses_current_repository_ownership(platform, invoke, model):
+    state = json.loads(platform.read_text())
+    state["owner"] = {"type": "User", "id": 2}
+    platform.write_text(json.dumps(state))
+    event = {
+        "repository": {"full_name": "example/landing", "owner": {"type": "User", "id": 1}},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair this issue.", "user": {"id": 1, "login": "former-owner"}},
+    }
+    assert invoke(event, trust="owner") is None
     assert not model[1]

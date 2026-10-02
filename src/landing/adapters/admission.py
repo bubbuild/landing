@@ -80,9 +80,7 @@ def admitted(
         return True
     actor = comment["user"] if comment else run["actor"] if run else event.get("sender")
     actor = actor or identity(f"users/{os.environ['GITHUB_ACTOR']}", repository)
-    owner = (event.get("repository") or {}).get("owner")
-    if trust == "owner" and not owner:
-        owner = identity(f"repos/{repository}", repository)["owner"]
+    owner = identity(f"repos/{repository}", repository)["owner"] if trust == "owner" else {}
     if not permitted(repository, actor, trust, owner or {}):
         return False
     rerunner = os.getenv("GITHUB_TRIGGERING_ACTOR")
