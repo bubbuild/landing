@@ -23,7 +23,7 @@ Write behavior tests for what users see through CLI, HTTP, and workflow outcomes
 
 Avoid assertions about helper structure, internal step counts, argument order, or other incidental details. Straightforward glue can be inspected directly and accepted through a real workflow run. Adding a test merely because a file changed does not improve the contract.
 
-The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. These tests verify behavior, not real-model quality or downstream delivery.
+The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. GitHub behavior tests use a local platform emulator. Real workflow runs establish downstream delivery and model quality.
 
 ## Run the continuous loop
 
@@ -31,11 +31,11 @@ The test suite replaces external model requests with deterministic responses; th
 | --- | --- | --- |
 | Candidate PR and native CI | Gatekeeper evaluates the diff and linked acceptance criteria. | Checks run first; the recommendation is advisory and states the inspected revision. |
 | Default-branch checks | Issuer maintains actionable CI work items. | Search existing issues, record recurrence, and require recovery evidence before closing. |
-| Maintainer delegation | Explainer answers, issuer tracks, fixer repairs, or gatekeeper evaluates. | The requested mode does one task; maintainers choose the next action. |
-| Fixer candidate | Runner validates and publishes a separate PR. | Main checks and review evaluate it again before human acceptance. |
+| Maintainer delegation | `explain` answers, `triage` tracks, `fix` repairs, or `review` evaluates. | The requested mode does one task; maintainers choose the next action. |
+| Fixer candidate | The agent validates and publishes the delegated candidate using repository procedures. | Main checks and review evaluate it again before human acceptance. |
 | Release completion and daily maintenance | Issuer follows existing problems and release evidence. | A build or merged PR is not proof of deployed recovery. |
 
-The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
+The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 
 After each useful or failed delegation, retain the observations in the issue or PR: the evidence it used, mistaken assumptions, proposed repair layer, rejected changes, human edits, and eventual results. Improve project instructions, tools, code, or meaningful regression cases based on those observations.
 
@@ -45,15 +45,8 @@ Use native checks and actual human outcomes to evaluate changes. A model's own `
 
 The real dogfood loop has exposed failures that ordinary happy-path tests missed:
 
-- [Empty completions](https://github.com/PsiACE/landing/issues/3): partial work
-  must remain inspectable, and an empty answer must not count as successful
-  completion. The runtime now fails empty output explicitly; a regression check
-  preserves the user-visible behavior.
-- [Revision interpretation](https://github.com/PsiACE/landing/issues/5): a model
-  can mistake a run's triggering head for the actual CI checkout revision.
-  The adapter records and appends the workflow-supplied checkout revision, but
-  the model's interpretation still needs real-task evaluation. A footer alone
-  does not prove the advice is correct.
+- [Empty completions](https://github.com/PsiACE/landing/issues/3): partial work must remain inspectable, and an empty answer must not count as successful completion. The runtime fails empty output explicitly; a regression check preserves the user-visible behavior.
+- [Revision interpretation](https://github.com/PsiACE/landing/issues/5): a model can mistake a run's triggering head for the actual CI checkout revision. The adapter supplies both revisions separately; the model's interpretation still needs real-task evaluation. Provenance alone does not prove the advice is correct.
 
 ## Verify the container contract
 

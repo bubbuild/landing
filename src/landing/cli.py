@@ -16,6 +16,7 @@ from typing import NoReturn
 import httpx
 from pydantic import ValidationError
 
+from landing.commands import COMMANDS
 from landing.models import MODES, TERMINAL, Action, ActionRequest, FileInput
 from landing.tasks import Tasks
 
@@ -33,11 +34,13 @@ def parser() -> Parser:
         "--skill-dir", type=Path, action="append", default=[], help="Additional trusted skill root (repeatable)"
     )
     app.add_argument(
-        "--github-repository", default=os.getenv("LANDING_GITHUB_REPOSITORY"), help="Enable scoped gh tools"
+        "--github-repository",
+        default=os.getenv("LANDING_GITHUB_REPOSITORY"),
+        help="Supply GitHub repository context for the prepared gh CLI",
     )
     commands = app.add_subparsers(dest="command", required=True)
-    for mode in MODES:
-        cmd = commands.add_parser(mode)
+    for name in (*COMMANDS, *MODES):
+        cmd = commands.add_parser(name)
         cmd.add_argument("instruction", nargs="?")
         cmd.add_argument("--input", action="append", default=[], metavar="FILE")
         cmd.add_argument("--workspace")
@@ -90,7 +93,11 @@ def build_request(args) -> ActionRequest:
     if not args.server:
         workspace = str(Path(workspace or ".").expanduser().resolve())
     return ActionRequest(
-        mode=args.command, instruction=args.instruction, input=inputs, workspace=workspace, checks=args.check
+        mode=COMMANDS.get(args.command, args.command),
+        instruction=args.instruction,
+        input=inputs,
+        workspace=workspace,
+        checks=args.check,
     )
 
 
@@ -148,7 +155,7 @@ async def remote(args) -> int:
         async def get(action_id):
             return Action.model_validate(await call("GET", f"/v1/actions/{action_id}"))
 
-        if args.command in MODES:
+        if args.command in (*COMMANDS, *MODES):
             action = Action.model_validate(await call("POST", "/v1/actions", json=build_request(args).model_dump()))
         elif args.operation == "list":
             params = {"limit": args.limit, **({"cursor": args.cursor} if args.cursor else {})}
@@ -173,7 +180,9 @@ async def remote(args) -> int:
         if not getattr(args, "detach", False):
             action = await wait(action.id, get, remote=True)
         display(action, args)
-        checks_status = args.command in MODES or args.operation == "retry" or getattr(args, "exit_status", False)
+        checks_status = (
+            args.command in (*COMMANDS, *MODES) or args.operation == "retry" or getattr(args, "exit_status", False)
+        )
         return action.exit_code() if checks_status and not getattr(args, "detach", False) else 0
 
 
@@ -199,16 +208,20 @@ async def local(args) -> int:
                 display(action, args)
                 return action.exit_code() if args.exit_status else 0
         return 0
-    from landing.adapters.github import github_tool
+    from landing.adapters.github import repository_context
 
     runtime = Runtime(
         database(args),
-        tools=[github_tool(args.github_repository)] if args.github_repository else [],
         skill_dirs=args.skill_dir,
     )
     async with runtime.running():
-        request = build_request(args) if args.command in MODES else runtime.tasks.request(args.id)
-        action = await runtime.run(request, retry_of=args.id if args.command == "action" else None)
+        request = build_request(args) if args.command in (*COMMANDS, *MODES) else runtime.tasks.request(args.id)
+        if args.github_repository and repository_context(args.github_repository) not in request.input:
+            request = request.model_copy(update={"input": [*request.input, repository_context(args.github_repository)]})
+        if args.command in COMMANDS:
+            action = await runtime.command(args.command, request)
+        else:
+            action = await runtime.run(request, retry_of=args.id if args.command == "action" else None)
         display(action, args)
         return action.exit_code()
 

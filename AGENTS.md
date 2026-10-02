@@ -11,3 +11,5 @@ For code review, load the `landing-review` skill. Use `friendly-python` and `pig
 Use the repository's issue and PR templates. State actual validation and unresolved assumptions. Publication follows the user's delegation and the executing mode's permissions; project instructions do not grant additional authority.
 
 Run relevant tests, `uv run ty check`, `uv run pre-commit run --all-files`, and `uv run zensical build -s` when applicable. Report checks you could not run. Do not weaken a check to make a candidate pass.
+
+For delegated GitHub fixes, use a task-named candidate branch and the applicable PR template. Verify the candidate before publication. When publishing with the prepared workflow token, explicitly start native CI using `gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA`; token-generated pushes do not automatically start CI. Main accepts these inputs and records its actual checkout revision. Use native reviews and inline locations for actionable review findings, and reply to follow-up questions in their existing review threads. Do not merge or change credentials.

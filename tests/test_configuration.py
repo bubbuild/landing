@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from tests.conftest import completion
-from tests.test_dogfood import provider
+from tests.provider import provider
 
 
 @pytest.mark.parametrize(

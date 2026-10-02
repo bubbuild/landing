@@ -17,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import URL
 
+from landing.adapters.github import repository_context
 from landing.models import MAX_REQUEST_BYTES, TERMINAL, Action, ActionRequest, Event
 from landing.runtime import Runtime
 from landing.tasks import ConflictError
@@ -53,12 +54,10 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from landing.adapters.github import github_tool
 
         runtime = Runtime(
             path,
             workspaces=workspaces or {"default": Path.cwd()},
-            tools=[github_tool(github_repository)] if github_repository else [],
             skill_dirs=skill_dirs,
         )
         async with runtime.running():
@@ -116,6 +115,8 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
         if app.state.worker.done():
             return problem(503, "The worker is unavailable.")
         runtime.workspace(body)
+        if github_repository and repository_context(github_repository) not in body.input:
+            body = body.model_copy(update={"input": [*body.input, repository_context(github_repository)]})
         action, created = runtime.tasks.create(body, key=key, scope="server", retry_of=retry_of)
         return JSONResponse(
             action.model_dump(), status_code=201 if created else 200, headers={"Location": f"/v1/actions/{action.id}"}

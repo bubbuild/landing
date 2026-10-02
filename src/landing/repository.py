@@ -32,9 +32,9 @@ def templates(workspace: Path, mode: Mode) -> str:
         "gh publishes Markdown, not an interactive form. Respect template title, labels and assignees "
         "when appropriate and authorized. Do not invent answers or claim unchecked acknowledgements."
         if mode == "issuer"
-        else "Choose the applicable pull request template. For GitHub candidate publication, your final reply becomes the PR body: "
+        else "Choose the applicable pull request template when publishing a candidate: "
         "fill the requested sections, report actual validation and leave unverified checklist items unchecked. "
-        "Do not copy template front matter into the body. The runner adds the issue link and execution provenance."
+        "Do not copy template front matter into the body. Include the issue link and relevant validation provenance."
     )
     return (
         "\n\nRepository contribution templates:\n"

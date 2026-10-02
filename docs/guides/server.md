@@ -22,8 +22,8 @@ In another terminal with the same token:
 ```bash
 export LANDING_TOKEN="your-server-token"
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing gatekeeper "Review the prepared checkout." --workspace candidate --check "make acceptance" --json
-uv run landing explainer "Explain this failure." --workspace candidate --input test-output.txt --detach --json
+uv run landing review "Review the prepared checkout." --workspace candidate --check "make acceptance" --json
+uv run landing explain "Explain this failure." --workspace candidate --input test-output.txt --detach --json
 ```
 
 Detached creation returns an action record immediately. Copy its ID to wait or cancel explicitly:

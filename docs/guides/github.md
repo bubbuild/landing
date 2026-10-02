@@ -1,71 +1,63 @@
 # Use Landing with GitHub
 
-Landing's optional GitHub adapter uses `/usr/bin/gh`. It adds repository-scoped tools and an event runner for replies and candidate PRs. The ordinary CLI and HTTP API work without this adapter.
+Prepare a trusted checkout, authenticated `gh` in PATH, project dependencies, model settings, and any skills. Landing supplies event admission, repository context, and publication receipts. The agent uses native tools and the prepared `gh` CLI to investigate, publish reviews, reply, and repair. CLI and HTTP execution work without GitHub.
 
-Authenticate with gh's normal login or `GH_TOKEN`, prepare a checkout, and configure the model in the environment where Landing runs. The examples below use `example/team-project`; replace it with your repository.
-
-## Enable repository tools
+## Use the prepared environment
 
 ```bash
-uv run landing --github-repository example/team-project issuer "Investigate the evidence, reuse an existing issue or create an actionable one." --input report.txt
+uv run landing --github-repository example/team-project triage "Investigate the evidence, reuse an existing issue or create an actionable one." --input report.txt
 ```
 
-All modes can read issues, PRs, and runs. Issuer can create, edit, and comment on issues. The tool enforces repository scope and excludes arbitrary API writes, merges, approvals, and credential changes. Enabling this tool alone does not install event handling or automatic PR replies.
+`--github-repository` supplies context, not a separate restricted gh tool. Select each mode's tools and skills through [configuration](../reference/configuration.md#mode-capabilities). The executing environment owns credentials and platform permissions; Landing does not install skills or change authentication.
 
 ## Follow repository conventions
 
-Landing reads contribution templates from the selected checkout in [GitHub's standard locations](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates): root, `docs`, and `.github`, including single Markdown or text templates, `ISSUE_TEMPLATE` and `PULL_REQUEST_TEMPLATE` directories, and YAML issue forms. Issuer chooses an applicable issue template and fills its requested sections when publishing through gh. YAML form field labels become Markdown headings; gh does not submit the interactive web form, and Landing does not claim that GitHub validated its required fields. Template labels, assignees, and title guidance remain subject to repository permissions and the delegated task.
+Landing reads contribution templates from the selected checkout in [GitHub's standard locations](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates): root, `docs`, and `.github`, including single templates, `ISSUE_TEMPLATE` and `PULL_REQUEST_TEMPLATE` directories, and YAML issue forms. The agent chooses the applicable template when creating an issue or PR. YAML form field labels become Markdown headings; gh does not submit the interactive web form. Fill requested sections with actual evidence and leave unverified checkboxes unchecked.
 
-Fixer uses the applicable PR template for its final reply. The runner publishes that reply as the candidate's body and appends the issue link and action provenance. Verification and human acceptance checkboxes must reflect what actually happened. Existing issue comments and ordinary explanations do not need to mimic a creation template.
+Root and scoped `AGENTS.md` instructions and [skills](../make-it-yours.md#use-skills) supply repository procedures. Put branch conventions, native checks, benchmark criteria, and workflow dispatch instructions there. Prepare an isolated checkout for changes. Landing leaves branch selection, commits, pushes, and candidate publication to the agent within the delegated scope.
 
-Templates and root `AGENTS.md` come from the isolated target checkout, rather than Landing's installation directory. Keep the contribution conventions in the revision you delegate; GitHub's web template chooser uses the default branch. Landing does not fetch organization-wide community templates automatically. More specific `AGENTS.md` instructions and [repository or user skills](../make-it-yours.md#use-skills) guide work within the task's existing permissions.
+## Invoke locally or in CI
 
-## Delegate through the event runner
-
-The runner can be invoked locally with the active gh login:
+The event runner works outside GitHub Actions with your active gh login:
 
 ```bash
-uv run python -m landing.adapters.github fixer --repository example/team-project --number 42 --instruction "Fix the issue against its acceptance criteria and retain a meaningful regression check." --delivery-key "issue-42-maintainer-request-1" --db ./evidence/landing.sqlite3 --check "make acceptance"
+uv run python -m landing.adapters.github review --repository example/team-project --number 42 --head candidate-head-sha --instruction "Review the candidate and publish actionable findings." --delivery-key "review-42-request-1" --db ./evidence/landing.sqlite3 --check "make acceptance"
 ```
 
-Fixer works in an isolated Git worktree. The runner independently executes the required checks, then commits, pushes, and opens or updates a `landing/fix-<number>` candidate PR. It replies to the original issue or PR. Failed checks preserve edits and return a failure reply without publishing a candidate. The runner never merges; a fixer request on a PR can publish a separate candidate rather than editing that PR's original branch.
+Use `fix`, `triage`, or `explain` for the corresponding work. The runner also accepts repeatable `--skill-dir PATH`, `--event FILE`, `--run-id ID`, and `--checked-revision SHA`. Candidate head and actual CI checkout revision are separate evidence. Invoke the [reusable Action](ci.md#github-action) in GitHub Actions; no dedicated dogfood script is needed.
 
-Other modes post their result to the selected conversation. The adapter verifies the PR head before delivering revision-sensitive feedback. Its process exit status reports execution or delivery failure; a gatekeeper's `block` or `inconclusive` recommendation is advisory here. Ordinary gatekeeper CLI exit semantics are stricter.
+A review of a PR publishes a native GitHub Review. The agent uses [the reviews API](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) with `commit_id`, a review body, and inline comments containing verified `path`, `line`, and `side` locations. Ranges use `start_line` and `start_side`. Actionable findings belong at their actual diff locations; a clean candidate needs no invented inline comments. The default review event is `COMMENT`; approval and change requests require explicit repository authorization. The gate recommendation is recorded separately.
 
-Reuse the same database and delivery key to retry delivery without rerunning the model. Use a new key for a new delegation. Keep worktrees available while inspecting or retrying saved changes.
+Other tasks reply to the selected issue or PR with the result and publication links. Inline follow-ups use the [review-comment replies API](https://docs.github.com/en/rest/pulls/comments#create-a-reply-for-a-review-comment) in the original thread. Publication is part of the delegated task. The adapter checks a platform receipt before recording successful completion and rejects reviews attached to a different requested commit. A text answer without the required publication is failed work.
 
-The runner also accepts repeatable `--skill-dir PATH` options for trusted user or team skills. Repository `.agents/skills` comes from the candidate checkout. Prepare GitHub-hosted skill checkouts with `gh repo clone` and pass their local skill root; the runner uses the same SDK discovery and loading behavior as the ordinary CLI.
+Each delivery carries a marker so the same database and delivery key can reuse an existing published result without invoking the model again. Use a new key for a new delegation. The marker confirms delivery, not the quality of the advice. The runner exits nonzero for execution or delivery failure; a gate recommendation of `block` or `inconclusive` is advisory here. Ordinary CLI review exit semantics are stricter.
 
-## Wire GitHub events
+## Wire commands and follow-ups
 
-Landing's repository provides working examples in `.github/workflows/landing.yml`, `landing-duty.yml`, and `main.yml`. Adapt checkout, environment setup, checks, permissions, and triggers to your own project. These are repository workflows, not a one-click GitHub App installer.
-
-The duty workflow passes an issue-comment event to the runner with `--event "$GITHUB_EVENT_PATH"`. Commands must appear on their own line in an issue or PR conversation comment from someone with repository `admin`, `maintain`, or `write` permission:
+Listen for `issue_comment` and `pull_request_review_comment` events. Pass their event file through the Action or `--event`. A collaborator with repository `admin`, `maintain`, or `write` permission can delegate with the first nonblank line:
 
 ```text
-@landing issuer Track the recurring release failure with acceptance criteria.
-@landing fixer Fix this issue and preserve its user-visible behavior.
-@landing gatekeeper Review the candidate against independent checks.
-@landing explainer Explain the failed job and the next discriminating check.
+/landing triage Track the recurring release failure with acceptance criteria.
+/landing fix Fix this issue and preserve its user-visible behavior.
+/landing review Review the candidate against independent checks.
+/landing explain Explain the failed job and the next useful check.
 ```
 
-Bot comments do not delegate work. Inline PR review comments are a different event and are not handled by this workflow. Comment and scheduled workflows must exist on the default branch before they receive events.
+`/landing` is a command prefix, independent of the publishing account. Set `command-prefix` or `--command-prefix` if your team uses another prefix or an actual `@team-bot` identity. Bot comments and Landing's own marked replies do not delegate work. Natural replies in a Landing inline review thread retain its mode; changing the work requires an explicit command. The adapter checks the originating review and collaborator permission before invoking the model.
 
-Configure these repository variables and secret for the bundled workflows:
+Comment and scheduled workflows must exist on the default branch to receive events. Landing's `landing-duty.yml` provides the repository example; `landing.yml` and `main.yml` show reusable Action calls and native CI feedback.
+
+## Configure the workflow
+
+For the bundled workflows, set these repository values using your normal gh login:
 
 ```bash
-/usr/bin/gh variable set LANDING_MODEL --repo example/team-project --body "openai:gpt-4.1"
-/usr/bin/gh secret set LANDING_API_KEY --repo example/team-project
+gh variable set LANDING_MODEL --repo example/team-project --body "openai:gpt-4.1"
+gh secret set LANDING_API_KEY --repo example/team-project
 ```
 
-Optional variables are `LANDING_API_BASE` and `LANDING_COMPLETION_ARGS`. The workflows map these to Landing's model environment settings. See [Configuration](../reference/configuration.md).
+Optional variables are `LANDING_API_BASE` and `LANDING_COMPLETION_ARGS`. Workflows map them to Landing settings. Prepare Git identity with an existing setup action and Git transport with `gh auth setup-git` when authorizing candidate publication. Grant only the job permissions needed for the delegated work. The bundled jobs use a 120-second model request timeout and a 20-minute job timeout, with no agent step budget.
 
-## Keep native CI independent
+Keep native checks independent. Main runs tests, typing, quality, documentation, and container recovery before advisory feedback. Default-branch triage maintains actionable work items. Fork PRs run native CI without model credentials. Repository procedures should tell the agent how to start candidate CI: [GitHub's workflow-token rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow) allow explicit workflow dispatch; token-generated PR events can require maintainer approval, and ordinary token-generated pushes do not automatically start workflows.
 
-The Main workflow runs tests, typing, quality, documentation, and container recovery before advisory Landing feedback. Default-branch feedback uses issuer to maintain CI work items. Missing model configuration skips automatic feedback; an explicitly delegated job fails if its required configuration is absent. Fork PRs run native CI without model credentials.
-
-When the runner publishes with `GITHUB_TOKEN`, ordinary PR workflow triggers are suppressed by GitHub. The bundled runner explicitly dispatches Main when `LANDING_CHECK_WORKFLOW` is set, supplying the candidate PR number and head. The repository must allow Actions to create PRs, and the token needs the permissions for the operations you enable. Adapt the dispatched workflow's `number` and `head` inputs if using this path elsewhere.
-
-The supplied CI job uses a ten-minute action timeout, a 120-second model request timeout, and a 20-minute job timeout. It withholds publishing credentials from the model's shell while retaining them for the explicit gh tool. Tool restrictions are not an operating-system sandbox; run this in trusted workspaces and an appropriate execution environment.
-
-CI stores evidence in a separate database per job and retains artifacts for 30 days. Issues and meaningful regression cases provide the durable feedback beyond those artifacts. See [Develop and dogfood](../development.md).
+CI uses a separate SQLite database per job and retains artifacts for 30 days. Lasting lessons belong in issues, project instructions, and meaningful regression cases. See [Develop and dogfood](../development.md).

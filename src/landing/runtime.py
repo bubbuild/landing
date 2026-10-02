@@ -4,23 +4,28 @@ import asyncio
 import contextlib
 import fcntl
 import json
-from collections.abc import AsyncIterator, Iterable, Mapping
+import shlex
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from bub import BubFramework, ensure_config, hookimpl
-from bub.builtin import Agent
-from bub.builtin.hook_impl import BuiltinImpl
+import bub.builtin.tools  # noqa: F401 -- initialize the native tool registry.
+from bub import BubFramework, ensure_config
+from bub.builtin.settings import load_session_settings
 from bub.builtin.shell_manager import shell_manager
-from bub.builtin.tools import bash, bash_output, fs_edit, fs_read, fs_write, kill_bash, skill_describe, web_fetch
-from bub.tools import Tool, ToolContext
+from bub.builtin.tools import resolve_tool_names
+from bub.errors import BubError, ErrorKind
+from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
+from bub.tools import REGISTRY, Tool, ToolContext
 from bub.turn import TurnState
 
+from landing.agent import Agent
+from landing.commands import COMMANDS, TOOLS
+from landing.hooks import LandingHooks, SDKDefaults
 from landing.models import Action, ActionRequest, Decision
-from landing.prompts import COMMON
 from landing.prompts import MODES as PROMPTS
 from landing.repository import templates
-from landing.settings import ConfigurationFile, Settings
+from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
 
@@ -32,32 +37,19 @@ def decide(decision: Decision, *, context: ToolContext) -> str:
 
 
 DECIDE = Tool.from_callable(decide, context=True)
-READ_TOOLS = (fs_read, web_fetch, skill_describe)
-WRITE_TOOLS = (fs_write, fs_edit, bash, bash_output, kill_bash)
 
 
 def checks_failed(checks: list[dict]) -> bool:
     return any(item["exit_code"] != 0 or item["timed_out"] for item in checks)
 
 
-class SDKHooks(BuiltinImpl):
-    """Reuse builtin hooks, replacing channel prompts and file-backed sidecars."""
-
-    def __init__(self, framework: BubFramework, tasks: Tasks, store: SQLiteTapeStore) -> None:
-        super().__init__(framework)
-        self.tasks, self.store = tasks, store
-
-    @hookimpl
-    def system_prompt(self, prompt, state) -> str:
-        return COMMON + PROMPTS[state["landing_mode"]] + "\n" + self._read_agents_file(state)
-
-    @hookimpl
-    def provide_tape_store(self) -> SQLiteTapeStore:
-        return self.store
-
-    @hookimpl
-    def provide_tape_sidecar(self) -> Tasks:
-        return self.tasks
+def task_prompt(request: ActionRequest, workspace: Path, checks: list[dict]) -> list[dict]:
+    prompt = request.instruction or PROMPTS[request.mode]
+    for item in request.input:
+        prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
+    if checks:
+        prompt += "\n\nValidation results:\n" + json.dumps(checks)
+    return [{"type": "text", "text": prompt + templates(workspace, request.mode)}]
 
 
 class Runtime:
@@ -68,18 +60,24 @@ class Runtime:
         workspaces: Mapping[str, Path] | None = None,
         tools: Iterable[Tool] = (),
         skill_dirs: Iterable[Path] = (),
+        framework: BubFramework | None = None,
+        verify: Callable[[Action], None] | None = None,
     ) -> None:
         self.tasks = Tasks(path)
         self.store = SQLiteTapeStore(self.tasks.path)
         self.workspaces = workspaces
-        self.framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
+        self.verify = verify
+        self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         self.settings = ensure_config(Settings)
-        self.framework.plugin_manager.register(SDKHooks(self.framework, self.tasks, self.store), name="landing")
+        if framework is None:
+            self.framework.plugin_manager.register(SDKDefaults(self.framework), name="builtin")
+        self.hooks = LandingHooks(self)
+        self.framework.plugin_manager.register(self.hooks, name="landing")
         self.extra_tools = tuple(tools)
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
-            self.framework,
-            tools=[*READ_TOOLS, *WRITE_TOOLS, DECIDE, *self.extra_tools],
+            self,
+            tools=[*REGISTRY.values(), *TOOLS, DECIDE, *self.extra_tools],
             tape_store=self.store,
             skill_dirs=(),
         )
@@ -143,6 +141,28 @@ class Runtime:
         finally:
             self.active.pop(action.id, None)
 
+    async def command(
+        self, name: str, request: ActionRequest, *, session_id: str = "cli", scope: str = "cli", key: str | None = None
+    ) -> Action:
+        """Delegate a user action through its native command tool."""
+        if name not in COMMANDS:
+            message = f"Unknown command {name!r}. Choose triage, fix, review, or explain."
+            raise ValueError(message)
+        workspace = self.workspace(request)
+        state = await self.framework.build_state({"_runtime_agent": self.agent.bub}, session_id)
+        state.update(
+            _runtime_workspace=str(workspace),
+            landing_request=request.model_dump(),
+            landing_scope=scope,
+            landing_delivery_key=key,
+        )
+        prompt = shlex.join([self.agent.bub.command_prefix + name, request.instruction or ""])
+        stream = await self.agent.run_stream(session_id=session_id, prompt=prompt, state=state)
+        async with contextlib.aclosing(stream):
+            async for _ in stream:
+                pass
+        return self.tasks.get(state["landing_action_id"])
+
     async def watch_cancellations(self) -> None:
         while True:
             for action_id, task in tuple(self.active.items()):
@@ -167,45 +187,76 @@ class Runtime:
         return results
 
     async def consume(
-        self, action_id: str, request: ActionRequest, workspace: Path, checks: list[dict]
+        self,
+        action_id: str,
+        request: ActionRequest,
+        workspace: Path,
+        checks: list[dict],
+        *,
+        state: TurnState | None = None,
+        events: asyncio.Queue | None = None,
+        stream_state: StreamState | None = None,
     ) -> tuple[str, Decision | None]:
-        state: TurnState = {"landing_mode": request.mode, "_runtime_workspace": str(workspace), "code_mode": False}
+        row = self.tasks.connection.execute(
+            "SELECT data FROM action_events WHERE action_id=? AND type='sdk.invocation' LIMIT 1", (action_id,)
+        ).fetchone()
+        invocation = json.loads(row[0]) if row else {}
+        session_id = invocation.pop("session_id", action_id)
+        supplied_prompt = invocation.pop("prompt", None)
+        self.capabilities(request.mode, invocation)
+        if state is None:
+            state = await load_session_settings(self.agent.tape.session_tape(session_id, workspace))
+        state.update(landing_mode=request.mode, _runtime_workspace=str(workspace))
+        state.pop("landing_decision", None)
+        state.pop("allowed_skills", None)
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
-        self.agent.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
-        prompt = request.instruction or PROMPTS[request.mode]
-        for item in request.input:
-            prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
-        if checks:
-            prompt += "\n\nValidation results:\n" + json.dumps(checks)
-        prompt += templates(workspace, request.mode)
-        allowed = [*READ_TOOLS, *self.extra_tools]
-        if request.mode == "fixer":
-            allowed.extend(WRITE_TOOLS)
-        if request.mode == "gatekeeper":
-            allowed.append(DECIDE)
-        # Content parts bypass Bub's direct-command prefix path.
-        stream = await self.agent.run_stream(
-            session_id=action_id,
-            prompt=[{"type": "text", "text": prompt}],
+        self.agent.bub.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
+        # Content parts keep task evidence outside native command dispatch.
+        stream = await self.agent.bub.run_stream(
+            session_id=session_id,
+            prompt=supplied_prompt if supplied_prompt is not None else task_prompt(request, workspace, checks),
             state=state,
-            allowed_tools=[tool.name for tool in allowed],
+            **invocation,
         )
         output = ""
-        async with contextlib.aclosing(stream):
-            async for event in stream:
-                if event.kind == "final":
-                    output = str(event.data.get("text", output))
-                    self.tasks.output(action_id, output)
-                elif event.kind == "error":
-                    message = str(event.data.get("message", "Agent execution failed."))
-                    raise RuntimeError(message)
-                elif event.kind in {"tool_call", "tool_result"}:
-                    self.tasks.event(action_id, "agent." + event.kind, {"session_id": action_id})
+        try:
+            async with contextlib.aclosing(stream):
+                async for event in stream:
+                    if events is not None:
+                        events.put_nowait(event)
+                    if event.kind == "final":
+                        output = str(event.data.get("text", output))
+                        self.tasks.output(action_id, output)
+                    elif event.kind == "error":
+                        message = str(event.data.get("message", "Agent execution failed."))
+                        raise RuntimeError(message)
+                    elif event.kind in {"tool_call", "tool_result"}:
+                        self.tasks.event(action_id, "agent." + event.kind, {"session_id": action_id})
+        finally:
+            if stream_state is not None:
+                stream_state.error, stream_state.usage = stream.error, stream.usage
         if stream.error is not None:
             raise RuntimeError(stream.error.message)
         decision = self._decision(request, state, checks)
         self._require_output(action_id, output, decision)
         return output, decision
+
+    def capabilities(self, mode, invocation) -> None:
+        """Apply independent mode limits using the SDK's native tool resolution."""
+        limits = self.settings.modes.get(mode, ModeSettings())
+        if limits.allowed_tools is not None:
+            available = self.agent.bub.tools
+            configured = resolve_tool_names(limits.allowed_tools, all_names=available)
+            requested = resolve_tool_names(invocation.get("allowed_tools"), all_names=available)
+            invocation["allowed_tools"] = sorted(configured & requested)
+        if limits.allowed_skills is not None:
+            configured_skills = {name.casefold() for name in limits.allowed_skills}
+            requested_skills = invocation.get("allowed_skills")
+            invocation["allowed_skills"] = sorted(
+                configured_skills
+                if requested_skills is None
+                else configured_skills & {name.casefold() for name in requested_skills}
+            )
 
     @staticmethod
     def _decision(request: ActionRequest, state: TurnState, checks: list[dict]) -> Decision | None:
@@ -223,13 +274,13 @@ class Runtime:
             message = "The model returned empty output."
             raise RuntimeError(message)
 
-    async def perform(self, action_id: str) -> tuple[str, Decision | None]:
+    async def perform(self, action_id: str, **kwargs) -> tuple[str, Decision | None]:
         request = self.tasks.request(action_id)
         workspace = self.workspace(request)
         checks = await self.checks(action_id, request, workspace) if request.mode == "gatekeeper" else []
         # Finish model-owned background processes before validating its changes.
         async with shell_manager.lifespan():
-            output, decision = await self.consume(action_id, request, workspace, checks)
+            output, decision = await self.consume(action_id, request, workspace, checks, **kwargs)
         if request.mode == "gatekeeper" and checks_failed(checks):
             decision = "block"
             output += "\nRequired validation failed; the change cannot proceed."
@@ -239,16 +290,18 @@ class Runtime:
             raise RuntimeError(message)
         return output, decision
 
-    async def execute(self, action_id: str) -> Action:
+    async def execute(self, action_id: str, **kwargs) -> Action:
         async with self.execution:
-            return await self.execute_claimed(action_id)
+            return await self.execute_claimed(action_id, **kwargs)
 
-    async def execute_claimed(self, action_id: str) -> Action:
+    async def execute_claimed(self, action_id: str, **kwargs) -> Action:
         if not self.tasks.claim(action_id):
             return self.tasks.get(action_id)
         try:
             async with shell_manager.lifespan():
-                output, decision = await self.perform(action_id)
+                output, decision = await self.perform(action_id, **kwargs)
+            if self.verify is not None:
+                self.verify(self.tasks.get(action_id))
         except asyncio.CancelledError:
             status = "cancelled" if self.tasks.get(action_id).cancel_requested_at else "interrupted"
             self.tasks.finish(action_id, status)
@@ -259,6 +312,38 @@ class Runtime:
             )
         else:
             return self.tasks.finish(action_id, "completed", result=output, decision=decision)
+
+    def stream(self, action_id: str, *, state: TurnState) -> AsyncStreamEvents:
+        """Expose the shared executor's native events, with durable cancellation."""
+        events: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+        stream_state = StreamState()
+        task: asyncio.Task | None = None
+
+        async def drive():
+            try:
+                action = await self.execute(action_id, state=state, events=events, stream_state=stream_state)
+                if action.error and stream_state.error is None:
+                    stream_state.error = BubError(ErrorKind.UNKNOWN, action.error["message"])
+                    events.put_nowait(StreamEvent("error", stream_state.error.as_dict()))
+            finally:
+                events.put_nowait(None)
+
+        async def iterate():
+            nonlocal task
+            task = asyncio.create_task(drive())
+            self.active[action_id] = task
+            while (event := await events.get()) is not None:
+                yield event
+            await task
+
+        async def close():
+            if task is None or not task.done():
+                self.cancel(action_id)
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
+            self.active.pop(action_id, None)
+
+        return AsyncStreamEvents(iterate(), state=stream_state, on_close=close)
 
     def cancel(self, action_id: str) -> Action:
         action = self.tasks.cancel(action_id)

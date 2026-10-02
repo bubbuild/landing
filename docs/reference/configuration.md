@@ -53,6 +53,30 @@ skill_dirs:
 
 Skill discovery searches the selected workspace's `.agents/skills` first, repeatable `--skill-dir` roots next, configured roots next, and `~/.agents/skills` last. The first matching skill name wins. The Python `Runtime` and `create_app` APIs accept explicit `skill_dirs` with the same precedence as CLI roots. Configure these directories on the executing host; remote clients cannot add directories to a server. See [Use skills](../make-it-yours.md#use-skills) for the file layout and GitHub-hosted skill checkouts.
 
+## Mode capabilities
+
+Each of the four modes independently selects the native tools and skills available to its agent loop. Configure `modes` in YAML or set `LANDING_MODES` to the equivalent JSON object. There are no additional roles.
+
+```yaml
+modes:
+  issuer:
+    allowed_tools: [fs.read, bash, skill]
+    allowed_skills: [issue-triage]
+  fixer:
+    allowed_tools: [fs.read, fs.write, fs.edit, bash, skill]
+    allowed_skills: [friendly-python, piglet]
+  gatekeeper:
+    allowed_tools: [fs.read, bash, skill, decide]
+    allowed_skills: [landing-review]
+  explainer:
+    allowed_tools: [fs.read, skill]
+    allowed_skills: [documentation-writer]
+```
+
+An omitted list or `null` leaves that collection unrestricted; `[]` disables it. Tools use native SDK names or aliases, such as `fs.read` or `fs_read`; skill names are case-insensitive. The example names must exist in your prepared skill roots. Include `skill` to load a skill through a tool and `decide` to record a gate recommendation. GitHub publication needs an appropriate prepared capability, normally `bash` and authenticated `gh`.
+
+The Python SDK's per-call `allowed_tools` and `allowed_skills` intersect with the selected mode's lists. A call can narrow the available collection but cannot expand the mode's configuration. Settings take effect equally for CLI, HTTP, SDK, hooks, and CI execution. Native comma commands select a mode outside the model loop; they do not grant the ensuing task more capabilities. Tool selection is not a sandbox: a shell or delegation tool can expose broader capabilities, so prepare the execution environment for the authority you intend to delegate.
+
 ## Execution and service
 
 | Variable | Purpose or default |
@@ -60,7 +84,7 @@ Skill discovery searches the selected workspace's `.agents/skills` first, repeat
 | `LANDING_DB` | Local database, default `~/.local/share/landing/landing.sqlite3`; image default `/storage/landing.sqlite3`. |
 | `LANDING_SERVER` | Remote service URL for the CLI. |
 | `LANDING_TOKEN` | Server bearer token and remote client token; required to bind beyond localhost. |
-| `LANDING_GITHUB_REPOSITORY` | Optional `OWNER/REPO` for scoped gh tools. |
+| `LANDING_GITHUB_REPOSITORY` | Optional `OWNER/REPO` context for the prepared gh CLI. |
 | `BASE_URL` | Public HTTP(S) origin for service pagination links. No credentials, path, query, or fragment. |
 
 The default workspace is the current directory locally. A service registers workspace names with `serve --workspace NAME=PATH`.
@@ -74,9 +98,8 @@ The default workspace is the current directory locally. A service registers work
 | Repository variable `LANDING_COMPLETION_ARGS` | Completion options as a JSON object, default `{}`. |
 | Repository secret `LANDING_API_KEY` | Provider API key. |
 | `GH_TOKEN` or gh login | Platform authorization, independent of model configuration. |
-| `LANDING_CHECK_WORKFLOW` | Workflow to dispatch after workflow-token candidate publication; the bundled setup uses `main.yml`. |
 
-See [GitHub](../guides/github.md) for event wiring and permissions. For the Bash dogfood wrapper, `LANDING_BASE_REVISION` selects the base diff, `LANDING_ACTION_TIMEOUT_SECONDS` defaults to 600, and `LANDING_EXPLANATION_TIMEOUT_SECONDS` defaults to 300.
+See [GitHub](../guides/github.md) for event wiring and permissions, and [CI](../guides/ci.md) for the reusable Action. Project checks, authentication, and skills are prepared by the caller.
 
 ## Container replication
 

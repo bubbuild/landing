@@ -6,14 +6,14 @@ Explain CI failures, delegate fixes, and review the evidence. Use your existing 
 
 ## Start with a task
 
-| Your task | Mode | Result |
+| Your task | Command | Result |
 | --- | --- | --- |
-| Understand a question or failure | `explainer` | An explanation grounded in evidence and a useful next step. |
-| Make a problem actionable | `issuer` | Expected behavior, reproduction evidence, and acceptance criteria. |
-| Repair a known problem | `fixer` | Workspace changes, validation, and an explanation. |
-| Evaluate a candidate | `gatekeeper` | Evidence-based findings and `allow`, `block`, or `inconclusive`. |
+| Understand a question or failure | `explain` | An explanation grounded in evidence and a useful next step. |
+| Make a problem actionable | `triage` | Expected behavior, reproduction evidence, and acceptance criteria. |
+| Repair a known problem | `fix` | Workspace changes, validation, and an explanation. |
+| Evaluate a candidate | `review` | Evidence-based findings and `allow`, `block`, or `inconclusive`. |
 
-Choose a mode for the work you need; these are not four mandatory pipeline stages. All modes return ordinary text. Native checks and human review remain part of acceptance.
+Choose the action you need. Each command selects its work mode; the actions can run independently. Results are ordinary text. Native checks and human review remain part of acceptance.
 
 ## Try it locally
 
@@ -23,7 +23,7 @@ From a source checkout, with Python 3.12 or later, uv, and a POSIX host:
 uv sync
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
-uv run landing explainer "Explain this failure and the next useful check." --input check.log
+uv run landing explain "Explain this failure and the next useful check." --input check.log
 ```
 
 Use an existing UTF-8 log for `check.log`. These are Landing's current model settings; no separate agent application or plugin setup is required.
@@ -40,7 +40,7 @@ Landing keeps actions and execution history in SQLite. Workspace files stay in y
 | --- | --- |
 | [Why Landing](docs/index.md) | Adoption paths and the work Landing helps with. |
 | [Make Landing work for you](docs/make-it-yours.md) | Models, project instructions, checks, tools, and source changes. |
-| [CI](docs/guides/ci.md) / [GitHub](docs/guides/github.md) | Shell integration, replies, issues, and candidate publication. |
+| [CI](docs/guides/ci.md) / [GitHub](docs/guides/github.md) | Reusable GitHub Action, shell integration, native reviews, and candidate publication. |
 | [Server](docs/guides/server.md) | Shared execution and normalized webhook requests. |
 | [Deployment](docs/guides/deploy.md) / [Recovery](docs/guides/recovery.md) | Containers, ONCE, Litestream, and storage recovery. |
 | [CLI](docs/reference/cli.md) / [Configuration](docs/reference/configuration.md) / [HTTP](docs/reference/http.md) | Commands, settings, and request contracts. |

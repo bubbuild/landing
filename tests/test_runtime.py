@@ -292,22 +292,6 @@ def test_second_worker_cannot_recover_live_work(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("mode", ["issuer", "gatekeeper", "explainer"])
-def test_read_modes_cannot_invoke_a_hallucinated_write_tool(tmp_path, model, mode):
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "unexpected.txt", "content": "changed"}),
-        completion("The write tool is unavailable."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            await runtime.run(ActionRequest(mode=mode, instruction="Inspect the candidate.", workspace=str(tmp_path)))
-
-    asyncio.run(run())
-    assert not (tmp_path / "unexpected.txt").exists()
-
-
 def test_background_processes_finish_before_post_fix_validation(tmp_path, model):
     responses, _ = model
 

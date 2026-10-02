@@ -4,8 +4,18 @@ from pathlib import Path
 
 from bub import config
 from bub.builtin.settings import AgentSettings, ProviderSpecificEnvSource
-from pydantic import AliasChoices, AliasGenerator, Field
+from pydantic import AliasChoices, AliasGenerator, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+
+from landing.models import Mode
+
+
+class ModeSettings(BaseModel):
+    """Native SDK capabilities available to a mode; None leaves them unrestricted."""
+
+    model_config = ConfigDict(extra="forbid")
+    allowed_tools: list[str] | None = None
+    allowed_skills: list[str] | None = None
 
 
 class ConfigurationFile(BaseSettings):
@@ -29,6 +39,7 @@ class Settings(AgentSettings):
         ),
     )
     skill_dirs: list[Path] = Field(default_factory=list)
+    modes: dict[Mode, ModeSettings] = Field(default_factory=dict)
 
     @classmethod
     def settings_customise_sources(

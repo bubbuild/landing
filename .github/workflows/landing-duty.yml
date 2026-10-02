@@ -3,6 +3,8 @@ name: Landing duty
 on:
   issue_comment:
     types: [created]
+  pull_request_review_comment:
+    types: [created]
   workflow_run:
     workflows: [release-main]
     types: [completed]
@@ -17,15 +19,16 @@ permissions:
   actions: write
 
 concurrency:
-  group: landing-duty-${{ github.event.issue.number || github.event.workflow_run.id || 'daily' }}
+  group: landing-duty-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id || 'daily' }}
   cancel-in-progress: false
 
 jobs:
   duty:
     if: >-
       vars.LANDING_MODEL != '' &&
-      (github.event_name != 'issue_comment' ||
-       (github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '@landing ')))
+      ((github.event_name != 'issue_comment' && github.event_name != 'pull_request_review_comment') ||
+       (github.event.comment.user.type != 'Bot' &&
+        (github.event_name == 'pull_request_review_comment' || contains(github.event.comment.body, '/landing '))))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -44,25 +47,24 @@ jobs:
         run: |
           scripts/prepare-skills.sh "$RUNNER_TEMP/landing-skills"
           echo "LANDING_SKILL_DIRS=[\"$RUNNER_TEMP/landing-skills\"]" >> "$GITHUB_ENV"
-      - name: Handle the event or daily maintenance
+      - uses: fregante/setup-git-user@v2
+      - name: Prepare GitHub Git authentication
         env:
           GH_TOKEN: ${{ github.token }}
-          LANDING_CHECK_WORKFLOW: main.yml
+        run: gh auth setup-git
+      - name: Handle the event or daily maintenance
+        uses: ./
+        env:
+          GH_TOKEN: ${{ github.token }}
           LANDING_MODEL: ${{ vars.LANDING_MODEL }}
           LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
           LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
           LANDING_COMPLETION_ARGS: ${{ vars.LANDING_COMPLETION_ARGS || '{}' }}
           LANDING_MODEL_TIMEOUT_SECONDS: '120'
-          LANDING_DELIVERY_KEY: ${{ format('{0}:{1}', github.event.comment.id || github.run_id, github.run_attempt) }}
-        run: |
-          test -n "$LANDING_MODEL" && test -n "$LANDING_API_KEY"
-          uv run python -m landing.adapters.github issuer             --event "$GITHUB_EVENT_PATH" --delivery-key "$LANDING_DELIVERY_KEY"             --db "$RUNNER_TEMP/landing/landing.sqlite3"             --instruction 'Review recent default-branch checks, releases, and open maintenance issues using gh. Follow up existing problems with evidence, including unresolved documentation or container failures. Record actionable acceptance criteria and the human decision needed. Do not invent work, duplicate issues, or claim deployment recovery from a build.'             --check 'uv run pytest tests' --check 'uv run ty check' --check 'uv run zensical build -s'
-      - name: Publish evidence summary
-        if: always()
-        run: |
-          if [[ -f "$RUNNER_TEMP/landing/summary.md" ]]; then
-            cat "$RUNNER_TEMP/landing/summary.md" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        with:
+          command: triage
+          delivery-key: ${{ format('duty:{0}', github.event.comment.id || github.run_id) }}
+          instruction: Review default-branch checks, release evidence, and existing maintenance issues using gh. Reuse existing issues; reopen only a real recurrence and close only after verifying their acceptance criteria. Record concrete evidence and acceptance criteria. Do not create work for healthy checks or claim deployment recovery from a build.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

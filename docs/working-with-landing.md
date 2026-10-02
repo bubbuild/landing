@@ -9,7 +9,7 @@ The same method applies to a release question, a failing benchmark, a documentat
 | Source | What it helps establish | How to supply it |
 | --- | --- | --- |
 | Internal documentation | Intended behavior, architecture, operating procedures | Workspace files, `AGENTS.md`, or text snapshots with `--input`. |
-| Work items | The problem, owner, prior attempts, acceptance criteria | An issue snapshot or the optional scoped `gh` tool. |
+| Work items | The problem, owner, prior attempts, acceptance criteria | An issue snapshot or the prepared `gh` CLI. |
 | Infrastructure | Deployment environment, configuration, release topology | Relevant manifests and sanitized command output. |
 | Tests | User-visible behavior and known regressions | Existing check commands and failure logs. |
 | Benchmarks | Performance expectations and measured changes | Baseline and candidate reports with environment and revision details. |
@@ -22,7 +22,7 @@ flowchart TB
     Context["Internal docs · Work items · Infrastructure"]
     Evidence["Tests · Benchmarks · Observability"]
     Candidate["Candidate change"]
-    Landing["Landing<br/>Explain · Issue · Fix · Evaluate"]
+    Landing["Landing<br/>Explain · Triage · Fix · Review"]
     People["Maintainer"]
     Learning["Project instructions · Checks · Regression cases"]
 
@@ -43,36 +43,30 @@ Native checks and operational signals reach maintainers directly. Landing uses t
 
 ## Make a problem actionable
 
-Use `issuer` when a finding needs an owner and acceptance criteria. A useful work item explains the expected behavior, the observed failure, how to reproduce it, and what would demonstrate recovery. Reuse an existing issue for the same problem and preserve evidence of recurrence.
+Use `triage` when a finding needs an owner and acceptance criteria. A useful work item explains the expected behavior, the observed failure, how to reproduce it, and what would demonstrate recovery. Reuse an existing issue for the same problem and preserve evidence of recurrence.
 
 ```text
-Investigate the failed release check. Determine whether this is a product defect,
-a broken check, or an infrastructure failure. Reuse an existing issue if it
-describes the same problem. Include the failing revision and acceptance criteria.
+Investigate the failed release check. Determine whether this is a product defect, a broken check, or an infrastructure failure. Reuse an existing issue if it describes the same problem. Include the failing revision and acceptance criteria.
 ```
 
 Issue creation requires an authorized platform tool. Without one, issuer returns text that you can use in your own work system.
 
 ## Delegate against acceptance
 
-Use `fixer` for a defined problem. State the intended user behavior, relevant constraints, and how to verify it. Provide project instructions and the commands that matter. Keep the candidate in a workspace you can inspect.
+Use `fix` for a defined problem. State the intended user behavior, relevant constraints, and how to verify it. Provide project instructions and the commands that matter. Keep the candidate in a workspace you can inspect.
 
 ```text
-Fix the documented timeout behavior. Reproduce the failure, preserve the public
-CLI contract, and use the existing acceptance check. Report actual validation and
-anything that still needs a human decision.
+Fix the documented timeout behavior. Reproduce the failure, preserve the public CLI contract, and use the existing acceptance check. Report actual validation and anything that still needs a human decision.
 ```
 
-Fixer edits the selected workspace. The GitHub event runner prepares a separate worktree and owns publication; ordinary CLI usage leaves edits in place. The runner executes required checks independently of the agent's claims.
+Fix edits the selected workspace. Prepare an isolated checkout when delegating changes. The agent publishes candidates only within the delegated scope, using the prepared environment and repository procedures. Required checks execute independently of the agent's claims.
 
 ## Review the evidence
 
-Use `gatekeeper` to evaluate a candidate and `explainer` to answer a question. Both need evidence with enough provenance to support the conclusion. Identify the diff revision, the revision checked by CI, and the deployed revision when discussing recovery. A PR head and a CI-tested merge commit can be different.
+Use `review` to evaluate a candidate and `explain` to answer a question. Both need evidence with enough provenance to support the conclusion. Identify the diff revision, the revision checked by CI, and the deployed revision when discussing recovery. A PR head and a CI-tested merge commit can be different.
 
 ```text
-Review the candidate against the issue's acceptance criteria. State which
-revision each check covers. Separate verified behavior, hypotheses, and missing
-evidence. Recommend the next discriminating check when the cause is uncertain.
+Review the candidate against the issue's acceptance criteria. State which revision each check covers. Separate verified behavior, hypotheses, and missing evidence. Recommend the next discriminating check when the cause is uncertain.
 ```
 
 Keep execution status, model recommendation, native check results, platform delivery, and human acceptance distinct. An action can complete with a block recommendation. A successful reply can contain mistaken advice. A merged PR does not establish production recovery.

@@ -10,12 +10,12 @@ You may already use a review bot to find problems in a change, or a coding agent
 
 | What you need | Start here | What to look for |
 | --- | --- | --- |
-| Understand a failed check | [Get started](get-started.md) with `explainer` | A sourced explanation and a useful next check. |
-| Turn a finding into work | [Working with Landing](working-with-landing.md#make-a-problem-actionable) with `issuer` | Expected behavior, reproduction evidence, and acceptance criteria. |
-| Resolve a known problem | [Get started](get-started.md#delegate-the-fix) with `fixer` | A candidate change with actual validation results. |
-| Evaluate a candidate | [Working with Landing](working-with-landing.md#review-the-evidence) with `gatekeeper` | Specific findings and a recommendation for the inspected revision. |
+| Understand a failed check | [Get started](get-started.md) with `explain` | A sourced explanation and a useful next check. |
+| Turn a finding into work | [Working with Landing](working-with-landing.md#make-a-problem-actionable) with `triage` | Expected behavior, reproduction evidence, and acceptance criteria. |
+| Resolve a known problem | [Get started](get-started.md#delegate-the-fix) with `fix` | A candidate change with actual validation results. |
+| Evaluate a candidate | [Working with Landing](working-with-landing.md#review-the-evidence) with `review` | Specific findings and a recommendation for the inspected revision. |
 
-Each mode is a way to delegate one task. Choose the mode that fits the work; you do not need to run all four in order. Results are ordinary text that people can read in a terminal, an issue, or a PR. A gatekeeper also records an `allow`, `block`, or `inconclusive` recommendation.
+Choose a command for the task you need. It selects the corresponding mode; each action works independently. Results are ordinary text that people can read in a terminal, an issue, or a PR. A gatekeeper also records an `allow`, `block`, or `inconclusive` recommendation.
 
 ## Fit Landing into your workflow
 

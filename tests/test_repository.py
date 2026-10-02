@@ -119,7 +119,7 @@ def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch
     assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: explicit"
 
 
-def test_skill_guidance_does_not_grant_read_mode_shell_access(tmp_path, model):
+def test_skill_guidance_does_not_expand_sdk_capabilities(tmp_path, model):
     write_skill(tmp_path / ".agents/skills", "deploy", "approved")
     responses, _ = model
     responses.extend([
@@ -130,10 +130,15 @@ def test_skill_guidance_does_not_grant_read_mode_shell_access(tmp_path, model):
 
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            action = await runtime.run(
-                ActionRequest(mode="explainer", instruction="Use the deploy skill.", workspace=str(tmp_path))
+            stream = await runtime.agent.run_stream(
+                session_id="deployment",
+                prompt="Use the deploy skill.",
+                state={"_runtime_workspace": str(tmp_path)},
+                allowed_tools=["skill"],
             )
-            assert action.status == "completed"
+            async for _ in stream:
+                pass
+            assert runtime.tasks.list()[0].status == "completed"
 
     asyncio.run(run())
     assert not (tmp_path / "unexpected.txt").exists()

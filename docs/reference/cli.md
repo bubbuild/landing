@@ -12,7 +12,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 | --- | --- |
 | `--db PATH` | Local SQLite path; overrides `LANDING_DB`. Cannot combine with `--server`. |
 | `--server URL` | Remote service; defaults to `LANDING_SERVER`. |
-| `--github-repository OWNER/REPO` | Enable scoped gh tools locally or on `serve`; defaults to `LANDING_GITHUB_REPOSITORY`. A remote client cannot configure the server's tools. |
+| `--github-repository OWNER/REPO` | Supply GitHub repository context locally or on `serve`; defaults to `LANDING_GITHUB_REPOSITORY`. A remote client cannot configure the server's environment. |
 | `--skill-dir PATH` | Repeatable additional trusted skill root for local execution or `serve`. Remote clients must configure skills on the server. Project skills take precedence over these roots, followed by configured roots and `~/.agents/skills`. |
 
 See [Configuration](configuration.md) for environment defaults and authorization.
@@ -20,7 +20,7 @@ See [Configuration](configuration.md) for environment defaults and authorization
 ## Delegate an action
 
 ```text
-landing {issuer,fixer,gatekeeper,explainer} [INSTRUCTION] [OPTIONS]
+landing {triage,fix,review,explain} [INSTRUCTION] [OPTIONS]
 ```
 
 Provide a nonblank instruction or at least one input. Results are plain text by default; `--json` returns an action record. Commands wait for completion unless remote creation uses `--detach`.
@@ -29,12 +29,12 @@ Provide a nonblank instruction or at least one input. Results are plain text by 
 | --- | --- |
 | `--input FILE` | Repeatable UTF-8 file snapshot; `-` reads stdin once. Files need not exist in the target workspace. |
 | `--workspace VALUE` | Local directory, default current directory; remote registered name, default `default`. |
-| `--check COMMAND` | Repeatable required shell command; only fixer and gatekeeper. Each has a five-minute timeout. |
+| `--check COMMAND` | Repeatable required shell command; only fix and review. Each has a five-minute timeout. |
 | `--json` | Print the full action record. |
 | `--output PATH` | Also write the displayed result to a local file; its parent directory must exist. |
 | `--detach` | Return on remote admission; requires `--server` or `LANDING_SERVER`. |
 
-Issuer, explainer, and gatekeeper have read tools. Fixer additionally has file editing and shell tools. Gatekeeper checks execute before evaluation, and a failed check forces `block`. Fixer checks execute after the agent finishes; a failure marks the action failed and preserves changes and any returned explanation. An empty completion is a failure.
+Commands select modes: `triage` → `issuer`, `fix` → `fixer`, `review` → `gatekeeper`, and `explain` → `explainer`. The canonical mode names also work as CLI commands. Each mode can independently configure `allowed_tools` and `allowed_skills`; unset lists allow the native SDK defaults. Review guidance asks the agent to leave the candidate unchanged. These settings filter the agent loop, not operating-system access. See [Mode capabilities](configuration.md#mode-capabilities). Gatekeeper checks execute before evaluation, and a failed check forces `block`. Fixer checks execute after the agent finishes; a failure marks the action failed and preserves changes and any returned explanation. An empty completion is a failure.
 
 ## Inspect and control actions
 

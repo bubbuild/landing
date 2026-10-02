@@ -97,7 +97,7 @@ jobs:
       actions: write
     uses: ./.github/workflows/landing.yml
     with:
-      mode: ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'gatekeeper' || 'issuer' }}
+      command: ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'review' || 'triage' }}
       number: ${{ format('{0}', github.event.pull_request.number || inputs.number || 0) }}
       head: ${{ github.event.pull_request.head.sha || inputs.head || '' }}
       run-id: ${{ format('{0}', github.run_id) }}

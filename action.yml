@@ -1,0 +1,76 @@
+name: Landing
+description: Delegate reviews, fixes, issue triage, and explanations in your prepared environment.
+inputs:
+  command:
+    description: User action (review, fix, triage, or explain).
+    default: review
+  instruction:
+    description: Delegated work and acceptance criteria.
+    default: Review the candidate against repository guidance and independent checks. Publish actionable feedback and record a decision.
+  repository:
+    description: GitHub repository receiving the work.
+    default: ${{ github.repository }}
+  number:
+    description: Issue or PR number; the event supplies it when available.
+    default: '0'
+  head:
+    description: Candidate head, separate from the CI checkout revision.
+    default: ''
+  checked-revision:
+    description: Actual revision covered by the supplied native checks.
+    default: ${{ github.sha }}
+  run-id:
+    description: Native workflow run to inspect.
+    default: ${{ github.run_id }}
+  delivery-key:
+    description: Stable identifier for a delegated delivery.
+    default: ''
+  command-prefix:
+    description: GitHub comment prefix, independent of the publishing account.
+    default: /landing
+  checks:
+    description: Required check commands, one per line.
+    default: ''
+  database:
+    description: SQLite path; defaults to RUNNER_TEMP/landing/landing.sqlite3.
+    default: ''
+outputs:
+  id:
+    description: Admitted action ID.
+    value: ${{ steps.delegate.outputs.id }}
+  status:
+    description: Action status, or skipped for an unrelated event.
+    value: ${{ steps.delegate.outputs.status }}
+  decision:
+    description: Gate recommendation; independent native checks remain authoritative.
+    value: ${{ steps.delegate.outputs.decision }}
+  result:
+    description: Human-readable result.
+    value: ${{ steps.delegate.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+      with:
+        version: '0.10.12'
+    - name: Prepare the Landing runtime
+      shell: bash
+      run: |
+        uv venv --python 3.13 "$RUNNER_TEMP/landing-runtime"
+        uv pip install --python "$RUNNER_TEMP/landing-runtime/bin/python" "$GITHUB_ACTION_PATH"
+    - name: Carry out the delegated work
+      id: delegate
+      shell: bash
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_INSTRUCTION: ${{ inputs.instruction }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_NUMBER: ${{ inputs.number }}
+        INPUT_HEAD: ${{ inputs.head }}
+        INPUT_CHECKED_REVISION: ${{ inputs.checked-revision }}
+        INPUT_RUN_ID: ${{ inputs.run-id }}
+        INPUT_DELIVERY_KEY: ${{ inputs.delivery-key }}
+        INPUT_COMMAND_PREFIX: ${{ inputs.command-prefix }}
+        INPUT_CHECKS: ${{ inputs.checks }}
+        INPUT_DATABASE: ${{ inputs.database }}
+      run: '"$RUNNER_TEMP/landing-runtime/bin/python" -m landing.action'

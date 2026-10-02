@@ -19,7 +19,7 @@ After preparing the workspace, call the service from a Landing source checkout w
 
 ```bash
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing explainer "Explain the latest validation failure." --workspace default --input check.log
+uv run landing explain "Explain the latest validation failure." --workspace default --input check.log
 ```
 
 Use a saved UTF-8 failure log for `check.log`.

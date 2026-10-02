@@ -34,20 +34,20 @@ These instructions guide the agent; they do not add permissions or enforce an op
 Landing discovers skills in the selected workspace's `.agents/skills` and your `~/.agents/skills`. Each skill has a directory matching its name and a `SKILL.md` with `name` and `description` YAML front matter. The agent can list and load applicable skills through its read-only `skill` tool. Name a skill as `$deployment-check` in your instruction to include its content directly.
 
 ```bash
-uv run landing explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
+uv run landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
-Save trusted skill roots as `skill_dirs` in your Landing YAML configuration or set `LANDING_SKILL_DIRS` to a JSON list. Add roots for an individual command with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, configured roots, and your home skills, in that order. Skills are instructions and resources; they do not install plugins or grant shell or editing access to read-only modes. See [Skills configuration](reference/configuration.md#skills).
+Save trusted skill roots as `skill_dirs` in your Landing YAML configuration or set `LANDING_SKILL_DIRS` to a JSON list. Add roots for an individual command with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, configured roots, and your home skills, in that order. Skills are instructions and resources; they do not install plugins or expand a mode's configured tool set. See [Skills configuration](reference/configuration.md#skills).
 
 ```bash
-uv run landing --skill-dir ~/.local/share/landing/team-skills explainer "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log
+uv run landing --skill-dir ~/.local/share/landing/team-skills explain "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log
 ```
 
 For skills kept in GitHub, use your normal gh login to prepare a local checkout, then select its skill root. Update that checkout through your normal repository workflow; Landing does not fetch or execute remote skill repositories automatically.
 
 ```bash
 /usr/bin/gh repo clone example/team-skills ~/.local/share/landing/team-skills
-uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explainer 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
+uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
 Configure skill roots on the host that executes the action. A remote CLI caller cannot supply local directories to a server. Repository instructions and skills should come from a checkout you trust, particularly when delegating fixer work.
@@ -55,16 +55,16 @@ Configure skill roots on the host that executes the action. A remote CLI caller 
 ## Use your existing checks
 
 ```bash
-uv run landing fixer "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
+uv run landing fix "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
 ```
 
 Checks run in the target workspace using the host environment. You provide the language runtimes, project dependencies, credentials, and baseline data they need. A command's exit status determines whether that check passed. For a benchmark, the command must enforce your performance criterion; a report-only command returning zero does not prove that performance is acceptable.
 
 ## Connect your tools
 
-Supply snapshots with `--input` before building a connector. The optional GitHub tool uses `gh`, and the [GitHub event runner](guides/github.md) adds replies and candidate publication. Other platforms can translate their events into the [HTTP action contract](reference/http.md) and deliver results through their own interfaces. Provider-specific signatures belong at that translation boundary.
+Supply snapshots with `--input` before building a connector. The [GitHub integration](guides/github.md) supplies event context and checks publication receipts; the agent uses your prepared `gh` CLI. Other platforms can translate their events into the [HTTP action contract](reference/http.md) and deliver results through their own interfaces. Provider-specific signatures belong at that translation boundary.
 
-For an embedding application, the [Python API](reference/python.md) accepts additional tools. You own their authorization and capabilities; those tools are made available to every mode.
+For an embedding application, the [Python API](reference/python.md) accepts additional tools. You own their authorization and capabilities; register them once, then select the tools and skills available to each mode in [configuration](reference/configuration.md#mode-capabilities).
 
 ## Run Landing where you work
 

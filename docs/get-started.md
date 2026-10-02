@@ -50,7 +50,7 @@ The last command should fail with `Expected exit 2, got 0`. The acceptance check
 ## Explain the failed check
 
 ```bash
-uv run landing explainer "Explain the failure. Cite the observed behavior and suggest the next check." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log"
+uv run landing explain "Explain the failure. Cite the observed behavior and suggest the next check." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log"
 ```
 
 Look for an explanation connecting the missing-name invocation to exit code 0, and distinguishing that observation from a hypothesis about the cause. Wording varies with the model. A completed action means it returned an answer; you still judge whether the answer is useful and supported by the evidence.
@@ -58,7 +58,7 @@ Look for an explanation connecting the missing-name invocation to exit code 0, a
 ## Delegate the fix
 
 ```bash
-uv run landing fixer "Fix greet.py. With a name, preserve the greeting and exit 0. Without a name, print usage to stderr, print nothing to stdout, and exit 2. Keep acceptance.py unchanged." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log" --check "python acceptance.py" --json --output .ci-state/tutorial-fix.json
+uv run landing fix "Fix greet.py. With a name, preserve the greeting and exit 0. Without a name, print usage to stderr, print nothing to stdout, and exit 2. Keep acceptance.py unchanged." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log" --check "python acceptance.py" --json --output .ci-state/tutorial-fix.json
 ```
 
 Fixer can edit and execute commands in this workspace. Landing runs the required check after the agent finishes. Expect `status: completed` and an explanation of the change and verification. Read `greet.py` and verify that `acceptance.py` still expresses the intended contract. The ordinary CLI keeps the edits locally; it does not commit, push, or open a PR.
@@ -68,7 +68,7 @@ If validation fails, inspect the explanation, check records, and files. Landing 
 ## Review independently
 
 ```bash
-uv run landing gatekeeper "Review greet.py against acceptance.py. Check valid and missing-name behavior, and identify any unverified claims." --workspace "$WORKSPACE" --check "python acceptance.py" --json --output .ci-state/tutorial-review.json
+uv run landing review "Review greet.py against acceptance.py. Check valid and missing-name behavior, and identify any unverified claims." --workspace "$WORKSPACE" --check "python acceptance.py" --json --output .ci-state/tutorial-review.json
 uv run python "$WORKSPACE/acceptance.py"
 ```
 

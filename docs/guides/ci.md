@@ -1,45 +1,80 @@
 # Use Landing in CI
 
-Add Landing to a prepared checkout using an ordinary shell command. Your CI system still owns checkout, dependencies, secrets, native checks, and artifacts. Start with an explanation or advisory review, then choose whether its result should affect acceptance.
+Your CI system prepares checkout, dependencies, credentials, native checks, and skills. Run Landing as a GitHub Action or an ordinary CLI command in that environment. Start with an explanation or advisory review; keep acceptance in your team's hands.
 
-The commands below assume Landing is installed from its source checkout with `uv sync`, and [model configuration](../reference/configuration.md) is available in the job. Use `--workspace` for a target checkout outside the current directory.
+## GitHub Action
 
-## Explain a failure
+Use Landing's composite Action with a prepared checkout and model configuration. Replace the release reference with the reviewed commit or tag you want to run.
 
-Run your native check and retain its exit status. Provide its log to Landing:
+```yaml
+name: Review
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare project dependencies and native checks
+        run: make setup && make acceptance
+      - uses: PsiACE/landing@YOUR_REVIEWED_COMMIT
+        id: landing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
+          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
+        with:
+          command: review
+          instruction: Review the candidate against repository guidance and the native checks. Publish actionable findings and record a decision.
+```
+
+The Action installs its own runtime in an isolated environment. It uses the caller's prepared project tools, authenticated gh, and skill roots. Prepare skills during setup with your normal checkout actions or gh commands, then set `LANDING_SKILL_DIRS`. It does not install project dependencies, skills, or credentials. Run only trusted work with model and publication credentials; forks can keep native CI without those credentials.
+
+| Input | Behavior |
+| --- | --- |
+| `command` | `review` (default), `fix`, `triage`, or `explain`. Comment events route their own command. |
+| `instruction` | Task and acceptance criteria. |
+| `repository` | Destination repository, default the current repository. |
+| `number` | Issue or PR number; defaults to the event's target when available. |
+| `head` | Candidate head, separate from the CI checkout. PR events supply it. |
+| `checked-revision` | Actual checked revision, default `github.sha`. Supply the revision your native checks covered. |
+| `run-id` | Native workflow run to inspect, default the current run. |
+| `delivery-key` | Stable delivery identifier; default the run ID and attempt. |
+| `command-prefix` | Comment command prefix, default `/landing`. |
+| `checks` | Required shell commands, one per line, for fix or review. |
+| `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
+
+Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns `status: skipped` without invoking the model. Failed execution or missing publication fails the step. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
+
+Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, then retain the database as an artifact.
+
+## Ordinary CI commands
+
+Install Landing and configure the model on the executing host. From its source checkout use `uv sync` and prefix commands with `uv run`; use `--workspace` for another checkout.
+
+Retain a native check's exit status when asking for an explanation:
 
 ```bash
 status=0
 make acceptance > acceptance.log 2>&1 || status=$?
 if [ "$status" -ne 0 ]; then
-uv run landing explainer "Explain this failure from the supplied evidence and identify the next check." --input acceptance.log --json --output explanation.json || true
+  uv run landing explain "Explain this failure and identify the next check." --input acceptance.log --json --output explanation.json || true
 fi
 exit "$status"
 ```
 
-The explanation cannot turn a failed native check into a passing job. Store its output alongside the original log so maintainers can assess both.
-
-## Evaluate a candidate
+Evaluate a candidate with required checks:
 
 ```bash
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
-uv run landing gatekeeper "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
+uv run landing review "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
 ```
 
-Required checks run before evaluation. The CLI exits nonzero for execution failure, `block`, or `inconclusive`. To use advisory feedback, capture that status in a separate step and keep native check statuses authoritative. Human acceptance remains a separate decision.
-
-Record both the candidate revision and the actual CI checkout revision in the input. On platforms that test a merge candidate, these can differ. A green result without its revision is incomplete evidence.
+Review checks run before evaluation. The CLI exits nonzero for execution failure, `block`, or `inconclusive`. Keep advisory feedback in a separate step when it should not affect native acceptance. Record candidate revision and actual checked revision in the evidence, particularly when CI tests a merge checkout.
 
 ## Preserve evidence
 
-Retain results, input reports, logs, diffs, and the SQLite database after the action has stopped. Include workspace changes when delegating a fix. Separate databases allow independent jobs; several workers cannot share one database concurrently. Choose a retention period and record long-lived findings in your work system.
-
-Landing's checkout includes a Bash wrapper for this process:
-
-```bash
-bash scripts/dogfood.sh gatekeeper "Review this candidate using independent checks." .ci-state/review "uv run pytest tests" "uv run ty check"
-```
-
-It saves checks, execution logs, patches, and SQLite history, and asks an explainer about failure while preserving the original exit status. The wrapper requires `timeout`. It runs from the Landing checkout and does not deliver platform replies.
-
-For replies, issues, and candidate PRs, see [Use Landing with GitHub](github.md). For Landing's own continuous loop, see [Develop and dogfood](../development.md).
+Retain results, reports, logs, diffs, and SQLite after the action stops. Include workspace changes when delegating a fix. Separate databases allow independent jobs; each database has one worker. Choose a retention period and record lasting findings in your work system. See [Develop and dogfood](../development.md) for the continuous feedback process.
