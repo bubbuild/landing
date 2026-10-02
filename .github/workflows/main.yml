@@ -131,6 +131,7 @@ jobs:
       actions: write
     uses: ./.github/workflows/landing.yml
     with:
+      continue-on-error: true
       command: ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'review' || 'triage' }}
       number: ${{ format('{0}', github.event.pull_request.number || inputs.number || 0) }}
       head: ${{ github.event.pull_request.head.sha || inputs.head || '' }}
