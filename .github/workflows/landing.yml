@@ -147,7 +147,8 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/landing-preview" "$candidate"
           echo "head=$candidate" >> "$GITHUB_OUTPUT"
           npm install --prefix "$RUNNER_TEMP/landing-playwright" --no-save @playwright/mcp@0.0.83
-          export LANDING_BROWSER_EXECUTABLE="$(command -v google-chrome)"
+          browser_executable="$(command -v google-chrome)"
+          export LANDING_BROWSER_EXECUTABLE="$browser_executable"
           uv run python - <<'PY'
           import asyncio
           import json
@@ -194,7 +195,7 @@ jobs:
           uv run python -m http.server 8765 --bind 127.0.0.1 --directory site > "$RUNNER_TEMP/landing/browser/preview.log" 2>&1 &
           curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:8765/ > /dev/null
           echo "LANDING_MCP_CONFIG=$RUNNER_TEMP/landing-mcp.json" >> "$GITHUB_ENV"
-          echo "instruction=Candidate documentation preview: http://127.0.0.1:8765/ (revision ${candidate:0:7}). Browser evidence directory: $RUNNER_TEMP/landing/browser; retained in the Landing artifact after feedback. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Use the landing-review skill for browser findings." >> "$GITHUB_OUTPUT"
+          echo "instruction=Candidate documentation preview: http://127.0.0.1:8765/ (revision $GITHUB_REPOSITORY@${candidate:0:7}). Browser evidence directory: $RUNNER_TEMP/landing/browser; retained in the Landing artifact after feedback. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Use the landing-review skill for browser findings." >> "$GITHUB_OUTPUT"
       - name: Carry out the delegated action
         id: landing
         timeout-minutes: 20
