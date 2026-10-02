@@ -80,7 +80,9 @@ jobs:
         uses: ./.github/actions/setup-python-env
 
       - name: Build documentation
-        run: uv run zensical build --clean
+        run: |
+          make docs-api
+          uv run zensical build --clean
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
