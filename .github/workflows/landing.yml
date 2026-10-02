@@ -13,6 +13,10 @@ on:
         description: Optional publication token; defaults to the workflow token
         required: false
     inputs:
+      continue-on-error:
+        description: Keep automatic feedback failures advisory
+        type: boolean
+        default: false
       trust:
         type: string
         default: repository
@@ -87,7 +91,7 @@ jobs:
     if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
     name: Landing action
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       GH_ADMISSION_TOKEN: ${{ secrets.LANDING_ADMISSION_TOKEN || github.token }}
       GH_TOKEN: ${{ secrets.LANDING_GITHUB_TOKEN || github.token }}
@@ -115,6 +119,9 @@ jobs:
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
       - name: Carry out the delegated action
+        id: landing
+        timeout-minutes: 20
+        continue-on-error: ${{ inputs.continue-on-error || false }}
         uses: ./
         env:
           LANDING_CONFIG: .github/landing.yml
@@ -132,6 +139,9 @@ jobs:
           checked-revision: ${{ inputs.checked-revision }}
           delivery-key: ${{ inputs.delivery-key || format('manual:{0}:{1}', github.run_id, github.run_attempt) }}
           instruction: ${{ inputs.instruction }}
+      - name: Report unsuccessful feedback
+        if: ${{ !cancelled() && inputs.continue-on-error && steps.landing.outcome == 'failure' }}
+        run: echo "::warning::Landing feedback failed. Inspect the task logs and artifact; native checks determine acceptance."
       - uses: actions/upload-artifact@v4
         if: always()
         with:

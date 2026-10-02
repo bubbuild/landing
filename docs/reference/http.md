@@ -4,7 +4,7 @@ The service accepts the CLI's action contract. Admission persists queued work; e
 
 ## Authorization and admission
 
-When `LANDING_TOKEN` is configured, every endpoint except `/healthz` and `/up` requires `Authorization: Bearer TOKEN`. Admission requires `application/json`, has a 16 MiB limit, and rejects unknown fields.
+When `LANDING_TOKEN` is configured, action endpoints require `Authorization: Bearer TOKEN`. JSON admission requires a JSON Content-Type such as `application/json`, has a 16 MiB limit, and rejects unknown fields.
 
 ```json
 {
@@ -41,7 +41,10 @@ When `LANDING_TOKEN` is configured, every endpoint except `/healthz` and `/up` r
 | `POST /v1/actions/{id}/retries` | Retry a terminal action's original request. |
 | `GET /healthz` | HTTP liveness. |
 | `GET /up` | Worker and SQLite readiness. |
+| `GET /docs` | Scalar API reference with interactive requests and bearer authentication. |
 | `GET /openapi.json` | Generated schema. |
+
+Health checks, `/docs`, and the generated schema are public. Documentation describes the API without exposing task history or credentials.
 
 Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `BASE_URL` supplies the public origin behind a proxy.
 
@@ -64,26 +67,21 @@ Cancellation returns `202` while active work stops, otherwise `200` for terminal
 
 ## Errors
 
-Errors use `application/problem+json`:
+Errors use FastAPI's JSON responses with a `detail` field. Request validation returns `422` with a list of field errors; HTTP errors return a message:
 
 ```json
 {
-  "type": "about:blank",
-  "title": "Conflict",
-  "status": 409,
   "detail": "The idempotency key was used with a different request."
 }
 ```
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Malformed JSON. |
 | `401` | Missing or invalid token. |
-| `404` | Missing action. |
+| `404` | Missing route or action. |
 | `409` | Idempotency conflict or invalid retry state. |
 | `413` | Request exceeds 16 MiB. |
-| `415` | Admission content type is not JSON. |
-| `422` | Invalid fields, checks, workspace, or query values. |
+| `422` | Malformed JSON, invalid content type, fields, checks, workspace, or query values. |
 | `503` | Unavailable worker or database. |
 
 [Run the server](../guides/server.md) provides an end-to-end request example.

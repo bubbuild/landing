@@ -6,7 +6,7 @@ Let CI prepare the checkout, dependencies, credentials, checks, and skills. Land
 
 Run admission before candidate setup when that setup receives credentials. Use a reviewed Landing revision and trusted workflow source. The Action installs its own isolated runtime, uses your prepared project tools and authenticated gh, and does not install project dependencies or skills. Prepare skills with your existing checkout actions or gh commands, then select them with `LANDING_SKILL_DIRS`.
 
-Start with explanation or advisory review. Keep required native checks independent. [GitHub integration](github.md#choose-who-can-delegate) covers caller policy, protected sources, and publishing identities. Fork PRs can run native CI without model or publication credentials.
+Start with explanation or advisory review. Keep required native checks independent. For automatic GitHub feedback, set `continue-on-error: true` on the Action step and emit a warning when `steps.landing.outcome == 'failure'`, as in the first-review example. The task retains its failure and logs; the workflow can continue. Set the Action's step timeout shorter than the job timeout so a timed-out task leaves time for the warning and artifact upload. Omit this property for explicit delegations that must fail the job. [GitHub integration](github.md#choose-who-can-delegate) covers caller policy, protected sources, and publishing identities. Fork PRs can run native CI without model or publication credentials.
 
 ## Select scope
 

@@ -95,3 +95,5 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
 Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without a model call. Execution or required publication failure fails the step; gate recommendations remain advisory. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
+
+For automatic feedback, set GitHub's step-level `continue-on-error: true`; this is a workflow property, not an Action input. `steps.landing.outcome` remains `failure` even though its conclusion becomes `success`. Use the outcome to warn and retain logs and artifacts. Omit this property for strict delegations.
