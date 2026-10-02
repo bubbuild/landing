@@ -13,8 +13,30 @@ on:
 permissions:
   contents: read
   pull-requests: write
+concurrency:
+  group: landing-review-${{ github.repository_id }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
+  admission:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      allowed: ${{ steps.admission.outputs.allowed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: PsiACE/landing
+          ref: YOUR_REVIEWED_COMMIT
+          persist-credentials: false
+      - id: admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 src/landing/adapters/admission.py --trust repository
   review:
+    needs: admission
+    if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,13 +53,15 @@ jobs:
           instruction: Review the candidate against repository guidance and the native checks. Publish actionable findings and record a decision.
 ```
 
-The Action installs its own runtime in an isolated environment. It uses the caller's prepared project tools, authenticated gh, and skill roots. Prepare skills during setup with your normal checkout actions or gh commands, then set `LANDING_SKILL_DIRS`. It does not install project dependencies, skills, or credentials. Run only trusted work with model and publication credentials; forks can keep native CI without those credentials.
+The Action checks GitHub admission before installing its own runtime in an isolated environment. The separate admission job above uses the same dependency-free entry point before preparing candidate code; use a reviewed Landing revision and a trusted workflow source. For organization owner policy, prepare a Members-read admission token and use `--trust owner` in the admission step and `trust: owner` in the Action. Pass that token as `GH_ADMISSION_TOKEN` to the Action when publication uses a different credential. It uses the caller's prepared project tools, authenticated gh, and skill roots. Prepare skills during setup with your normal checkout actions or gh commands, then set `LANDING_SKILL_DIRS`. It does not install project dependencies, skills, or credentials. Run only trusted work with model and publication credentials; forks can keep native CI without those credentials.
 
 | Input | Behavior |
 | --- | --- |
 | `command` | `review` (default), `fix`, `triage`, or `explain`. Comment events route their own command. |
 | `instruction` | Task and acceptance criteria. |
-| `repository` | Destination repository, default the current repository. |
+| `repository` | Workflow repository; cross-repository Action targets fail. |
+| `trust` | `repository` (default) admits repository writers; `owner` admits the personal or organization owner. |
+| `upstream-workflow` | Allowed `workflow_run` source name; empty rejects these events. |
 | `number` | Issue or PR number; defaults to the event's target when available. |
 | `head` | Candidate head, separate from the CI checkout. PR events supply it. |
 | `checked-revision` | Actual checked revision, default `github.sha`. Supply the revision your native checks covered. |
@@ -47,7 +71,7 @@ The Action installs its own runtime in an isolated environment. It uses the call
 | `checks` | Required shell commands, one per line, for fix or review. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
-Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns `status: skipped` without invoking the model. Failed execution or missing required publication fails the step. Automatic issuer follow-up can complete without a public update when conditions are unchanged. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
+Outputs are `id`, `status`, `decision`, and `result`. An unrelated or unauthorized event returns `status: skipped` without invoking the model. Failed execution or missing required publication fails the step. Automatic issuer follow-up can complete without a public update when conditions are unchanged. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
 
 Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, select per-mode capabilities with `LANDING_CONFIG: .github/landing.yml`, then retain the database as an artifact.
 
@@ -59,9 +83,13 @@ Use your CI system's existing path filters and job conditions to select work bef
 Review the selected documentation changes for accurate commands and configuration. Generated site/** output is excluded; inspect related source when it resolves a specific claim. Native checks have passed for the supplied checkout revision.
 ```
 
-Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Healthy default-branch checks also skip feedback; native failures receive triage for the affected jobs. A new automatic PR review cancels superseded automatic feedback, leaving native checks independent. Explicit candidate dispatch and comment delegations remain available.
+Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Healthy default-branch checks also skip feedback; native failures receive triage for the affected jobs. Main groups automatic PR events and explicit candidate-check dispatches by repository and PR at the workflow entrance. A new candidate cancels unfinished checks and feedback for the old candidate immediately; the new candidate owns its native acceptance. Keep checks and reviews in separate workflows if old native runs must continue. Explicit candidate dispatch and comment delegations remain available.
 
 Self-checks install Landing from the candidate checkout. A comment task can instead use the default-branch runtime with a selected PR workspace; changing that workspace does not reload the installed runtime. Start fresh candidate CI to verify changes to Landing itself.
+
+Put concurrency on the outer workflow, before native checks or `needs` delay agent admission. Do not put the SHA, event name or run ID in the group for the same PR. Use a different group for a called workflow: GitHub supplies the caller's workflow name inside reusable workflows, so reusing its cancelling group can cancel the caller itself. A composite Action cannot set workflow concurrency.
+
+The bundled reusable workflow and duty listener queue explicit work with `queue: max` and `cancel-in-progress: false`. GitHub.com retains up to 100 pending runs; plain `cancel-in-progress: false` still replaces the single pending run by default. On GitHub Enterprise Server, check support for `queue: max`; use the existing Landing server queue if native multi-pending queues are unavailable. These queues preserve admitted requests, not commit-date ordering or unlimited capacity.
 
 ## Ordinary CI commands
 

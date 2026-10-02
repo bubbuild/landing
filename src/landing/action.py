@@ -13,6 +13,7 @@ def main() -> int:
     )
     args = [os.getenv("INPUT_COMMAND", "review"), "--db", str(path)]
     values = {
+        "trust": os.getenv("INPUT_TRUST") or "repository",
         "repository": os.getenv("INPUT_REPOSITORY") or os.environ["GITHUB_REPOSITORY"],
         "instruction": os.getenv("INPUT_INSTRUCTION") or "Carry out the delegated task using repository guidance.",
         "number": os.getenv("INPUT_NUMBER") or "0",
@@ -31,6 +32,9 @@ def main() -> int:
     for check in os.getenv("INPUT_CHECKS", "").splitlines():
         if check.strip():
             args.extend(["--check", check])
+    for name in os.getenv("INPUT_UPSTREAM_WORKFLOW", "").splitlines():
+        if name.strip():
+            args.extend(["--upstream-workflow", name.strip()])
     action = github_main(args)
     outputs = {
         "id": action.id if action else "",

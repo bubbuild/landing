@@ -37,6 +37,8 @@ The test suite replaces external model requests with deterministic responses; th
 
 The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./` and select independent tool and skill collections through `.github/landing.yml`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 
+Treat the workflow source, event admission and prepared environment as separate boundaries. Main candidate reviews use repository-native permission checks before agent setup and workflow-level cancellation at candidate arrival. Duty loads the default-branch policy, requires explicit comment commands and validates its release source; delegated work uses a separate native queue. See [GitHub trust](guides/github.md#choose-who-can-delegate) for owner-restricted deployments.
+
 Retain investigation details in execution artifacts. Update the relevant issue or PR when evidence, conditions or outcomes change; do not post repeated status reports. Improve project instructions, tools, code, or meaningful regression cases based on useful observations.
 
 Use native checks and actual human outcomes to evaluate changes. A model's own `allow` is not a quality metric. Per-job databases and artifacts expire after 30 days; lasting lessons belong in work items and the repository.

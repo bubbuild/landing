@@ -17,6 +17,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: landing-ci-${{ github.repository_id }}-${{ github.event.pull_request.number || (inputs.number != '' && inputs.number != '0' && inputs.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0') }}
+
 jobs:
   feedback-scope:
     if: github.event_name == 'pull_request'

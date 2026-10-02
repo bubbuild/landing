@@ -3,6 +3,9 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +28,8 @@ path = Path(os.environ["TEST_GITHUB_STATE"])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
 endpoint = args[1]
+if state.get("unavailable"):
+    raise SystemExit("GitHub is unavailable")
 if args[0] != "api":
     raise SystemExit("Use the native API in this fixture.")
 if "--input" in args:
@@ -34,11 +39,18 @@ if "--input" in args:
     record = {**body, "id": len(state[kind]) + 1, "html_url": "https://example.test/" + kind + "/1", "state": "COMMENTED"}
     if endpoint.endswith("/replies"):
         record["in_reply_to_id"] = int(endpoint.split("/")[-2])
+        record["pull_request_url"] = "https://api.github.com/repos/example/landing/pulls/42"
     state[kind].append(record)
     path.write_text(json.dumps(state))
     print(json.dumps(record))
 elif endpoint.endswith("/permission"):
     print(json.dumps({"permission": state["permission"]}))
+elif "/memberships/" in endpoint:
+    print(json.dumps(state["membership"]))
+elif endpoint.startswith("users/"):
+    print(json.dumps(state["user"]))
+elif endpoint == "repos/example/landing":
+    print(json.dumps({"owner": state["owner"]}))
 elif "/reviews/" in endpoint:
     number = int(endpoint.rsplit("/", 1)[-1])
     print(json.dumps(next(record for record in state["reviews"] if record["id"] == number)))
@@ -66,7 +78,7 @@ else:
 def invoke(tmp_path, platform, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    def call(event, *, key="delegation", repository="example/landing", prefix="/landing", number=0):
+    def call(event, *, key="delegation", repository="example/landing", prefix="/landing", number=0, trust="repository"):
         source = tmp_path / "event.json"
         source.write_text(json.dumps(event))
         return github.main([
@@ -82,6 +94,10 @@ def invoke(tmp_path, platform, monkeypatch):
             prefix,
             "--number",
             str(number),
+            "--trust",
+            trust,
+            "--upstream-workflow",
+            "release-main",
         ])
 
     return call
@@ -93,13 +109,14 @@ def test_comment_actions_require_maintainer_and_use_configurable_identity(platfo
         "issue": {"number": 42},
         "comment": {"body": "/landing fix Repair retry behavior.", "user": {"type": "Bot", "login": "bot"}},
     }
+    event["comment"]["body"] = "Handled the task."
     assert invoke(event) is None
+    event["comment"]["body"] = "/landing fix Repair retry behavior."
     event["comment"]["user"] = {"type": "User", "login": "contributor"}
     state = json.loads(platform.read_text())
     state["permission"] = "read"
     platform.write_text(json.dumps(state))
-    with pytest.raises(ValueError, match="maintainer"):
-        invoke(event)
+    assert invoke(event) is None
     state["permission"] = "write"
     platform.write_text(json.dumps(state))
     responses, _ = model
@@ -188,7 +205,8 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
         asyncio.run(run("Review deployment behavior."))
 
 
-def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platform, invoke, model):
+@pytest.mark.parametrize("marked", [True, False])
+def test_delegated_inline_reply_is_confirmed_and_replay_does_not_publish_twice(platform, invoke, model, marked):
     state = json.loads(platform.read_text())
     state["reviews"] = [
         {"id": 9, "body": github.marker("gatekeeper", "earlier") + "\nA retry finding."},
@@ -213,7 +231,7 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
             "id": 18,
             "in_reply_to_id": 17,
             "pull_request_review_id": 10,
-            "body": "Does this affect the initial attempt?",
+            "body": "/landing review Does this affect the initial attempt?",
             "path": "retry.py",
             "line": 7,
             "user": {"type": "User", "login": "maintainer"},
@@ -237,7 +255,11 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
         )
         answer = "The initial attempt is unaffected." if informed else "The thread evidence is unavailable."
         return completion(
-            tool="fs_write", arguments={"path": "reply.json", "content": json.dumps({"body": stamp + "\n" + answer})}
+            tool="fs_write",
+            arguments={
+                "path": "reply.json",
+                "content": json.dumps({"body": (stamp + "\n" if marked else "") + answer}),
+            },
         )
 
     responses.extend([
@@ -250,6 +272,8 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
         ),
         completion("Replied in the original review thread."),
     ])
+    if not marked:
+        responses.insert(4, completion(tool="confirm_reply", arguments={"comment_id": 3}))
     action = invoke(event, key="comment:18")
     assert action is not None
     assert action.mode == "gatekeeper"
@@ -258,6 +282,10 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
     assert len(state["reviews"]) == 2
     assert state["comments"][-1]["in_reply_to_id"] == 17
     assert "initial attempt is unaffected" in state["comments"][-1]["body"]
+    assert invoke(event, key="comment:18").id == action.id
+    assert json.loads(platform.read_text())["comments"] == state["comments"]
+    event["comment"]["body"] = "Fixed in the latest commit; CI is pending."
+    assert invoke(event, key="status-update") is None
 
 
 def test_text_without_required_publication_is_failed_work(tmp_path, platform, model):
@@ -283,7 +311,8 @@ def test_text_without_required_publication_is_failed_work(tmp_path, platform, mo
     assert not json.loads(platform.read_text())["reviews"]
 
 
-def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platform, model):
+@pytest.mark.parametrize("lookup_fails", [False, True])
+def test_review_stops_queued_tools_for_superseded_or_unverifiable_head(tmp_path, platform, model, lookup_fails):
     responses, requests = model
     state = json.loads(platform.read_text())
     state["head"] = "new-candidate"
@@ -295,9 +324,14 @@ def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platfo
     }
 
     async def replace_candidate(**kwargs):
+        state["unavailable"] = lookup_fails
         state["head"] = "new-candidate"
         platform.write_text(json.dumps(state))
-        return completion(tool="fs_write", arguments={"path": "review.json", "content": json.dumps(review)})
+        queued = completion(tool="fs_write", arguments={"path": "review.json", "content": json.dumps(review)})
+        publish = completion(tool="bash", arguments={"command": "touch publication-started"})
+        publish.choices[0].message.tool_calls[0].id = "call-publication"
+        queued.choices[0].message.tool_calls.extend(publish.choices[0].message.tool_calls)
+        return queued
 
     responses.extend([
         replace_candidate,
@@ -328,9 +362,10 @@ def test_review_of_superseded_candidate_does_not_report_success(tmp_path, platfo
     state["head"] = "candidate-head"
     platform.write_text(json.dumps(state))
     action = asyncio.run(run())
-    assert action.status == "failed"
-    assert action.error is not None
-    assert "PR head changed" in action.error["message"]
+    assert action.status == "cancelled"
+    assert not json.loads(platform.read_text())["reviews"]
+    assert not (tmp_path / "review.json").exists()
+    assert not (tmp_path / "publication-started").exists()
 
 
 def test_release_tag_event_delegates_maintenance(invoke, model):
@@ -338,7 +373,14 @@ def test_release_tag_event_delegates_maintenance(invoke, model):
     responses.append(completion("Documentation deployment needs its repository Pages configuration."))
     action = invoke({
         "repository": {"full_name": "example/landing", "default_branch": "main"},
-        "workflow_run": {"id": 123, "head_branch": "0.0.0", "event": "release"},
+        "workflow_run": {
+            "id": 123,
+            "name": "release-main",
+            "head_repository": {"full_name": "example/landing"},
+            "actor": {"login": "maintainer"},
+            "head_branch": "0.0.0",
+            "event": "release",
+        },
     })
     assert action is not None
     assert action.status == "completed"
@@ -363,7 +405,14 @@ def test_unchanged_followup_completes_with_later_reads_and_remains_idempotent(tm
     ])
     event = {
         "repository": {"full_name": "example/landing", "default_branch": "main"},
-        "workflow_run": {"id": 123, "head_branch": "main", "event": "push"},
+        "workflow_run": {
+            "id": 123,
+            "name": "release-main",
+            "head_repository": {"full_name": "example/landing"},
+            "actor": {"login": "maintainer"},
+            "head_branch": "main",
+            "event": "push",
+        },
     }
     action = invoke(event, key="followup:123", number=42)
     assert action is not None
@@ -415,7 +464,14 @@ def test_changed_followup_publishes_once(platform, invoke, model):
     action = invoke(
         {
             "repository": {"full_name": "example/landing", "default_branch": "main"},
-            "workflow_run": {"id": 124, "head_branch": "main", "event": "push"},
+            "workflow_run": {
+                "id": 124,
+                "name": "release-main",
+                "head_repository": {"full_name": "example/landing"},
+                "actor": {"login": "maintainer"},
+                "head_branch": "main",
+                "event": "push",
+            },
         },
         key="followup:124",
         number=42,
@@ -450,7 +506,14 @@ def test_failed_automatic_publication_is_not_a_quiet_completion(tmp_path, platfo
     action = invoke(
         {
             "repository": {"full_name": "example/landing", "default_branch": "main"},
-            "workflow_run": {"id": 125, "head_branch": "main", "event": "push"},
+            "workflow_run": {
+                "id": 125,
+                "name": "release-main",
+                "head_repository": {"full_name": "example/landing"},
+                "actor": {"login": "maintainer"},
+                "head_branch": "main",
+                "event": "push",
+            },
         },
         number=42,
     )
@@ -458,3 +521,107 @@ def test_failed_automatic_publication_is_not_a_quiet_completion(tmp_path, platfo
     assert action.status == "failed"
     assert (tmp_path / "publication-attempted").exists()
     assert not json.loads(platform.read_text())["comments"]
+
+
+@pytest.mark.parametrize(
+    ("trust", "owner", "actor_id", "membership", "allowed"),
+    [
+        ("repository", {"type": "User", "id": 1}, 2, None, True),
+        ("owner", {"type": "User", "id": 1}, 2, None, False),
+        ("owner", {"type": "User", "id": 1}, 1, None, True),
+        ("owner", {"type": "Organization", "login": "example"}, 2, {"state": "active", "role": "member"}, False),
+        ("owner", {"type": "Organization", "login": "example"}, 2, {"state": "active", "role": "admin"}, True),
+    ],
+)
+def test_native_admission_runs_before_runtime_installation(
+    tmp_path, platform, trust, owner, actor_id, membership, allowed
+):
+    state = json.loads(platform.read_text())
+    state["membership"] = membership
+    platform.write_text(json.dumps(state))
+    source = tmp_path / "event.json"
+    source.write_text(
+        json.dumps({
+            "repository": {"full_name": "example/landing", "owner": owner},
+            "issue": {"number": 42},
+            "comment": {
+                "body": "/landing explain Explain this failure.",
+                "user": {"id": actor_id, "login": "maintainer"},
+            },
+        })
+    )
+    script = Path(github.__file__).with_name("admission.py")
+    # -S makes installed runtime packages unavailable to this admission process.
+    result = subprocess.run(  # noqa: S603 -- fixed admission entry point and disposable platform.
+        [
+            sys.executable,
+            "-S",
+            str(script),
+            "--repository",
+            "example/landing",
+            "--event",
+            str(source),
+            "--trust",
+            trust,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"allowed={str(allowed).lower()}"
+
+
+def test_unknown_permissions_fail_instead_of_skipping_or_invoking_agent(platform, invoke, model):
+    state = json.loads(platform.read_text())
+    state["unavailable"] = True
+    platform.write_text(json.dumps(state))
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair this issue.", "user": {"login": "maintainer"}},
+    }
+    with pytest.raises(RuntimeError, match="GitHub is unavailable"):
+        invoke(event)
+    assert not model[1]
+
+
+def test_owner_rerun_does_not_borrow_original_owners_authority(platform, invoke, model, monkeypatch):
+    state = json.loads(platform.read_text())
+    state["user"] = {"id": 2, "login": "writer"}
+    platform.write_text(json.dumps(state))
+    monkeypatch.setenv("GITHUB_ACTOR", "owner")
+    monkeypatch.setenv("GITHUB_TRIGGERING_ACTOR", "writer")
+    event = {
+        "repository": {"full_name": "example/landing", "owner": {"type": "User", "id": 1}},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair this issue.", "user": {"id": 1, "login": "owner"}},
+    }
+    assert invoke(event, trust="owner") is None
+    assert not model[1]
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "event_name", "branch"),
+    [
+        ("other-workflow", "example/landing", "release", "v1.0"),
+        ("release-main", "outside/landing", "push", "main"),
+        ("release-main", "example/landing", "pull_request", "main"),
+        ("release-main", "example/landing", "push", "candidate"),
+    ],
+)
+def test_untrusted_upstream_does_not_delegate_even_when_successful(invoke, model, name, source, event_name, branch):
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {
+            "id": 123,
+            "name": name,
+            "head_repository": {"full_name": source},
+            "event": event_name,
+            "head_branch": branch,
+            "conclusion": "success",
+            "actor": {"login": "maintainer"},
+        },
+    }
+    assert invoke(event) is None
+    assert not model[1]

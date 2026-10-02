@@ -8,8 +8,14 @@ inputs:
     description: Delegated work and acceptance criteria.
     default: Review the candidate against repository guidance and independent checks. Publish actionable feedback and record a decision.
   repository:
-    description: GitHub repository receiving the work.
+    description: Workflow repository receiving the work; cross-repository targets are rejected.
     default: ${{ github.repository }}
+  trust:
+    description: Native caller scope (repository writers or owner).
+    default: repository
+  upstream-workflow:
+    description: Allowed workflow_run source name; empty rejects workflow_run events.
+    default: ''
   number:
     description: Issue or PR number; the event supplies it when available.
     default: '0'
@@ -40,7 +46,7 @@ outputs:
     value: ${{ steps.delegate.outputs.id }}
   status:
     description: Action status, or skipped for an unrelated event.
-    value: ${{ steps.delegate.outputs.status }}
+    value: ${{ steps.delegate.outputs.status || 'skipped' }}
   decision:
     description: Gate recommendation; independent native checks remain authoritative.
     value: ${{ steps.delegate.outputs.decision }}
@@ -50,18 +56,32 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Admit the GitHub caller
+      id: admission
+      shell: bash
+      env:
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_TRUST: ${{ inputs.trust }}
+        INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
+        INPUT_COMMAND_PREFIX: ${{ inputs.command-prefix }}
+      run: python3 "$GITHUB_ACTION_PATH/src/landing/adapters/admission.py" --repository "$INPUT_REPOSITORY" --trust "$INPUT_TRUST" --upstream-workflow "$INPUT_UPSTREAM_WORKFLOW" --command-prefix "$INPUT_COMMAND_PREFIX"
     - uses: astral-sh/setup-uv@v6
+      if: steps.admission.outputs.allowed == 'true'
       with:
         version: '0.10.12'
     - name: Prepare the Landing runtime
+      if: steps.admission.outputs.allowed == 'true'
       shell: bash
       run: |
         uv venv --python 3.13 "$RUNNER_TEMP/landing-runtime"
         uv pip install --python "$RUNNER_TEMP/landing-runtime/bin/python" "$GITHUB_ACTION_PATH"
     - name: Carry out the delegated work
+      if: steps.admission.outputs.allowed == 'true'
       id: delegate
       shell: bash
       env:
+        INPUT_TRUST: ${{ inputs.trust }}
+        INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_INSTRUCTION: ${{ inputs.instruction }}
         INPUT_REPOSITORY: ${{ inputs.repository }}
@@ -73,4 +93,4 @@ runs:
         INPUT_COMMAND_PREFIX: ${{ inputs.command-prefix }}
         INPUT_CHECKS: ${{ inputs.checks }}
         INPUT_DATABASE: ${{ inputs.database }}
-      run: '"$RUNNER_TEMP/landing-runtime/bin/python" -m landing.action'
+      run: 'exec "$RUNNER_TEMP/landing-runtime/bin/python" -m landing.action'

@@ -2,8 +2,10 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from contextlib import closing
 
 import pytest
@@ -13,7 +15,7 @@ from tests.conftest import completion
 from tests.provider import provider
 
 
-def delegate(tmp_path, api_base, command, checks, *, extra_env=None):
+def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when=None):
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith(("LANDING_", "BUB_", "GITHUB_", "INPUT_"))
     }
@@ -33,14 +35,19 @@ def delegate(tmp_path, api_base, command, checks, *, extra_env=None):
         GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"),
     )
     environment.update(extra_env or {})
-    return subprocess.run(  # noqa: S603 -- fixed Python module entry point in a disposable workspace.
-        [sys.executable, "-m", "landing.action"],
-        cwd=tmp_path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    args = [sys.executable, "-m", "landing.action"]
+    if cancel_when is None:
+        return subprocess.run(args, cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=30)  # noqa: S603 -- fixed entry point in a disposable workspace.
+    with subprocess.Popen(  # noqa: S603 -- fixed public Action entry point in a disposable workspace.
+        args, cwd=tmp_path, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    ) as process:
+        deadline = time.monotonic() + 10
+        while not cancel_when.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert cancel_when.exists(), "The delegated shell did not start."
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
 
 @pytest.mark.parametrize(("check", "decision"), [("true", "allow"), ("false", "block")])
@@ -111,3 +118,53 @@ def test_action_preserves_instruction_assignments_and_quotes(tmp_path):
         result = delegate(tmp_path, api_base, "explain", "", extra_env={"INPUT_INSTRUCTION": instruction})
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["result"] == "The quality check passed; key=value and page=2 remain task evidence."
+
+
+def test_action_rejects_cross_repository_target_before_model_call(tmp_path):
+    with provider([]) as (api_base, requests):
+        result = delegate(tmp_path, api_base, "review", "", extra_env={"INPUT_REPOSITORY": "other/repository"})
+    assert result.returncode != 0
+    assert "workflow repository" in result.stderr
+    assert not requests
+    assert not (tmp_path / "landing.sqlite3").exists()
+
+
+def test_runner_termination_cancels_work_and_stops_its_shell(tmp_path):
+    child = tmp_path / "child.pid"
+    response = completion(
+        tool="bash", arguments={"command": "sleep 60 & echo $! > child.pid; wait", "timeout_seconds": 60}
+    )
+    with provider([response]) as (api_base, _):
+        result = delegate(tmp_path, api_base, "fix", "", cancel_when=child)
+    assert result.returncode != 0
+    with closing(Tasks(tmp_path / "landing.sqlite3")) as tasks:
+        actions = tasks.list()
+        assert len(actions) == 1
+        assert actions[0].status == "cancelled"
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(child.read_text()), 0)
+
+
+def test_native_manual_dispatch_uses_github_authorization_for_app_identity(tmp_path):
+    source = tmp_path / "event.json"
+    source.write_text(
+        json.dumps({
+            "repository": {"full_name": "example/landing"},
+            "sender": {"type": "Bot", "login": "team-app[bot]"},
+        })
+    )
+    with provider([completion("Explained the requested release evidence.")]) as (api_base, requests):
+        result = delegate(
+            tmp_path,
+            api_base,
+            "explain",
+            "",
+            extra_env={
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_EVENT_PATH": str(source),
+            },
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "completed"
+    assert requests

@@ -16,6 +16,9 @@ uv run landing action logs act_example --after 0
 | Gatekeeper returned nonzero | Status and decision separately | A completed `block` or `inconclusive` is a recommendation, not necessarily an execution error. |
 | Another worker owns the database | A service or local action using the same path | Submit through `--server`, or choose a separate database. |
 | Remote work continues after Ctrl-C | Action status on the server | Use `action cancel` when you intend to stop it. |
+| GitHub task skipped | Native caller permission, trust policy, command prefix or upstream workflow | Use an authorized explicit command; an unrelated status reply does not delegate work. |
+| Review cancelled | Current PR head and `github.review_stopped` event | Review the new candidate; a head lookup failure also stops new tools. |
+| Duty timed out after pushing | Native timeout annotation, last tool and missing reply | Finish with the candidate and pending CI links; do not wait for the current duty or feedback job. |
 | Reply or publication failed | Adapter events, gh authorization, candidate head | Retry with the same database and delivery key; do not delegate the same work again merely to retry delivery. |
 | CI passes but advice is wrong | Supplied evidence and the model's interpretation | Record the mistake and its consequence in the work item; improve instructions, tools, or code at the responsible layer. |
 | Restored action is interrupted | Worker stopped while the action was active | Inspect workspace files and history before an explicit retry. |
