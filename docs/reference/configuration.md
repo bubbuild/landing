@@ -97,7 +97,10 @@ The default workspace is the current directory locally. A service registers work
 | Repository variable `LANDING_API_BASE` | Optional provider endpoint. |
 | Repository variable `LANDING_COMPLETION_ARGS` | Completion options as a JSON object, default `{}`. |
 | Repository secret `LANDING_API_KEY` | Provider API key. |
+| Repository secret `LANDING_GITHUB_TOKEN` | Optional bundled-workflow publication token; defaults to the workflow token. |
+| Repository variables `LANDING_GIT_NAME` and `LANDING_GIT_EMAIL` | Optional bundled-workflow commit identity; set both. Default is GitHub's standard Actions bot identity. |
 | `GH_TOKEN` or gh login | Platform authorization, independent of model configuration. |
+| `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` or Git configuration | Caller-prepared commit attribution. Landing preserves it. |
 
 See [GitHub](../guides/github.md) for event wiring and permissions, and [CI](../guides/ci.md) for the reusable Action. Project checks, authentication, and skills are prepared by the caller.
 

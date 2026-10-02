@@ -10,6 +10,22 @@ uv run landing --github-repository example/team-project triage "Investigate the 
 
 `--github-repository` supplies context, not a separate restricted gh tool. Select each mode's tools and skills through [configuration](../reference/configuration.md#mode-capabilities). The executing environment owns credentials and platform permissions; Landing does not install skills or change authentication.
 
+## Choose the publishing identity
+
+Your gh credentials determine who publishes comments, reviews and PRs. Git's author and committer settings determine commit attribution. Prepare both before delegating publication. Landing uses those identities and must report a missing required identity rather than invent one. The `/landing` prefix and publication markers do not identify an account.
+
+| Environment | Publication identity | Commit identity |
+| --- | --- | --- |
+| Bundled workflows, default | `github-actions[bot]` through the workflow token | GitHub's standard Actions bot name and noreply email. |
+| Personal or machine account | That account's gh login or token | The account's name and verified or GitHub-provided noreply email. |
+| GitHub App | The App's installation token | The App bot's actual login and ID-based noreply email. |
+
+The bundled workflows accept an optional `LANDING_GITHUB_TOKEN` secret. Set repository variables `LANDING_GIT_NAME` and `LANDING_GIT_EMAIL` together to choose the commit identity. These variables populate Git's standard author and committer environment variables; selecting another token alone leaves the standard Actions commit identity in place. They are workflow settings, not Landing runtime settings.
+
+In your own CLI, server or Action environment, use existing Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`. Pass `GH_TOKEN` or use the existing gh login. Prepare Git transport with `gh auth setup-git` when pushing. Landing's Action preserves caller-provided values.
+
+For an organization-owned identity, prepare a GitHub App owned by the organization or an authorized machine account. Organizations themselves cannot act as users. Use the official [create-github-app-token Action and Git identity recipe](https://github.com/actions/create-github-app-token#configure-git-cli-for-an-apps-bot-user) in the same job, then pass its token as `GH_TOKEN` and its bot identity through Git's standard settings. Do not construct a noreply email from the product or organization name. App setup and token renewal belong to the prepared environment.
+
 ## Follow repository conventions
 
 Landing reads contribution templates from the selected checkout in [GitHub's standard locations](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates): root, `docs`, and `.github`, including single templates, `ISSUE_TEMPLATE` and `PULL_REQUEST_TEMPLATE` directories, and YAML issue forms. The agent chooses the applicable template when creating an issue or PR. YAML form field labels become Markdown headings; gh does not submit the interactive web form. Fill requested sections with actual evidence and leave unverified checkboxes unchecked.
