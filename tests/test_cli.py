@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -70,6 +73,21 @@ def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["result"] == "Deployment reference: approved"
     assert json.loads(destination.read_text())["result"] == "Deployment reference: approved"
+
+
+def test_captured_help_and_diagnostics_remain_plain_in_ci():
+    environment = {**os.environ, "GITHUB_ACTIONS": "true", "FORCE_COLOR": "1"}
+    for arguments, status in ((["triage", "--help"], 0), (["action", "list", "--limit", "0", "--json"], 2)):
+        result = subprocess.run(  # noqa: S603 -- exercise the installed CLI with explicit arguments.
+            [sys.executable, "-m", "landing", *arguments], capture_output=True, text=True, env=environment, check=False
+        )
+        assert result.returncode == status
+        assert "\x1b[" not in result.stdout + result.stderr
+        if status:
+            assert not result.stdout
+            assert "--limit" in result.stderr
+        else:
+            assert "--help" in result.stdout
 
 
 def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, capsys):

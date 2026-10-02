@@ -71,4 +71,4 @@ Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatab
 
 Ctrl-C during local creation cancels its action and closes owned shell processes. Ctrl-C during remote waiting leaves the action running; request cancellation explicitly. The [GitHub event runner](../guides/github.md) has separate advisory decision semantics.
 
-Syntax and option-validation errors use Typer's standard diagnostic on stderr with exit code `2`. A valid command that encounters invalid task input or local configuration also returns `2`; with `--json`, it writes an `error` object to stdout.
+Help and syntax diagnostics use Typer's plain-text formatting, including in captured CI output. Syntax and option-validation errors use stderr with exit code `2`. A valid command that encounters invalid task input or local configuration also returns `2`; with `--json`, it writes an `error` object to stdout.

@@ -25,6 +25,7 @@ from landing.tasks import Tasks
 app = typer.Typer(
     help="Explain CI failures, delegate fixes, and review evidence.",
     no_args_is_help=True,
+    rich_markup_mode=None,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 actions = typer.Typer(help="Inspect and control recorded actions.", no_args_is_help=True)
