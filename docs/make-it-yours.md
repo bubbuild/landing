@@ -32,14 +32,14 @@ Instructions guide the agent; they do not grant permissions or enforce an operat
 Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, and `~/.agents/skills`. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
 
 ```bash
-uv run landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
+landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
 For a skill repository on GitHub, prepare it with your normal gh login:
 
 ```bash
 gh repo clone example/team-skills ~/.local/share/landing/team-skills
-uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explain 'Use $deployment-check to explain the failure.' --workspace ./candidate --input deployment.log
+landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explain 'Use $deployment-check to explain the failure.' --workspace ./candidate --input deployment.log
 ```
 
 Configure roots on the executing host. Use `skill_dirs` or `LANDING_SKILL_DIRS` for saved settings and repeatable global `--skill-dir` options for individual calls. [Skills configuration](reference/configuration.md#skills) defines discovery precedence. Skills do not install plugins or expand configured tools.
@@ -51,7 +51,7 @@ Each mode can independently select its allowed tools and skills through [mode ca
 Use your existing checks for the behavior you need to establish:
 
 ```bash
-uv run landing fix "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
+landing fix "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
 ```
 
 Checks execute in the task workspace. Exit status establishes pass or failure, so a benchmark command must enforce your performance criterion rather than merely print a report.

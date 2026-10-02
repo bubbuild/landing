@@ -14,11 +14,11 @@ curl --fail http://127.0.0.1:8080/up
 
 The image serves port 80 as UID 1000. SQLite lives at `/storage/landing.sqlite3`; the default workspace is `/storage/workspace`. It starts empty, so prepare your checkout there before delegating. Git, gh, uv, and Python are included; add other project toolchains through your normal provisioning process. Register additional workspaces with `serve --workspace NAME=PATH`.
 
-From a Landing source checkout with `uv sync` completed and the same token, submit a task using a saved failure log:
+Install the CLI with `uv tool install "landing==0.1.0"` and use the same token to submit a task with a saved failure log:
 
 ```bash
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing explain "Explain this validation failure." --workspace default --input check.log
+landing explain "Explain this validation failure." --workspace default --input check.log
 ```
 
 Compose forwards only the variables listed in `compose.yaml`. Use an override for additional settings or mounts; see [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.

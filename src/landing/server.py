@@ -9,6 +9,7 @@ import sqlite3
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
 
@@ -71,7 +72,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
                 with contextlib.suppress(asyncio.CancelledError):
                     await worker
 
-    app = FastAPI(title="Landing", version="0.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="Landing", version=version("landing"), lifespan=lifespan, docs_url=None, redoc_url=None)
 
     @app.middleware("http")
     async def admission(request: Request, call_next):

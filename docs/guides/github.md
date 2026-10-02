@@ -27,7 +27,7 @@ uv run python -m landing.adapters.github review --repository example/team-projec
 Replace the target and head with the candidate you intend to review. Use `--help` for event files, check provenance, trust, and skill roots. Ordinary CLI calls can supply repository context without requiring event-runner delivery:
 
 ```bash
-uv run landing --github-repository example/team-project triage "Investigate the evidence and make the problem actionable." --input report.txt
+landing --github-repository example/team-project triage "Investigate the evidence and make the problem actionable." --input report.txt
 ```
 
 The runner supplies the trigger, target, and relevant revisions. The agent fetches specific discussions, templates, diffs, or logs through gh; complete histories and issue lists are not injected. Use `--instruction` for task scope and relevant new evidence.

@@ -28,7 +28,7 @@ For explicit delegations that must be preserved, GitHub.com supports `queue: max
 
 ## Use an ordinary CI command
 
-Install and configure Landing on the executing host. The examples run from its source checkout after `uv sync`; select another project with `--workspace`.
+Install Landing with `uv tool install "landing==0.1.0"` and configure the model on the executing host. Run commands from your project checkout or select one with `--workspace`.
 
 Preserve the native check's exit status when asking for an explanation:
 
@@ -36,7 +36,7 @@ Preserve the native check's exit status when asking for an explanation:
 status=0
 make acceptance > acceptance.log 2>&1 || status=$?
 if [ "$status" -ne 0 ]; then
-  uv run landing explain "Explain this failure and identify the next check." --input acceptance.log --json --output explanation.json || true
+  landing explain "Explain this failure and identify the next check." --input acceptance.log --json --output explanation.json || true
 fi
 exit "$status"
 ```
@@ -45,7 +45,7 @@ To evaluate a candidate with required checks:
 
 ```bash
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
-uv run landing review "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
+landing review "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
 ```
 
 CLI review returns nonzero for execution failure, `block`, or `inconclusive`. Put advisory feedback in a separate step when it should not affect native acceptance. Retain the result, relevant logs, workspace changes, and SQLite as CI artifacts. Each database has one worker; separate jobs can use separate databases. [Develop and dogfood](../development.md) describes Landing's own setup and feedback loop.

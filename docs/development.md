@@ -50,6 +50,12 @@ Candidate self-checks install Landing from that checkout. A duty task using the 
 
 Bundled jobs use a 120-second model request timeout and 20-minute job timeout. Per-job SQLite artifacts expire after 30 days. Retain lasting findings in issues, project guidance, code, and meaningful regression cases. Update work items when evidence or outcomes change; avoid repeated status reports.
 
+## Publish a release
+
+Use `uv version VERSION` to update `pyproject.toml` and `uv.lock`, replacing `VERSION` with the release number. Update installation examples and Action references to that release, then build and verify the package. The CLI and HTTP API read the installed package version.
+
+Merge the validated release commit and publish a GitHub release with a matching unprefixed tag, such as `0.1.0`. The release workflow checks that the tag matches the package version, builds the distributions, publishes them to PyPI using `PYPI_TOKEN`, and deploys the documentation. The same tag selects the GitHub Action; no separate Action release is needed.
+
 ## Learn from outcomes
 
 Check whether the explanation helped, the repair met acceptance, and feedback reached its intended destination. A model's `allow` is not its quality score. A healthy test matrix does not establish recovery from a deployment failure; verify that failure in the relevant environment.

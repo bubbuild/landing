@@ -1,12 +1,12 @@
 # Run the server
 
-Use a service for a shared queue or HTTP admission point. Prepare checkouts, dependencies, model settings, and skills on the executing host. From a Landing checkout with `uv sync` completed:
+Use a service for a shared queue or HTTP admission point. Prepare checkouts, dependencies, model settings, and skills on the executing host. Install the CLI with `uv tool install "landing==0.1.0"`.
 
 ## Start with registered workspaces
 
 ```bash
 export LANDING_TOKEN="your-server-token"
-uv run landing --db /var/lib/landing/landing.sqlite3 serve --host 127.0.0.1 --port 8080 --workspace candidate=/srv/landing/candidate
+landing --db /var/lib/landing/landing.sqlite3 serve --host 127.0.0.1 --port 8080 --workspace candidate=/srv/landing/candidate
 ```
 
 Requests select registered names rather than arbitrary paths. `default` points to the server's current directory. Each database has one worker with serial execution; submit through the service rather than starting another local worker on that database.
@@ -20,15 +20,15 @@ In another terminal with the same token:
 ```bash
 export LANDING_TOKEN="your-server-token"
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing review "Review the prepared checkout." --workspace candidate --check "make acceptance" --json
-uv run landing explain "Explain this failure." --workspace candidate --input test-output.txt --detach --json
+landing review "Review the prepared checkout." --workspace candidate --check "make acceptance" --json
+landing explain "Explain this failure." --workspace candidate --input test-output.txt --detach --json
 ```
 
 Detached creation returns an action immediately. Replace `act_example` with its ID:
 
 ```bash
-uv run landing action watch act_example --exit-status
-uv run landing action cancel act_example
+landing action watch act_example --exit-status
+landing action cancel act_example
 ```
 
 Ctrl-C during a remote wait leaves the work running; cancel it explicitly when intended. See [CLI reference](../reference/cli.md) for exit semantics.

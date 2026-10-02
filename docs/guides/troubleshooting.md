@@ -3,8 +3,8 @@
 Read the task's result and events using the same database or server as the original request:
 
 ```bash
-uv run landing action view act_example --json
-uv run landing action logs act_example
+landing action view act_example --json
+landing action logs act_example
 ```
 
 Replace the ID with the affected action. Start with the observed failure, then check its owning layer:
