@@ -881,7 +881,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bub", specifier = "==0.5.0" },
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.132" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-settings", specifier = ">=2.12" },

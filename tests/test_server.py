@@ -67,8 +67,8 @@ def test_admission_rejects_invalid_requests_without_tasks(tmp_path, model):
         assert client.get("/v1/actions").status_code == 401
         client.headers["Authorization"] = "Bearer test-secret"
         body = {"mode": "issuer", "instruction": "Identify the problem.", "workspace": "candidate"}
-        assert client.post("/v1/actions", content="{}").status_code == 415
-        assert client.post("/v1/actions", content="{", headers={"Content-Type": "application/json"}).status_code == 400
+        assert client.post("/v1/actions", content="{}").status_code == 422
+        assert client.post("/v1/actions", content="{", headers={"Content-Type": "application/json"}).status_code == 422
         assert client.post("/v1/actions", json={**body, "mode": "unknown"}).status_code == 422
         assert client.post("/v1/actions", json={**body, "unknown": True}).status_code == 422
         assert client.post("/v1/actions", json={**body, "workspace": str(tmp_path)}).status_code == 422
