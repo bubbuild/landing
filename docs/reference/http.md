@@ -4,7 +4,7 @@ The service accepts the CLI's action contract. Admission persists queued work; e
 
 ## Authorization and admission
 
-When `LANDING_TOKEN` is configured, every endpoint except `/healthz` and `/up` requires `Authorization: Bearer TOKEN`. Admission requires `application/json`, has a 16 MiB limit, and rejects unknown fields.
+When `LANDING_TOKEN` is configured, action endpoints require `Authorization: Bearer TOKEN`. Admission requires `application/json`, has a 16 MiB limit, and rejects unknown fields.
 
 ```json
 {
@@ -41,7 +41,10 @@ When `LANDING_TOKEN` is configured, every endpoint except `/healthz` and `/up` r
 | `POST /v1/actions/{id}/retries` | Retry a terminal action's original request. |
 | `GET /healthz` | HTTP liveness. |
 | `GET /up` | Worker and SQLite readiness. |
+| `GET /docs` | Scalar API reference with interactive requests and bearer authentication. |
 | `GET /openapi.json` | Generated schema. |
+
+Health checks, `/docs`, and the generated schema are public. Documentation describes the API without exposing task history or credentials.
 
 Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `BASE_URL` supplies the public origin behind a proxy.
 

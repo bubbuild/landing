@@ -13,6 +13,10 @@ Requests select registered names rather than arbitrary paths. `default` points t
 
 Tools and checks use the host environment. Add trusted skills with global `--skill-dir` options; each action also loads its workspace's instructions and skills. Remote callers cannot add local skill roots. Binding beyond localhost requires `LANDING_TOKEN`; provide TLS through your proxy.
 
+## Explore the API
+
+Open [the API reference](http://127.0.0.1:8080/docs) to inspect requests and try the API with Scalar. When `LANDING_TOKEN` is configured, enter its value as the bearer token before sending a request. Download the OpenAPI document from the page or fetch `/openapi.json`. Documentation is public and contains no task history or credentials; API calls still require the token.
+
 ## Submit from the CLI
 
 In another terminal with the same token:
