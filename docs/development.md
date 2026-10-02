@@ -54,7 +54,9 @@ Bundled jobs use a 120-second model request timeout and 20-minute job timeout. P
 
 Use `uv version VERSION` to update `pyproject.toml` and `uv.lock`, replacing `VERSION` with the release number. Update installation examples and Action references to that release, then build and verify the package. The CLI and HTTP API read the installed package version.
 
-Merge the validated release commit and publish a GitHub release with a matching unprefixed tag, such as `0.1.0`. The release workflow checks that the tag matches the package version, builds the distributions, publishes them to PyPI using `PYPI_TOKEN`, and deploys the documentation. The same tag selects the GitHub Action; no separate Action release is needed.
+Merge the validated release commit and publish a GitHub release with a matching unprefixed tag, such as `0.1.0`. The release workflow checks that the tag matches the package version and publishes the distributions to PyPI using `PYPI_TOKEN`. After that succeeds, it publishes `ghcr.io/bubbuild/landing:VERSION` using the workflow's `GITHUB_TOKEN` and deploys the documentation. Stable container releases also update `latest`. The same tag selects the GitHub Action; no separate Action release is needed.
+
+After the first image publication, set the package visibility to Public in [GitHub Packages](https://github.com/orgs/bubbuild/packages?repo_name=landing) so users can pull it without authentication. GHCR creates new packages as private; see [GitHub's container registry guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#pushing-container-images).
 
 ## Learn from outcomes
 

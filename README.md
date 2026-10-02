@@ -46,6 +46,6 @@ Run from your project checkout and use a saved UTF-8 log for `check.log`. The co
 
 Reliable results draw on your documentation, work items, infrastructure, tests, benchmarks, and observability. [Working with Landing](https://getlanding.dev/working-with-landing/) explains how to connect that context and retain feedback. Automate the engineering work you can delegate, and use the time saved to stay involved with contributors and users. Community Over Code.
 
-[Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, and tools. [Run the server](https://getlanding.dev/guides/server/) when you need shared execution. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
+[Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, and tools. For shared execution, [run the server](https://getlanding.dev/guides/server/) or [deploy the container](https://getlanding.dev/guides/deploy/) from `ghcr.io/bubbuild/landing:0.1.0`. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
 
 [Contributions](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) are welcome. Licensed under [Apache-2.0](https://github.com/bubbuild/landing/blob/main/LICENSE). Powered by [Bub](https://bub.build/) and [tape.systems](https://tape.systems/).
