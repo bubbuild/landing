@@ -9,10 +9,9 @@ import shutil
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
-from typing import cast
 
 from landing.commands import COMMANDS
-from landing.models import MODES, Action, ActionRequest, FileInput, Mode
+from landing.models import Action, ActionRequest, FileInput, Mode
 from landing.runtime import Runtime
 
 
@@ -205,7 +204,7 @@ async def run(
 
 def main(argv: list[str] | None = None) -> Action | None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=[*COMMANDS, *MODES], nargs="?", default="review")
+    parser.add_argument("command", choices=COMMANDS, nargs="?", default="review")
     parser.add_argument(
         "--repository", default=os.getenv("GITHUB_REPOSITORY"), required=not bool(os.getenv("GITHUB_REPOSITORY"))
     )
@@ -242,7 +241,7 @@ def main(argv: list[str] | None = None) -> Action | None:
         pull = event.get("pull_request")
         if pull:
             args.number, args.head = pull["number"], pull["head"]["sha"]
-    selected = cast("Mode", COMMANDS.get(args.command, args.command))
+    selected = COMMANDS[args.command]
     action = asyncio.run(
         run(
             args.repository,

@@ -57,35 +57,76 @@ else:
     return database
 
 
-def test_comment_actions_require_maintainer_and_use_configurable_identity(platform):
+@pytest.fixture
+def invoke(tmp_path, platform, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    def call(event, *, key="delegation", repository="example/landing", prefix="/landing"):
+        source = tmp_path / "event.json"
+        source.write_text(json.dumps(event))
+        return github.main([
+            "--repository",
+            repository,
+            "--event",
+            str(source),
+            "--delivery-key",
+            key,
+            "--db",
+            str(tmp_path / "landing.sqlite3"),
+            "--command-prefix",
+            prefix,
+        ])
+
+    return call
+
+
+def test_comment_actions_require_maintainer_and_use_configurable_identity(platform, invoke, model):
     event = {
         "repository": {"full_name": "example/landing"},
         "issue": {"number": 42},
         "comment": {"body": "/landing fix Repair retry behavior.", "user": {"type": "Bot", "login": "bot"}},
     }
-    assert github.delegation(event, "example/landing") is None
+    assert invoke(event) is None
     event["comment"]["user"] = {"type": "User", "login": "contributor"}
     state = json.loads(platform.read_text())
     state["permission"] = "read"
     platform.write_text(json.dumps(state))
     with pytest.raises(ValueError, match="maintainer"):
-        github.delegation(event, "example/landing")
+        invoke(event)
     state["permission"] = "write"
     platform.write_text(json.dumps(state))
-    assert github.delegation(event, "example/landing") == ("fix", "Repair retry behavior.", 42)
+    responses, _ = model
+    for key, mode in (("repair", "fixer"), ("review", "gatekeeper")):
+        responses.extend([
+            completion(
+                tool="fs_write",
+                arguments={
+                    "path": "comment.json",
+                    "content": json.dumps({"body": github.marker(mode, key) + "\nHandled the task."}),
+                },
+            ),
+            completion(
+                tool="bash",
+                arguments={"command": "gh api repos/example/landing/issues/42/comments --input comment.json"},
+            ),
+            completion("Published the result."),
+        ])
     event["comment"]["body"] += "\nPreserve the public CLI behavior."
-    assert github.delegation(event, "example/landing") == (
-        "fix",
-        "Repair retry behavior.\nPreserve the public CLI behavior.",
-        42,
-    )
+    action = invoke(event, key="repair")
+    assert action is not None
+    assert action.status == "completed"
+    assert action.mode == "fixer"
+    assert action.instruction == "Repair retry behavior.\nPreserve the public CLI behavior."
     event["comment"]["body"] = "@team-bot review Inspect retry behavior."
-    assert github.delegation(event, "example/landing", prefix="@team-bot") == ("review", "Inspect retry behavior.", 42)
+    action = invoke(event, key="review", prefix="@team-bot")
+    assert action is not None
+    assert action.status == "completed"
+    assert action.mode == "gatekeeper"
     with pytest.raises(ValueError, match="another repository"):
-        github.delegation(event, "other/repository")
+        invoke(event, repository="other/repository")
     event["comment"]["body"] = "/landing execute arbitrary-shell"
     with pytest.raises(ValueError, match="Choose"):
-        github.delegation(event, "example/landing")
+        invoke(event)
 
 
 def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_path, platform, model):
@@ -135,7 +176,7 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
     assert len(json.loads(platform.read_text())["reviews"]) == 1
 
 
-def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(tmp_path, platform, model):
+def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platform, invoke, model):
     state = json.loads(platform.read_text())
     state["reviews"] = [{"id": 9, "body": github.marker("gatekeeper", "earlier") + "\nA retry finding."}]
     platform.write_text(json.dumps(state))
@@ -150,7 +191,6 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(tmp_p
             "user": {"type": "User", "login": "maintainer"},
         },
     }
-    assert github.delegation(event, "example/landing") == ("review", "Does this affect the initial attempt?", 42)
     stamp = github.marker("gatekeeper", "comment:18")
     responses, _ = model
     responses.extend([
@@ -167,20 +207,9 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(tmp_p
         ),
         completion("Replied in the original review thread."),
     ])
-    action = asyncio.run(
-        github.run(
-            "example/landing",
-            "gatekeeper",
-            "Does this affect the initial attempt?",
-            tmp_path / "landing.sqlite3",
-            tmp_path,
-            number=42,
-            head="candidate-head",
-            key="comment:18",
-            checks=[],
-            event=event,
-        )
-    )
+    action = invoke(event, key="comment:18")
+    assert action is not None
+    assert action.mode == "gatekeeper"
     assert action.status == "completed"
     state = json.loads(platform.read_text())
     assert len(state["reviews"]) == 1

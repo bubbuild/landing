@@ -11,7 +11,6 @@ from typing import cast
 
 import bub.builtin.tools  # noqa: F401 -- initialize the native tool registry.
 from bub import BubFramework, ensure_config
-from bub.builtin.settings import load_session_settings
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.errors import BubError, ErrorKind
@@ -73,11 +72,10 @@ class Runtime:
             self.framework.plugin_manager.register(SDKDefaults(self.framework), name="builtin")
         self.hooks = LandingHooks(self)
         self.framework.plugin_manager.register(self.hooks, name="landing")
-        self.extra_tools = tuple(tools)
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self,
-            tools=[*REGISTRY.values(), *TOOLS, DECIDE, *self.extra_tools],
+            tools=[*REGISTRY.values(), *TOOLS, DECIDE, *tools],
             tape_store=self.store,
             skill_dirs=(),
         )
@@ -112,7 +110,6 @@ class Runtime:
             try:
                 self.tasks.recover()
                 async with self.framework.running():
-                    self.control = self.agent.tape.scoped("landing")
                     monitor = asyncio.create_task(self.watch_cancellations())
                     try:
                         yield self
@@ -122,7 +119,6 @@ class Runtime:
                             await monitor
                         await self.stop()
             finally:
-                await self.stop()
                 self.store.close()
                 self.tasks.close()
                 fcntl.flock(owner, fcntl.LOCK_UN)
@@ -205,7 +201,7 @@ class Runtime:
         supplied_prompt = invocation.pop("prompt", None)
         self.capabilities(request.mode, invocation)
         if state is None:
-            state = await load_session_settings(self.agent.tape.session_tape(session_id, workspace))
+            state = await self.framework.build_state({"_runtime_agent": self.agent.bub}, session_id)
         state.update(landing_mode=request.mode, _runtime_workspace=str(workspace))
         state.pop("landing_decision", None)
         state.pop("allowed_skills", None)
@@ -224,21 +220,19 @@ class Runtime:
                 async for event in stream:
                     if events is not None:
                         events.put_nowait(event)
-                    if event.kind == "final":
-                        output = str(event.data.get("text", output))
+                    if event.kind == "final" and "text" in event.data:
+                        output = str(event.data["text"])
                         self.tasks.output(action_id, output)
-                    elif event.kind == "error":
-                        message = str(event.data.get("message", "Agent execution failed."))
-                        raise RuntimeError(message)
-                    elif event.kind in {"tool_call", "tool_result"}:
-                        self.tasks.event(action_id, "agent." + event.kind, {"session_id": action_id})
         finally:
             if stream_state is not None:
                 stream_state.error, stream_state.usage = stream.error, stream.usage
         if stream.error is not None:
-            raise RuntimeError(stream.error.message)
+            raise stream.error
         decision = self._decision(request, state, checks)
-        self._require_output(action_id, output, decision)
+        if not output.strip():
+            self.tasks.output(action_id, output, decision)
+            message = "The model returned empty output."
+            raise RuntimeError(message)
         return output, decision
 
     def capabilities(self, mode, invocation) -> None:
@@ -266,14 +260,6 @@ class Runtime:
             return "block"
         return cast("Decision", state.get("landing_decision", "inconclusive"))
 
-    def _require_output(self, action_id: str, output: str, decision: Decision | None) -> None:
-        """Fail empty/whitespace-only model output instead of reporting it as completed work."""
-        if not output.strip():
-            # Record any decision reached before the failure so gatekeeper verdicts are not lost.
-            self.tasks.output(action_id, output, decision)
-            message = "The model returned empty output."
-            raise RuntimeError(message)
-
     async def perform(self, action_id: str, **kwargs) -> tuple[str, Decision | None]:
         request = self.tasks.request(action_id)
         workspace = self.workspace(request)
@@ -292,26 +278,28 @@ class Runtime:
 
     async def execute(self, action_id: str, **kwargs) -> Action:
         async with self.execution:
-            return await self.execute_claimed(action_id, **kwargs)
-
-    async def execute_claimed(self, action_id: str, **kwargs) -> Action:
-        if not self.tasks.claim(action_id):
-            return self.tasks.get(action_id)
-        try:
-            async with shell_manager.lifespan():
-                output, decision = await self.perform(action_id, **kwargs)
-            if self.verify is not None:
-                self.verify(self.tasks.get(action_id))
-        except asyncio.CancelledError:
-            status = "cancelled" if self.tasks.get(action_id).cancel_requested_at else "interrupted"
-            self.tasks.finish(action_id, status)
-            raise
-        except Exception as exc:
-            return self.tasks.finish(
-                action_id, "failed", error={"code": type(exc).__name__, "message": str(exc) or type(exc).__name__}
-            )
-        else:
-            return self.tasks.finish(action_id, "completed", result=output, decision=decision)
+            if not self.tasks.claim(action_id):
+                return self.tasks.get(action_id)
+            try:
+                async with shell_manager.lifespan():
+                    output, decision = await self.perform(action_id, **kwargs)
+                if self.verify is not None:
+                    self.verify(self.tasks.get(action_id))
+            except asyncio.CancelledError:
+                status = "cancelled" if self.tasks.get(action_id).cancel_requested_at else "interrupted"
+                self.tasks.finish(action_id, status)
+                raise
+            except Exception as exc:
+                return self.tasks.finish(
+                    action_id,
+                    "failed",
+                    error={
+                        "code": exc.kind.value if isinstance(exc, BubError) else ErrorKind.UNKNOWN.value,
+                        "message": exc.message if isinstance(exc, BubError) else str(exc) or type(exc).__name__,
+                    },
+                )
+            else:
+                return self.tasks.finish(action_id, "completed", result=output, decision=decision)
 
     def stream(self, action_id: str, *, state: TurnState) -> AsyncStreamEvents:
         """Expose the shared executor's native events, with durable cancellation."""

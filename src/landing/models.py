@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Mode = Literal["issuer", "fixer", "gatekeeper", "explainer"]
 Status = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
 Decision = Literal["allow", "block", "inconclusive"]
-MODES = ("issuer", "fixer", "gatekeeper", "explainer")
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 

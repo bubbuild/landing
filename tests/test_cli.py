@@ -13,10 +13,6 @@ from tests.conftest import completion
         ("fix", "fixer"),
         ("review", "gatekeeper"),
         ("explain", "explainer"),
-        ("issuer", "issuer"),
-        ("fixer", "fixer"),
-        ("gatekeeper", "gatekeeper"),
-        ("explainer", "explainer"),
     ],
 )
 def test_cli_modes_complete_and_reopen_history(tmp_path, model, capsys, command, mode):
@@ -42,16 +38,16 @@ def test_ci_exit_status(tmp_path, model, capsys, decision):
         completion(tool="decide", arguments={"decision": decision}),
         completion("Reviewed the evidence."),
     ])
-    assert main(["--db", str(tmp_path / "landing.sqlite3"), "gatekeeper", "Review the change.", "--json"]) == (
+    assert main(["--db", str(tmp_path / "landing.sqlite3"), "review", "Review the change.", "--json"]) == (
         decision != "allow"
     )
     assert json.loads(capsys.readouterr().out)["decision"] == decision
 
 
 def test_usage_errors_have_exit_two_and_json(tmp_path, capsys):
-    assert main(["--db", str(tmp_path / "landing.sqlite3"), "issuer", "--json"]) == 2
+    assert main(["--db", str(tmp_path / "landing.sqlite3"), "triage", "--json"]) == 2
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_request"
-    assert main(["explainer", "Explain the failure.", "--detach"]) == 2
+    assert main(["explain", "Explain the failure.", "--detach"]) == 2
     assert "--detach requires --server" in capsys.readouterr().err
 
 

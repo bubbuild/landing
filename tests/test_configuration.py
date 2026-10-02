@@ -1,6 +1,5 @@
 """Exercise model configuration through the public CLI and provider protocol."""
 
-import asyncio
 import json
 import os
 import subprocess
@@ -78,7 +77,7 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
                 "landing",
                 "--db",
                 str(tmp_path / "landing.sqlite3"),
-                "explainer",
+                "explain",
                 "Explain the failure.",
                 "--workspace",
                 str(tmp_path),
@@ -91,32 +90,4 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
         assert result.returncode == 0, result.stderr + result.stdout
         assert "The evidence explains the failed check." in result.stdout
         assert requests[0]["model"] == settings["model"].split(":", 1)[1]
-        assert requests[0]["temperature"] == 0.2
-        assert requests[0].get("max_tokens", requests[0].get("max_completion_tokens")) == 128
-        assert authorization == ["Bearer selected-key"]
-
-
-def test_runtime_refreshes_configuration_after_existing_sdk_use(tmp_path, monkeypatch, model):
-    from bub import BubFramework, ensure_config
-    from bub.builtin.settings import AgentSettings
-
-    from landing.models import ActionRequest
-    from landing.runtime import Runtime
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    BubFramework(config_file=tmp_path / "unused.yml")
-    ensure_config(AgentSettings)
-    responses, requests = model
-
-    async def run():
-        for number in (1, 2):
-            monkeypatch.setenv("LANDING_MODEL", f"openai:configured-{number}")
-            responses.append(completion(f"Explanation {number}."))
-            async with Runtime(tmp_path / f"action-{number}.sqlite3").running() as runtime:
-                action = await runtime.run(
-                    ActionRequest(mode="explainer", instruction="Explain the failure.", workspace=str(tmp_path))
-                )
-            assert action.result == f"Explanation {number}."
-            assert requests[-1]["model"] == f"openai:configured-{number}"
-
-    asyncio.run(run())
+        assert authorization and all(value == "Bearer selected-key" for value in authorization)

@@ -34,7 +34,7 @@ Provide a nonblank instruction or at least one input. Results are plain text by 
 | `--output PATH` | Also write the displayed result to a local file; its parent directory must exist. |
 | `--detach` | Return on remote admission; requires `--server` or `LANDING_SERVER`. |
 
-Commands select modes: `triage` → `issuer`, `fix` → `fixer`, `review` → `gatekeeper`, and `explain` → `explainer`. The canonical mode names also work as CLI commands. Each mode can independently configure `allowed_tools` and `allowed_skills`; unset lists allow the native SDK defaults. Review guidance asks the agent to leave the candidate unchanged. These settings filter the agent loop, not operating-system access. See [Mode capabilities](configuration.md#mode-capabilities). Gatekeeper checks execute before evaluation, and a failed check forces `block`. Fixer checks execute after the agent finishes; a failure marks the action failed and preserves changes and any returned explanation. An empty completion is a failure.
+Commands select modes: `triage` → `issuer`, `fix` → `fixer`, `review` → `gatekeeper`, and `explain` → `explainer`. Each mode can independently configure `allowed_tools` and `allowed_skills`; unset lists allow the native SDK defaults. Review guidance asks the agent to leave the candidate unchanged. These settings filter the agent loop, not operating-system access. See [Mode capabilities](configuration.md#mode-capabilities). Gatekeeper checks execute before evaluation, and a failed check forces `block`. Fixer checks execute after the agent finishes; a failure marks the action failed and preserves changes and any returned explanation. An empty completion is a failure.
 
 ## Inspect and control actions
 

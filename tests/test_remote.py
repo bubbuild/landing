@@ -30,13 +30,12 @@ def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, m
                 time.sleep(0.01)
             assert server.started
             base = ["--server", f"http://127.0.0.1:{port}"]
-            assert main([*base, "gatekeeper", "Review the change.", "--workspace", "candidate", "--json"]) == 1
+            assert main([*base, "review", "Review the change.", "--workspace", "candidate", "--json"]) == 1
             import json
 
             assert json.loads(capsys.readouterr().out)["decision"] == "block"
             assert (
-                main([*base, "explainer", "Explain the failure.", "--workspace", "candidate", "--detach", "--json"])
-                == 0
+                main([*base, "explain", "Explain the failure.", "--workspace", "candidate", "--detach", "--json"]) == 0
             )
             action = json.loads(capsys.readouterr().out)
             assert main([*base, "action", "watch", action["id"], "--exit-status", "--json"]) == 0

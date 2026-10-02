@@ -4,7 +4,7 @@ Use English in code, documentation, commit messages and GitHub contributions. Wr
 
 Read the relevant documentation before changing a user contract. Keep CLI, HTTP and CI behavior consistent where they expose the same action. Reuse Bub 0.5.0 SDK and Pydantic Settings capabilities; do not discover external plugins or add a second agent runtime.
 
-Add tests for user-visible behavior or a demonstrated regression. Do not test helper layouts, exact prompt wording, argument order or internal bookkeeping. A rewrite that preserves the user's experience should keep the tests passing. Straightforward scripts need no test that repeats their implementation.
+Add tests for user-visible behavior or a demonstrated regression. Do not test helper layouts, exact prompt wording, argument order or internal bookkeeping. A rewrite that preserves the user's experience should keep the tests passing. Straightforward scripts need no test that repeats their implementation. Prefer a small acceptance scenario over a matrix of incidental combinations. A pre-release edge case is not a regression by default; require a supported user workflow or a demonstrated failure. Assert fields only when they establish an observable outcome, rather than freezing exception classes, storage rows or upstream parameter spelling.
 
 For code review, load the `landing-review` skill. Use `friendly-python` and `piglet` for relevant Python work, `documentation-writer` for documentation structure, and `humanizer` when prose needs editing. Load only the guidance needed for the task.
 

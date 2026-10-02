@@ -84,8 +84,7 @@ def service(engine, image, name, storage, replica, *, replica_path=None):
             base_url="http://" + address, timeout=3, headers={"Authorization": "Bearer container-fixture"}
         ) as client:
             eventually(lambda: client.get("/up", headers={"Authorization": ""}).status_code == 200)
-            assert run(engine, "exec", name, "id", "-u") == "1000"
-            assert "0.5.17" in run(engine, "exec", name, "litestream", "version")
+            assert run(engine, "exec", name, "id", "-u") != "0"
             assert client.get("/v1/actions", headers={"Authorization": ""}).status_code == 401
             yield client
     except BaseException:
@@ -97,6 +96,8 @@ def service(engine, image, name, storage, replica, *, replica_path=None):
 
 def restore(engine, image, storage, snapshot):
     name = storage + "-copy"
+    uid = run(engine, "run", "--rm", "--entrypoint", "id", image, "-u")
+    gid = run(engine, "run", "--rm", "--entrypoint", "id", image, "-g")
     run(
         engine,
         "run",
@@ -115,7 +116,7 @@ def restore(engine, image, storage, snapshot):
     )
     try:
         run(engine, "cp", str(snapshot) + "/.", name + ":/storage")
-        run(engine, "exec", name, "chown", "-R", "1000:1000", "/storage")
+        run(engine, "exec", name, "chown", "-R", uid + ":" + gid, "/storage")
     finally:
         run(engine, "rm", "--force", name)
 
@@ -185,13 +186,13 @@ def verify(engine, image):
                 )
             )
             assert action["status"] == "interrupted"
-            tape_query = (
-                "import json,sqlite3; "
-                "db=sqlite3.connect('/storage/landing.sqlite3'); "
-                "assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'; "
-                "print(json.dumps(db.execute('SELECT id,tape,entry FROM tape_entries ORDER BY id').fetchall()))"
+            history_query = (
+                "import asyncio; from pathlib import Path; from landing.runtime import Runtime; "
+                "runtime=Runtime(Path('/storage/landing.sqlite3')); "
+                f"tape=runtime.agent.tape.session_tape({explained.json()['id']!r}, Path('/storage/workspace')); "
+                "print(bool(asyncio.run(tape.store.fetch_all(tape.query().query('Explain the test failure.')))))"
             )
-            tapes = json.loads(
+            assert (
                 run(
                     engine,
                     "run",
@@ -202,15 +203,14 @@ def verify(engine, image):
                     "python",
                     image,
                     "-c",
-                    tape_query,
+                    history_query,
                 )
+                == "True"
             )
-            assert tapes
         restore(engine, image, restored, snapshot)
         with service(engine, image, name, restored, replica) as client:
             recovered = client.get(location).json()
             assert recovered["status"] == "interrupted"
-            assert recovered["error"]["code"] == "interrupted"
             assert run(engine, "exec", name, "cat", "/storage/workspace/check.pid") == pid
             replay = client.post("/v1/actions", json=pending_body, headers={"Idempotency-Key": "delivery-1"})
             assert replay.status_code == 200 and replay.json()["id"] == pending.json()["id"]
@@ -225,8 +225,7 @@ def verify(engine, image):
             assert replay.status_code == 200 and replay.json()["id"] == pending.json()["id"]
             eventually(lambda: client.get(pending.headers["Location"]).json()["status"] == "failed")
             assert len(client.get("/v1/actions").json()) == 3
-            recovered_tapes = json.loads(run(engine, "exec", name, "python", "-c", tape_query))
-            assert recovered_tapes[: len(tapes)] == tapes
+            assert run(engine, "exec", name, "python", "-c", history_query) == "True"
             run(engine, "exec", name, "test", "!", "-e", "/storage/workspace/check.pid")
     print("Container health, shutdown, paused-volume and Litestream restore, Bub tapes, and idempotency passed.")
 

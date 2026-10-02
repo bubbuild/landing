@@ -36,7 +36,7 @@ When `LANDING_TOKEN` is set, requests require `Authorization: Bearer TOKEN`, exc
 | `POST /v1/actions` | Durably accept an action. |
 | `GET /v1/actions?limit=50&cursor=act_example` | Read history, newest first. |
 | `GET /v1/actions/{id}` | Read the action record. |
-| `GET /v1/actions/{id}/events?after=0&limit=50` | Read lifecycle, tool references, and validation records. |
+| `GET /v1/actions/{id}/events?after=0&limit=50` | Read lifecycle, validation, and publication records. |
 | `POST /v1/actions/{id}/cancellation` | Cancel queued work or request active cancellation. |
 | `POST /v1/actions/{id}/retries` | Create an explicit retry using the original request snapshot. |
 | `GET /healthz` | HTTP liveness. |

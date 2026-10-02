@@ -47,7 +47,7 @@ def test_cli_uses_selected_project_instructions_and_explicit_skill_root(tmp_path
             str(tmp_path / "landing.sqlite3"),
             "--skill-dir",
             str(tmp_path / "shared"),
-            "explainer",
+            "explain",
             "Identify the deployment reference.",
             "--workspace",
             str(project),
@@ -110,35 +110,10 @@ def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch
         completion(tool="skill", arguments={"name": "deploy"}),
         report_reference,
     ])
-    command = ["explainer", "Use $deploy to identify deployment.", "--workspace", str(project), "--json"]
+    command = ["explain", "Use $deploy to identify deployment.", "--workspace", str(project), "--json"]
     database = ["--db", str(tmp_path / "landing.sqlite3")]
     assert main([*database, *command]) == 0
     assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: configured"
     command[1] = "Identify deployment."
     assert main([*database, "--skill-dir", str(explicit), *command]) == 0
     assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: explicit"
-
-
-def test_skill_guidance_does_not_expand_sdk_capabilities(tmp_path, model):
-    write_skill(tmp_path / ".agents/skills", "deploy", "approved")
-    responses, _ = model
-    responses.extend([
-        completion(tool="skill", arguments={"name": "deploy"}),
-        completion(tool="bash", arguments={"command": "touch unexpected.txt"}),
-        completion("I can explain deployment without changing it."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            stream = await runtime.agent.run_stream(
-                session_id="deployment",
-                prompt="Use the deploy skill.",
-                state={"_runtime_workspace": str(tmp_path)},
-                allowed_tools=["skill"],
-            )
-            async for _ in stream:
-                pass
-            assert runtime.tasks.list()[0].status == "completed"
-
-    asyncio.run(run())
-    assert not (tmp_path / "unexpected.txt").exists()

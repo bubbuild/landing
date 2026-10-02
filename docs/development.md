@@ -19,9 +19,9 @@ Use `make docs` to preview the documentation. Choose checks appropriate to the c
 
 ## Keep tests about behavior and actual mistakes
 
-Write behavior tests for what users see through CLI, HTTP, and workflow outcomes. Write regression tests for actual mistakes likely to recur. Prefer end-to-end acceptance for platform wiring. Tests should survive an implementation rewrite that preserves the user's experience.
+Write behavior tests for what users see through CLI, HTTP, and workflow outcomes. Write regression tests for actual mistakes likely to recur. Prefer end-to-end acceptance for platform wiring. Tests should survive an implementation rewrite that preserves the user's experience. Before release, test the supported workflow rather than preserving hypothetical legacy behavior or labelling every edge case a regression.
 
-Avoid assertions about helper structure, internal step counts, argument order, or other incidental details. Straightforward glue can be inspected directly and accepted through a real workflow run. Adding a test merely because a file changed does not improve the contract.
+Assert public fields when they establish what the user observes, such as a result, gate decision, cancellation, or published comment location. Avoid assertions about helper structure, event positions, exception class names, raw database rows, provider option spelling, or other incidental details. Do not repeat the upstream SDK's query, chunking, or parameter-translation tests. Straightforward glue can be inspected directly and accepted through a real workflow run. Adding a test merely because a file changed does not improve the contract.
 
 The test suite replaces external model requests with deterministic responses; the SDK loop, tools, SQLite, shell checks, and local HTTP transport execute normally. GitHub behavior tests use a local platform emulator. Real workflow runs establish downstream delivery and model quality.
 
@@ -41,12 +41,11 @@ After each useful or failed delegation, retain the observations in the issue or 
 
 Use native checks and actual human outcomes to evaluate changes. A model's own `allow` is not a quality metric. Per-job databases and artifacts expire after 30 days; lasting lessons belong in work items and the repository.
 
-## Cases worth retaining
+## Evaluate task outcomes
 
-The real dogfood loop has exposed failures that ordinary happy-path tests missed:
+An empty answer must fail visibly, retain partial edits, and remain inspectable. A failed required check must block a review or fail a fix. Exercise these outcomes without multiplying every combination of mode, intermediate state, and error field.
 
-- [Empty completions](https://github.com/PsiACE/landing/issues/3): partial work must remain inspectable, and an empty answer must not count as successful completion. The runtime fails empty output explicitly; a regression check preserves the user-visible behavior.
-- [Revision interpretation](https://github.com/PsiACE/landing/issues/5): a model can mistake a run's triggering head for the actual CI checkout revision. The adapter supplies both revisions separately; the model's interpretation still needs real-task evaluation. Provenance alone does not prove the advice is correct.
+Review quality needs real evidence. Verify the candidate revision separately from the CI checkout and deployed revision, and confirm platform publication at the intended destination. Deterministic protocol tests cannot establish that a model understands the evidence or produces useful findings.
 
 ## Verify the container contract
 

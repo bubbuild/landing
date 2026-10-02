@@ -114,7 +114,6 @@ def test_content_parts_remain_evidence_and_explicit_state_skips_recovery(tmp_pat
             )
             assert await output(stream) == "Explained the quoted command."
             assert landing.tasks.list()[0].mode == "explainer"
-            assert state["landing_mode"] == "explainer"
 
     asyncio.run(run())
 
@@ -195,11 +194,11 @@ def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypa
 def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch):
     import json
 
-    from tests.test_repository import write_skill
+    from tests.test_repository import report_reference, write_skill
 
     roots = tmp_path / ".agents/skills"
-    write_skill(roots, "review-policy", "REVIEW GUIDANCE")
-    write_skill(roots, "repair-policy", "REPAIR GUIDANCE")
+    write_skill(roots, "review-policy", "review")
+    write_skill(roots, "repair-policy", "repair")
     monkeypatch.setenv(
         "LANDING_MODES",
         json.dumps({
@@ -207,29 +206,70 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
             "fixer": {"allowed_skills": ["repair-policy"]},
         }),
     )
-    responses, requests = model
+    responses, _ = model
     responses.extend([
         completion(tool="skill", arguments={"name": "review-policy"}),
-        completion("Applied the review policy."),
+        report_reference,
         completion(tool="skill", arguments={"name": "repair-policy"}),
-        completion("Applied the repair policy."),
+        report_reference,
         completion(tool="skill", arguments={"name": "repair-policy"}),
-        completion("The caller disabled skill loading."),
+        report_reference,
     ])
 
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             landing.framework.workspace = tmp_path
-            await output(await landing.agent.run_stream(session_id="thread", prompt=',review "Use review-policy."'))
-            assert "REVIEW GUIDANCE" in str(requests[-1]["messages"])
-            await output(await landing.agent.run_stream(session_id="thread", prompt=',fix "Use repair-policy."'))
-            assert "REPAIR GUIDANCE" in str(requests[-1]["messages"])
-            before = len(requests)
-            await output(
-                await landing.agent.run_stream(
-                    session_id="limited", prompt=',fix "Use repair-policy."', allowed_skills=[]
-                )
+            assert (
+                await output(await landing.agent.run_stream(session_id="thread", prompt=',review "Use review-policy."'))
+                == "Deployment reference: review"
             )
-            assert "REPAIR GUIDANCE" not in str(requests[before:])
+            assert (
+                await output(await landing.agent.run_stream(session_id="thread", prompt=',fix "Use repair-policy."'))
+                == "Deployment reference: repair"
+            )
+            assert (
+                await output(
+                    await landing.agent.run_stream(
+                        session_id="limited", prompt=',fix "Use repair-policy."', allowed_skills=[]
+                    )
+                )
+                == "No reference available."
+            )
+
+    asyncio.run(run())
+
+
+def test_delegated_request_uses_the_host_provided_environment(tmp_path, model):
+    from bub import hookimpl
+    from bub.builtin.environment import LocalEnvironment
+
+    from landing.models import ActionRequest
+    from tests.test_repository import report_reference
+
+    workspace = tmp_path / "workspace"
+    prepared = tmp_path / "prepared"
+    workspace.mkdir()
+    prepared.mkdir()
+    (prepared / "deployment.txt").write_text("reference=approved")
+
+    class Host:
+        @hookimpl
+        def provide_environment(self, session_id, workspace):
+            return LocalEnvironment(prepared)
+
+    responses, _ = model
+    responses.extend([completion(tool="fs_read", arguments={"path": "deployment.txt"}), report_reference])
+
+    async def run():
+        framework = BubFramework()
+        framework.workspace = workspace
+        framework.load_builtin_hooks()
+        framework.plugin_manager.register(Host())
+        async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
+            action = await landing.run(
+                ActionRequest(mode="explainer", instruction="Read the deployment reference.", workspace=str(workspace))
+            )
+            assert action.status == "completed"
+            assert action.result == "Deployment reference: approved"
 
     asyncio.run(run())

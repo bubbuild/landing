@@ -51,7 +51,7 @@ async def explain():
         return stream.error, stream.usage
 ```
 
-These are native SDK events: `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`. A `final` event ends a model step; consume the complete stream to finish the task. Native model errors and usage remain available on the stream. Landing's validation or publication failures also produce an error and persist in the action record.
+These are native SDK events: `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`. A `final` event ends a model step; consume the complete stream to finish the task. Native model errors and usage remain available on the stream. Landing's validation or publication failures also produce an error and persist in the action record. Task errors retain native SDK error kinds; other execution failures use `unknown`.
 
 The four action commands and `mode` are native agent tools available through comma command dispatch. `,mode` reads the session's current mode; `,mode gatekeeper` selects a mode for subsequent ordinary prompts without running a task. Each action command selects its mode before executing. Selection persists in the workspace's SQLite tape and is isolated by session. Content parts remain evidence and do not dispatch comma commands.
 
@@ -80,7 +80,7 @@ async def handle():
         ))
 ```
 
-The framework message pipeline retains its build-prompt, state, rendering, and dispatch hooks. Direct SDK calls return stream events and do not render or dispatch messages. Both paths share task admission and execution. Host-provided environments and outbound channels remain the embedding application's responsibility.
+The framework message pipeline retains its build-prompt, state, rendering, and dispatch hooks. Direct SDK calls return stream events and do not render or dispatch messages. Both paths share task admission and execution. Request-based execution also loads framework state and uses its provided environment. Host-provided environments and outbound channels remain the embedding application's responsibility.
 
 ## Skills and additional tools
 

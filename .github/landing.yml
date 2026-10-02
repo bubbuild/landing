@@ -1,14 +1,14 @@
 # Capabilities for Landing's own development workflows; prepare skill roots separately.
 modes:
   issuer:
-    allowed_tools: [fs.read, bash, bash.output, bash.kill, skill, web.fetch]
+    allowed_tools: [spill.read, fs.read, bash, bash.output, bash.kill, skill, web.fetch]
     allowed_skills: [documentation-writer, humanizer]
   fixer:
-    allowed_tools: [fs.read, fs.write, fs.edit, bash, bash.output, bash.kill, skill, web.fetch]
+    allowed_tools: [spill.read, fs.read, fs.write, fs.edit, bash, bash.output, bash.kill, skill, web.fetch]
     allowed_skills: [friendly-python, piglet, documentation-writer, humanizer]
   gatekeeper:
-    allowed_tools: [fs.read, bash, bash.output, bash.kill, skill, decide, web.fetch]
+    allowed_tools: [spill.read, fs.read, bash, bash.output, bash.kill, skill, decide, web.fetch]
     allowed_skills: [landing-review, friendly-python, piglet]
   explainer:
-    allowed_tools: [fs.read, bash, bash.output, bash.kill, skill, web.fetch]
+    allowed_tools: [spill.read, fs.read, bash, bash.output, bash.kill, skill, web.fetch]
     allowed_skills: [friendly-python, documentation-writer, humanizer]

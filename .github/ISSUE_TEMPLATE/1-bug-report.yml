@@ -35,7 +35,7 @@ body:
   attributes:
     label: Affected interface or component
     description: Name the CLI, HTTP server, CI adapter, container, model provider or other affected component.
-    placeholder: 'For example: CLI explainer using DeepSeek'
+    placeholder: 'For example: CLI explain using DeepSeek'
   validations:
     required: true
 - type: textarea
