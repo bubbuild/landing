@@ -43,7 +43,7 @@ Native checks and operational signals reach maintainers directly. Landing uses t
 
 ## Make a problem actionable
 
-Use `triage` when a finding needs an owner and acceptance criteria. A useful work item explains the expected behavior, the observed failure, how to reproduce it, and what would demonstrate recovery. Reuse an existing issue for the same problem and preserve evidence of recurrence.
+Use `triage` when a finding needs an owner and acceptance criteria. A useful work item explains the expected behavior, the observed failure, how to reproduce it, and what would demonstrate recovery. Reuse an existing issue for the same problem. Automatic follow-up updates it only for useful new evidence, changed conditions or verified progress; unchanged problems need no repeated status comment.
 
 ```text
 Investigate the failed release check. Determine whether this is a product defect, a broken check, or an infrastructure failure. Reuse an existing issue if it describes the same problem. Include the failing revision and acceptance criteria.

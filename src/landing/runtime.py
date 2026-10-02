@@ -23,7 +23,6 @@ from landing.commands import COMMANDS, TOOLS
 from landing.hooks import LandingHooks, SDKDefaults
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import MODES as PROMPTS
-from landing.repository import templates
 from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -38,17 +37,29 @@ def decide(decision: Decision, *, context: ToolContext) -> str:
 DECIDE = Tool.from_callable(decide, context=True)
 
 
+def no_update(reason: str, *, context: ToolContext) -> str:
+    """Record why existing issue conditions are unchanged; automatic follow-up needs no public update."""
+    if context.state.get("landing_mode") != "issuer" or not reason.strip():
+        message = "Only issuer can record no update, with a reason."
+        raise ValueError(message)
+    context.state["landing_no_update"] = reason
+    return reason
+
+
+NO_UPDATE = Tool.from_callable(no_update, context=True)
+
+
 def checks_failed(checks: list[dict]) -> bool:
     return any(item["exit_code"] != 0 or item["timed_out"] for item in checks)
 
 
-def task_prompt(request: ActionRequest, workspace: Path, checks: list[dict]) -> list[dict]:
+def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
     prompt = request.instruction or PROMPTS[request.mode]
     for item in request.input:
         prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
     if checks:
         prompt += "\n\nValidation results:\n" + json.dumps(checks)
-    return [{"type": "text", "text": prompt + templates(workspace, request.mode)}]
+    return [{"type": "text", "text": prompt}]
 
 
 class Runtime:
@@ -75,7 +86,7 @@ class Runtime:
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self,
-            tools=[*REGISTRY.values(), *TOOLS, DECIDE, *tools],
+            tools=[*REGISTRY.values(), *TOOLS, DECIDE, NO_UPDATE, *tools],
             tape_store=self.store,
             skill_dirs=(),
         )
@@ -205,13 +216,14 @@ class Runtime:
         state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
         state.pop("landing_decision", None)
         state.pop("landing_llm_call", None)
+        state.pop("landing_no_update", None)
         state.pop("allowed_skills", None)
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
         self.agent.bub.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
         # Content parts keep task evidence outside native command dispatch.
         stream = await self.agent.bub.run_stream(
             session_id=session_id,
-            prompt=supplied_prompt if supplied_prompt is not None else task_prompt(request, workspace, checks),
+            prompt=supplied_prompt if supplied_prompt is not None else task_prompt(request, checks),
             state=state,
             **invocation,
         )
@@ -240,6 +252,7 @@ class Runtime:
             self.tasks.output(action_id, output, decision)
             message = "The model returned empty output."
             raise RuntimeError(message)
+        self.hooks.record_completion(state)
         return output, decision
 
     def capabilities(self, mode, invocation) -> None:

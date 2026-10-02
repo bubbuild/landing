@@ -13,6 +13,7 @@ from pathlib import Path
 from landing.commands import COMMANDS
 from landing.models import Action, ActionRequest, FileInput, Mode
 from landing.runtime import Runtime
+from landing.tasks import Tasks
 
 
 def gh(args: list[str], repository: str) -> str:
@@ -85,15 +86,13 @@ def delegation(event: dict, repository: str, prefix: str = "/landing") -> tuple[
     return command, instruction, target["number"]
 
 
-def publication(
-    repository: str, number: int, stamp: str, *, review: bool, thread: int = 0
-) -> tuple[dict | None, list[dict]]:
+def publication(repository: str, number: int, stamp: str, *, review: bool, thread: int = 0) -> dict | None:
     if not number:
-        return None, []
+        return None
     resource = "comments" if thread else "reviews" if review else "comments"
     kind = "pulls" if thread or review else "issues"
     records = rows(f"repos/{repository}/{kind}/{number}/{resource}", repository)
-    receipt = next(
+    return next(
         (
             item
             for item in records
@@ -103,19 +102,50 @@ def publication(
         ),
         None,
     )
-    return receipt, records
+
+
+def verify_publication(
+    action: Action,
+    tasks: Tasks,
+    repository: str,
+    number: int,
+    stamp: str,
+    *,
+    review: bool,
+    thread: int,
+    head: str,
+    reply_required: bool,
+) -> None:
+    if not number:
+        return
+    receipt = publication(repository, number, stamp, review=review, thread=thread)
+    if receipt is None and action.mode == "issuer" and not reply_required:
+        unchanged = tasks.connection.execute(
+            "SELECT 1 FROM action_events WHERE action_id = ? AND type = 'issue.unchanged'", (action.id,)
+        ).fetchone()
+        if unchanged:
+            return
+    if receipt is None or (review and head and receipt.get("commit_id") != head):
+        message = "The agent completed without a confirmed publication at the requested destination."
+        raise RuntimeError(message)
+    if review and head:
+        current = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
+        if current["head"]["sha"] != head:
+            message = "The PR head changed; delegate a new review for the current candidate."
+            raise RuntimeError(message)
+    tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
 
 
 def repository_context(repository: str) -> FileInput:
     return FileInput(
         name="github-repository.txt",
-        content=f"GitHub repository: {repository}. Use the prepared gh CLI and this repository's instructions. Do not change authentication.",
+        content=f"GitHub repository: {repository}. Use the prepared gh CLI and this repository's instructions. Do not change authentication. In GitHub conversations use #number or owner/repo#number and commit links that render as short hashes; keep autolink references outside code spans. Elsewhere use explicit links. Link directly to relevant reviews, comments, jobs and file lines with short descriptive labels. Read only the applicable contribution template from the checkout's standard GitHub locations when needed.",
     )
 
 
 def pull_target(
     repository: str, number: int, head: str, event: dict | None, *, review: bool = False
-) -> tuple[bool, int, str, dict]:
+) -> tuple[bool, int, str]:
     comment = (event or {}).get("comment", {})
     thread = (comment.get("in_reply_to_id") or comment["id"]) if "pull_request_review_id" in comment else 0
     is_pr = bool(head) or "pull_request" in (event or {}) or "pull_request" in (event or {}).get("issue", {})
@@ -129,7 +159,7 @@ def pull_target(
             message = "The PR head changed; delegate a new review for the current candidate."
             raise ValueError(message)
         head = target["head"]["sha"]
-    return is_pr, thread, head, target
+    return is_pr, thread, head
 
 
 def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool | None:
@@ -160,9 +190,10 @@ async def run(
     checks: list[str],
     event: dict | None = None,
     skill_dirs: Iterable[Path] = (),
+    reply_required: bool = True,
 ) -> Action:
     stamp = marker(mode, key)
-    is_pr, thread, head, target = pull_target(repository, number, head, event, review=mode == "gatekeeper")
+    is_pr, thread, head = pull_target(repository, number, head, event, review=mode == "gatekeeper")
     expected_review = is_pr and mode == "gatekeeper" and not thread
     source = {
         "repository": repository,
@@ -173,12 +204,7 @@ async def run(
         "native_run_id": run_id,
         "thread_comment_id": thread,
         "publication_marker": stamp,
-        "target": {name: target[name] for name in ("title", "body", "html_url", "state") if name in target},
-        "revisions": {
-            name: {field: target[name][field] for field in ("sha", "ref") if field in target[name]}
-            for name in ("head", "base")
-            if name in target
-        },
+        "target_url": f"https://github.com/{repository}/{'pull' if is_pr else 'issues'}/{number}" if number else "",
         "comment": {
             name: value
             for name, value in (event or {}).get("comment", {}).items()
@@ -200,17 +226,19 @@ async def run(
         },
     }
     guidance = (
-        f"Use the prepared gh CLI for {repository}. Investigation and publication are part of this task. "
-        f"Include {stamp} at the start of the published body to identify this delivery. "
+        f"Use the prepared gh CLI for {repository}. "
+        f"When publishing, include {stamp} at the start of the body to identify this delivery. "
         "Read the applicable templates and repository instructions. Do not merge or change credentials. "
         "Claim publication only after the API confirms it. Refresh the current PR head before publishing. "
         "Keep the candidate head and the actual CI checkout revision distinct. "
-        "Use supplied target details, review history and checkout relationship directly; fetch missing or changing facts only."
+        "Use the supplied target reference, comment and checkout relationship. Fetch the specific target details, discussion or diff needed for this task; do not load all issues or review history."
     )
     if thread:
         guidance += f" Reply to the question in the original inline thread using the review-comment replies API with comment ID {thread}; do not open a new review or conversation comment. Changing work mode requires explicit delegation."
     elif expected_review:
         guidance += f" Publish a native GitHub Review on PR #{number}, not an issue conversation comment. Use the reviews API with commit_id, event COMMENT, body, and native comments containing path, line, and side for actionable findings. Use start_line and start_side for ranges. Verify every location against the inspected diff. Put the marker in the review body. Do not invent findings merely to add inline comments. APPROVE and REQUEST_CHANGES require explicit repository authorization. Record the gate decision separately."
+    elif mode == "issuer" and not reply_required:
+        guidance += " This is automatic follow-up. Update a matching issue only for useful new evidence or changed conditions. Otherwise call no_update and complete without a public write."
     elif number:
         guidance += f" Reply to issue or PR #{number} with the result and publication links. For a fix, verify the candidate before committing, pushing, and opening or updating its PR using gh; follow repository CI instructions."
     source_input = FileInput(name="github-context.json", content=json.dumps(source))
@@ -223,21 +251,20 @@ async def run(
     )
 
     def verify(action: Action) -> None:
-        if not number:
-            return
-        receipt, _ = publication(repository, number, stamp, review=expected_review, thread=thread)
-        if receipt is None or (expected_review and head and receipt.get("commit_id") != head):
-            message = "The agent completed without a confirmed publication at the requested destination."
-            raise RuntimeError(message)
-        if expected_review and head:
-            current = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
-            if current["head"]["sha"] != head:
-                message = "The PR head changed; delegate a new review for the current candidate."
-                raise RuntimeError(message)
-        landing.tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
+        verify_publication(
+            action,
+            landing.tasks,
+            repository,
+            number,
+            stamp,
+            review=expected_review,
+            thread=thread,
+            head=head,
+            reply_required=reply_required,
+        )
 
     async with Runtime(db, skill_dirs=skill_dirs, verify=verify).running() as landing:
-        existing, records = publication(repository, number, stamp, review=expected_review, thread=thread)
+        existing = publication(repository, number, stamp, review=expected_review, thread=thread)
         if existing:
             row = landing.tasks.connection.execute(
                 "SELECT id FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (repository, key)
@@ -248,28 +275,6 @@ async def run(
             verify(action)
             action = landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
             return action
-        history = [
-            {
-                name: item[name]
-                for name in (
-                    "id",
-                    "body",
-                    "html_url",
-                    "commit_id",
-                    "state",
-                    "path",
-                    "line",
-                    "side",
-                    "diff_hunk",
-                    "in_reply_to_id",
-                )
-                if name in item
-            }
-            for item in records
-            if item.get("state") != "PENDING"
-            and (not thread or item.get("id") == thread or item.get("in_reply_to_id") == thread)
-        ]
-        request.input.append(FileInput(name="github-history.json", content=json.dumps(history)))
         command = next(name for name, value in COMMANDS.items() if value == mode)
         action = await landing.command(
             command, request, session_id=f"github:{number or key}", scope=repository, key=key
@@ -336,6 +341,7 @@ def main(argv: list[str] | None = None) -> Action | None:
             checks=args.check,
             event=event,
             skill_dirs=args.skill_dir,
+            reply_required=not bool(event and "workflow_run" in event),
         )
     )
     print(action.model_dump_json(indent=2))

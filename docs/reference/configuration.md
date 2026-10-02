@@ -73,7 +73,7 @@ modes:
     allowed_skills: [documentation-writer]
 ```
 
-An omitted list or `null` leaves that collection unrestricted; `[]` disables it. Tools use native SDK names or aliases, such as `fs.read` or `fs_read`; skill names are case-insensitive. The example names must exist in your prepared skill roots. Include `skill` to load a skill through a tool, `decide` to record a gate recommendation, and `spill.read` to retrieve oversized tool output stored by the native SDK. GitHub publication needs an appropriate prepared capability, normally `bash` and authenticated `gh`.
+An omitted list or `null` leaves that collection unrestricted; `[]` disables it. Tools use native SDK names or aliases, such as `fs.read` or `fs_read`; skill names are case-insensitive. The example names must exist in your prepared skill roots. Include `skill` to load a skill through a tool, `decide` to record a gate recommendation, `no_update` for issuer to record unchanged conditions, and `spill.read` to retrieve oversized tool output stored by the native SDK. GitHub publication needs an appropriate prepared capability, normally `bash` and authenticated `gh`.
 
 The Python SDK's per-call `allowed_tools` and `allowed_skills` intersect with the selected mode's lists. A call can narrow the available collection but cannot expand the mode's configuration. Settings take effect equally for CLI, HTTP, SDK, hooks, and CI execution. Native comma commands select a mode outside the model loop; they do not grant the ensuing task more capabilities. Tool selection is not a sandbox: a shell or delegation tool can expose broader capabilities, so prepare the execution environment for the authority you intend to delegate.
 

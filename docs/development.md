@@ -33,11 +33,11 @@ The test suite replaces external model requests with deterministic responses; th
 | Failed default-branch checks | Issuer follows the affected native failures. | Healthy checks skip feedback; resolved historical defects do not create new work. |
 | Maintainer delegation | `explain` answers, `triage` tracks, `fix` repairs, or `review` evaluates. | The requested mode does one task; maintainers choose the next action. |
 | Fixer candidate | The agent validates and publishes the delegated candidate using repository procedures. | Main checks and review evaluate it again before human acceptance. |
-| Release completion and daily maintenance | Issuer follows the triggering release or current open issues. | Verify their acceptance criteria; a build or merged PR is not proof of deployed recovery. |
+| Release completion | Issuer follows relevant failure or recovery evidence from that release. | Update matching issues only for useful changes; unchanged issues stay quiet. A build or merged PR is not proof of deployed recovery. |
 
 The reusable Action is `action.yml`; Landing's own workflows call it with `uses: ./` and select independent tool and skill collections through `.github/landing.yml`. The workflows are `.github/workflows/main.yml`, `landing.yml`, and `landing-duty.yml`. See [GitHub setup](guides/github.md) for model configuration, permissions, comment delegation, publication, and workflow-token dispatch. There is no model-driven merge or automatic chain that repairs every finding.
 
-After each useful or failed delegation, retain the observations in the issue or PR: the evidence it used, mistaken assumptions, proposed repair layer, rejected changes, human edits, and eventual results. Improve project instructions, tools, code, or meaningful regression cases based on those observations.
+Retain investigation details in execution artifacts. Update the relevant issue or PR when evidence, conditions or outcomes change; do not post repeated status reports. Improve project instructions, tools, code, or meaningful regression cases based on useful observations.
 
 Use native checks and actual human outcomes to evaluate changes. A model's own `allow` is not a quality metric. Per-job databases and artifacts expire after 30 days; lasting lessons belong in work items and the repository.
 

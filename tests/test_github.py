@@ -41,6 +41,9 @@ elif endpoint.endswith("/permission"):
     print(json.dumps({"permission": state["permission"]}))
 elif "/reviews/" in endpoint:
     print(json.dumps(state["reviews"][0]))
+elif "/comments/" in endpoint:
+    number = int(endpoint.rsplit("/", 1)[-1])
+    print(json.dumps(next(record for record in state["comments"] if record["id"] == number)))
 elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     kind = endpoint.rsplit("/", 1)[-1]
     for record in state[kind]:
@@ -62,7 +65,7 @@ else:
 def invoke(tmp_path, platform, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    def call(event, *, key="delegation", repository="example/landing", prefix="/landing"):
+    def call(event, *, key="delegation", repository="example/landing", prefix="/landing", number=0):
         source = tmp_path / "event.json"
         source.write_text(json.dumps(event))
         return github.main([
@@ -76,6 +79,8 @@ def invoke(tmp_path, platform, monkeypatch):
             str(tmp_path / "landing.sqlite3"),
             "--command-prefix",
             prefix,
+            "--number",
+            str(number),
         ])
 
     return call
@@ -226,6 +231,8 @@ def test_owned_inline_followup_retains_mode_and_replies_to_original_thread(platf
         )
 
     responses.extend([
+        completion(tool="bash", arguments={"command": "gh api repos/example/landing/issues/42"}),
+        completion(tool="bash", arguments={"command": "gh api repos/example/landing/pulls/comments/17"}),
         reply_from_evidence,
         completion(
             tool="bash",
@@ -327,3 +334,96 @@ def test_release_tag_event_delegates_maintenance(invoke, model):
     assert action.status == "completed"
     assert action.mode == "issuer"
     assert action.result == "Documentation deployment needs its repository Pages configuration."
+
+
+def test_unchanged_automatic_followup_is_quiet_and_idempotent(platform, invoke, model):
+    responses, requests = model
+    responses.extend([
+        completion(tool="no_update", arguments={"reason": "The original response is still missing; no new evidence."}),
+        completion("No new evidence; the issue remains open."),
+    ])
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {"id": 123, "head_branch": "main", "event": "push"},
+    }
+    action = invoke(event, key="followup:123", number=42)
+    assert action is not None
+    assert action.status == "completed"
+    assert not json.loads(platform.read_text())["comments"]
+    calls = len(requests)
+    replay = invoke(event, key="followup:123", number=42)
+    assert replay is not None and replay.id == action.id
+    assert replay.status == "completed"
+    assert len(requests) == calls
+    assert not json.loads(platform.read_text())["comments"]
+
+
+def test_explicit_triage_still_requires_the_requested_reply(platform, invoke, model):
+    responses, _ = model
+    responses.extend([
+        completion(tool="no_update", arguments={"reason": "No useful change."}),
+        completion("The issue is unchanged."),
+    ])
+    action = invoke({
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {
+            "body": "/landing triage Check this issue and explain what is still missing.",
+            "user": {"type": "User", "login": "maintainer"},
+        },
+    })
+    assert action is not None
+    assert action.status == "failed"
+    assert not json.loads(platform.read_text())["comments"]
+
+
+def test_changed_followup_publishes_once(platform, invoke, model):
+    responses, _ = model
+    stamp = github.marker("issuer", "followup:124")
+    responses.extend([
+        completion(
+            tool="fs_write",
+            arguments={
+                "path": "update.json",
+                "content": json.dumps({"body": stamp + "\nThe new failure includes the missing diagnostic."}),
+            },
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input update.json"}
+        ),
+        completion("Published the new diagnostic evidence."),
+    ])
+    action = invoke(
+        {
+            "repository": {"full_name": "example/landing", "default_branch": "main"},
+            "workflow_run": {"id": 124, "head_branch": "main", "event": "push"},
+        },
+        key="followup:124",
+        number=42,
+    )
+    assert action is not None
+    assert action.status == "completed"
+    comments = json.loads(platform.read_text())["comments"]
+    assert len(comments) == 1
+    assert "missing diagnostic" in comments[0]["body"]
+
+
+def test_failed_write_cannot_reuse_an_earlier_no_update(platform, invoke, model):
+    responses, _ = model
+    responses.extend([
+        completion(tool="no_update", arguments={"reason": "No useful change."}),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input missing.json"}
+        ),
+        completion("Published an update."),
+    ])
+    action = invoke(
+        {
+            "repository": {"full_name": "example/landing", "default_branch": "main"},
+            "workflow_run": {"id": 125, "head_branch": "main", "event": "push"},
+        },
+        number=42,
+    )
+    assert action is not None
+    assert action.status == "failed"
+    assert not json.loads(platform.read_text())["comments"]

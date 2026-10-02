@@ -47,13 +47,13 @@ The Action installs its own runtime in an isolated environment. It uses the call
 | `checks` | Required shell commands, one per line, for fix or review. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
-Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns `status: skipped` without invoking the model. Failed execution or missing publication fails the step. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
+Outputs are `id`, `status`, `decision`, and `result`. An unrelated event returns `status: skipped` without invoking the model. Failed execution or missing required publication fails the step. Automatic issuer follow-up can complete without a public update when conditions are unchanged. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
 
 Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, select per-mode capabilities with `LANDING_CONFIG: .github/landing.yml`, then retain the database as an artifact.
 
 ## Choose the review scope
 
-Use your CI system's existing path filters and job conditions to select work before invoking Landing. For GitHub Actions, use `paths` or `paths-ignore` for a whole workflow, or an existing action such as [dorny/paths-filter](https://github.com/dorny/paths-filter) for individual jobs and file groups. Keep required native checks independent. Pass the selected scope, exclusions, matched files and recorded check results through `instruction`; the agent uses them without implementing another filter language. Documentation review still uses `review`.
+Use your CI system's existing path filters and job conditions to select work before invoking Landing. For GitHub Actions, use `paths` or `paths-ignore` for a whole workflow, or an existing action such as [dorny/paths-filter](https://github.com/dorny/paths-filter) for individual jobs and file groups. Keep required native checks independent. Pass the selected scope, exclusions and relevant check conclusions through `instruction`; let the agent fetch the relevant diff or log when needed instead of injecting complete file or issue lists. Documentation review still uses `review`.
 
 ```text
 Review the selected documentation changes for accurate commands and configuration. Generated site/** output is excluded; inspect related source when it resolves a specific claim. Native checks have passed for the supplied checkout revision.

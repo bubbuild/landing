@@ -48,6 +48,11 @@ class LandingHooks:
         return COMMON + MODES[state.get("landing_mode", "explainer")] + f"\nTask workspace: {workspace}\n"
 
     @hookimpl
+    def before_tool_call(self, call, state):
+        if call.tool != "no_update":
+            state.pop("landing_no_update", None)
+
+    @hookimpl
     def after_llm_call(self, request, result, state) -> None:
         # The SDK calls this before parsing tool arguments. Retain metadata, never their contents.
         calls = []
@@ -73,6 +78,10 @@ class LandingHooks:
             if isinstance(error.__cause__, ValidationError):
                 diagnostic["validation_errors"] = [item["type"] for item in error.__cause__.errors(include_input=False)]
             self.runtime.tasks.event(action_id, "model.failure", diagnostic)
+
+    def record_completion(self, state) -> None:
+        if reason := state.get("landing_no_update"):
+            self.runtime.tasks.event(state["landing_action_id"], "issue.unchanged", {"reason": reason})
 
     @hookimpl
     def provide_tape_store(self):

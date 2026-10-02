@@ -27,13 +27,10 @@ jobs:
     outputs:
       implementation: ${{ steps.paths.outputs.implementation }}
       documentation: ${{ steps.paths.outputs.documentation }}
-      implementation-files: ${{ steps.paths.outputs.implementation_files }}
-      documentation-files: ${{ steps.paths.outputs.documentation_files }}
     steps:
       - uses: dorny/paths-filter@v4
         id: paths
         with:
-          list-files: json
           predicate-quantifier: some-with-excludes
           filters: |
             implementation:
@@ -137,8 +134,8 @@ jobs:
       checked-revision: ${{ github.sha }}
       delivery-key: ${{ format('checks:{0}:{1}', github.run_id, github.run_attempt) }}
       instruction: >-
-        Native check results: ${{ toJSON(needs) }}. Actual checkout revision: ${{ github.sha }}.
+        Native checks: quality=${{ needs.quality.result }}, tests-and-type-check=${{ needs.tests-and-type-check.result }}, check-docs=${{ needs.check-docs.result }}, container=${{ needs.container.result }}.
         Ignore the Landing feedback job when assessing native check completion.
         ${{ (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0')) && 'Review the affected behavior in this PR. Use supplied check results and relevant review history; investigate only unresolved questions and publish useful findings or a brief clean verdict.' || 'Triage only the native failures in these supplied results. Read the affected job logs using gh, reuse a matching issue, and record an actionable current problem. Do not create issues for resolved historical failures.' }}
-        ${{ github.event_name == 'pull_request' && format('Selected implementation files: {0}. Selected documentation files: {1}. Generated site/** output is outside the review scope; inspect its source when needed. For documentation, assess command, configuration and workflow accuracy. For implementation, assess affected user behavior.', needs.feedback-scope.outputs.implementation-files || '[]', needs.feedback-scope.outputs.documentation-files || '[]') || '' }}
+        ${{ github.event_name == 'pull_request' && format('Selected scope: implementation={0}, documentation={1}. Read the relevant diff through gh. Generated site/** output is excluded; inspect its source when needed. For documentation, assess command, configuration and workflow accuracy. For implementation, assess affected user behavior.', needs.feedback-scope.outputs.implementation || 'false', needs.feedback-scope.outputs.documentation || 'false') || '' }}
     secrets: inherit

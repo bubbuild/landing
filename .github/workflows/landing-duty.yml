@@ -8,9 +8,6 @@ on:
   workflow_run:
     workflows: [release-main]
     types: [completed]
-  schedule:
-    - cron: '23 3 * * *'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,7 +16,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: landing-duty-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id || 'daily' }}
+  group: landing-duty-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id }}
   cancel-in-progress: false
 
 jobs:
@@ -56,11 +53,7 @@ jobs:
           git var GIT_AUTHOR_IDENT
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
-      - name: Prepare current maintenance issues
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
-        id: issues
-        run: gh issue list --state open --limit 100 --json number,title,body,url,comments --jq '"issues=" + (map(.comments |= .[-2:]) | tojson)' >> "$GITHUB_OUTPUT"
-      - name: Handle the event or daily maintenance
+      - name: Handle the delegated comment or release event
         uses: ./
         env:
           LANDING_CONFIG: .github/landing.yml
@@ -74,9 +67,10 @@ jobs:
           checked-revision: ${{ github.event_name != 'workflow_run' && github.sha || '' }}
           delivery-key: ${{ format('duty:{0}', github.event.comment.id || github.run_id) }}
           instruction: >-
-            ${{ github.event_name == 'workflow_run' && format('Follow up release run {0}, conclusion {1}. Inspect its failed jobs or verify recovery for a matching open issue; other runs are outside this task.', github.event.workflow_run.id, github.event.workflow_run.conclusion) || 'Follow up these current open issues using their acceptance criteria and the latest relevant evidence. Update or close issues when supported; investigate missing evidence only for the affected issue. Do not scan resolved historical failures for new work.' }}
-            Current open issues: ${{ steps.issues.outputs.issues || '[]' }}.
-            Reuse the supplied issue details. Do not create work for healthy checks or claim deployment recovery from a build. Reply briefly with useful actions or unresolved limitations.
+            Follow the triggering release only. Its conclusion is ${{ github.event.workflow_run.conclusion }}.
+            Read affected jobs or deployment evidence through gh. Search for a matching issue only when this event supplies relevant failure or recovery evidence.
+            Update an existing issue only for useful new evidence, changed conditions or verified progress; otherwise complete without a public write.
+            Do not scan unrelated open issues or resolved historical failures. A build does not establish deployed recovery.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
