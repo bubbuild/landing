@@ -35,6 +35,11 @@ def permitted(repository: str, user: dict, trust: str, owner: dict) -> bool:
         return permission["permission"] in {"admin", "write"}
     if owner["type"] == "User":
         return user["id"] == owner["id"]
+    # Organization owners have admin access to every repository. Reject known
+    # non-owners before querying private membership, where 404 can hide access.
+    permission = identity(f"repos/{repository}/collaborators/{user['login']}/permission", repository)
+    if permission["permission"] != "admin":
+        return False
     membership = identity(f"orgs/{owner['login']}/memberships/{user['login']}", repository)
     return membership["state"] == "active" and membership["role"] == "admin"
 

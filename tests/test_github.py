@@ -49,6 +49,8 @@ if "--input" in args:
 elif endpoint.endswith("/permission"):
     print(json.dumps({"permission": state["permission"]}))
 elif "/memberships/" in endpoint:
+    if state["membership"] is None:
+        raise SystemExit("gh: Not Found (HTTP 404); membership is not visible")
     print(json.dumps(state["membership"]))
 elif endpoint.startswith("users/"):
     print(json.dumps(state["user"]))
@@ -532,6 +534,7 @@ def test_failed_automatic_publication_is_not_a_quiet_completion(tmp_path, platfo
         ("repository", {"type": "User", "id": 1}, 2, None, True),
         ("owner", {"type": "User", "id": 1}, 2, None, False),
         ("owner", {"type": "User", "id": 1}, 1, None, True),
+        ("owner", {"type": "Organization", "login": "example"}, 2, None, False),
         ("owner", {"type": "Organization", "login": "example"}, 2, {"state": "active", "role": "member"}, False),
         ("owner", {"type": "Organization", "login": "example"}, 2, {"state": "active", "role": "admin"}, True),
     ],
@@ -541,6 +544,8 @@ def test_native_admission_runs_before_runtime_installation(
 ):
     state = json.loads(platform.read_text())
     state["owner"] = owner
+    if owner["type"] == "Organization":
+        state["permission"] = "admin" if membership is not None else "read"
     state["membership"] = membership
     platform.write_text(json.dumps(state))
     source = tmp_path / "event.json"
@@ -642,4 +647,18 @@ def test_owner_admission_uses_current_repository_ownership(platform, invoke, mod
         "comment": {"body": "/landing fix Repair this issue.", "user": {"id": 1, "login": "former-owner"}},
     }
     assert invoke(event, trust="owner") is None
+    assert not model[1]
+
+
+def test_invisible_owner_membership_does_not_hide_admission_failure(platform, invoke, model):
+    state = json.loads(platform.read_text())
+    state.update(owner={"type": "Organization", "login": "example"}, permission="admin", membership=None)
+    platform.write_text(json.dumps(state))
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair this issue.", "user": {"login": "maintainer"}},
+    }
+    with pytest.raises(RuntimeError, match="membership is not visible"):
+        invoke(event, trust="owner")
     assert not model[1]
