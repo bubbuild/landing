@@ -213,18 +213,21 @@ def reply_tool(repository: str, number: int, thread: int, record: Callable[[str,
     )
 
     def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
-        """Confirm an already published reply using its native GitHub comment ID."""
-        receipt = json.loads(gh(["api", f"repos/{repository}/pulls/comments/{comment_id}"], repository))
-        if (
-            not thread
-            or comment_id in previous_replies
-            or receipt.get("in_reply_to_id") != thread
-            or receipt.get("pull_request_url") != f"https://api.github.com/repos/{repository}/pulls/{number}"
-        ):
+        """Read back a published reply at the delegated conversation or inline review thread."""
+        kind = "pulls" if thread else "issues"
+        receipt = json.loads(gh(["api", f"repos/{repository}/{kind}/comments/{comment_id}"], repository))
+        matches = (
+            comment_id not in previous_replies
+            and receipt.get("in_reply_to_id") == thread
+            and receipt.get("pull_request_url") == f"https://api.github.com/repos/{repository}/pulls/{number}"
+            if thread
+            else receipt.get("issue_url") == f"https://api.github.com/repos/{repository}/issues/{number}"
+        )
+        if not matches:
             message = "The comment is not a reply at the delegated destination."
             raise ValueError(message)
         record(context.state["landing_action_id"], comment_id)
-        return receipt["html_url"]
+        return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
 
     return Tool.from_callable(confirm_reply, context=True)
 
@@ -283,7 +286,8 @@ async def run(
         f"Use the prepared gh CLI for {repository}. "
         f"When publishing, include {stamp} at the start of the body to identify this delivery. "
         "Read the applicable templates and repository instructions. Do not merge or change credentials. "
-        "Claim publication only after the API confirms it. Refresh the current PR head before publishing. "
+        "For a body file, use gh pr/issue comment --body-file FILE or gh api -F body=@FILE; -f body=@FILE sends the literal path. Use --input FILE for a JSON payload. "
+        "Read back the published body and check its content and destination before claiming success; an ID or URL alone is insufficient. Refresh the current PR head before publishing. "
         "Keep the candidate head and the actual CI checkout revision distinct. "
         "Use the supplied target reference, comment and checkout relationship. Fetch the specific target details, discussion or diff needed for this task; do not load all issues or review history."
     )
@@ -294,7 +298,7 @@ async def run(
     elif mode == "issuer" and not reply_required:
         guidance += " This is automatic follow-up. Update a matching issue only for useful new evidence or changed conditions. Otherwise call no_update and complete without a public write."
     elif number:
-        guidance += f" Reply to issue or PR #{number} with the result and publication links. For a fix, verify the candidate before committing, pushing, and opening or updating its PR using gh; follow repository CI instructions."
+        guidance += f" Reply to issue or PR #{number} with the result and publication links. Call confirm_reply with the returned conversation comment ID to read back the published body. For a fix, verify the candidate before committing, pushing, and opening or updating its PR using gh; follow repository CI instructions."
     source_input = FileInput(name="github-context.json", content=json.dumps(source))
     request = ActionRequest(
         mode=mode,

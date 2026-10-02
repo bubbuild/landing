@@ -43,6 +43,8 @@ if "--input" in args:
     if endpoint.endswith("/replies"):
         record["in_reply_to_id"] = int(endpoint.split("/")[-2])
         record["pull_request_url"] = "https://api.github.com/repos/example/landing/pulls/42"
+    elif kind == "comments":
+        record["issue_url"] = "https://api.github.com/repos/example/landing/issues/42"
     state[kind].append(record)
     path.write_text(json.dumps(state))
     print(json.dumps(record))
@@ -61,7 +63,10 @@ elif "/reviews/" in endpoint:
     print(json.dumps(next(record for record in state["reviews"] if record["id"] == number)))
 elif "/comments/" in endpoint:
     number = int(endpoint.rsplit("/", 1)[-1])
-    print(json.dumps(next(record for record in state["comments"] if record["id"] == number)))
+    record = next(record for record in state["comments"] if record["id"] == number)
+    if "/pulls/comments/" in endpoint and "issue_url" in record:
+        raise SystemExit("gh: Not Found (HTTP 404)")
+    print(json.dumps(record))
 elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     kind = endpoint.rsplit("/", 1)[-1]
     for record in state[kind]:
@@ -208,6 +213,43 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
     with pytest.raises(ConflictError, match="different request"):
         asyncio.run(run("Review deployment behavior."))
+
+
+@pytest.mark.parametrize("is_pr", [False, True])
+def test_explainer_reads_back_its_conversation_reply(platform, invoke, model, is_pr):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42, **({"pull_request": {}} if is_pr else {})},
+        "comment": {
+            "body": "/landing explain Why is HTTPS unavailable?",
+            "user": {"type": "User", "login": "maintainer"},
+        },
+    }
+    answer = "The domain certificate is still being issued."
+    responses, _ = model
+
+    async def report_confirmed_body(**kwargs):
+        return completion(answer if answer in str(kwargs["messages"][-1]) else "Reply confirmation failed.")
+
+    responses.extend([
+        completion(
+            tool="fs_write",
+            arguments={
+                "path": "reply.json",
+                "content": json.dumps({"body": github.marker("explainer", "explain") + "\n" + answer}),
+            },
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"}
+        ),
+        completion(tool="confirm_reply", arguments={"comment_id": 1}),
+        report_confirmed_body,
+    ])
+    action = invoke(event, key="explain")
+    assert action is not None
+    assert action.status == "completed"
+    assert action.result == answer
+    assert json.loads(platform.read_text())["comments"][0]["body"].endswith(answer)
 
 
 @pytest.mark.parametrize("marked", [True, False])
