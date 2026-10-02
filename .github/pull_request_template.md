@@ -2,20 +2,16 @@
 
 ## Purpose
 
-<!-- State the problem and link the issue when one exists. Use Closes #123 only when this PR meets its acceptance criteria. -->
-
-## Changes
-
-<!-- Explain the resulting behavior and why this repair belongs at this layer. Keep it brief; do not recap the diff. -->
+<!-- Describe the problem and resulting behavior. Link the issue when relevant; use Closes #123 when its acceptance criteria are met. -->
 
 ## Validation
 
-<!-- Report checks actually run, observed behavior and material limits. Do not claim that synthetic protocol coverage proves a real provider defect was fixed. -->
+<!-- Report actual checks and observed results, plus limits that affect review. -->
 
 ## Compatibility
 
-<!-- Include user-facing changes, documentation and migration guidance when needed. Omit this section for compatible changes with no user-facing impact. -->
+<!-- Describe user-facing changes or migration needs. Omit this section when unnecessary. -->
 
 ## AI assistance
 
-<!-- If AI materially assisted, state its role and known harness/model/effort identifiers. Do not guess unavailable identifiers. Report assumptions that affect review; otherwise write None. The submitter remains responsible for the contribution. -->
+<!-- State material AI assistance and known harness/model identifiers without guessing. You remain responsible for the contribution. -->

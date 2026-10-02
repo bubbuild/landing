@@ -1,21 +1,20 @@
 # Landing
 
-Explain CI failures, delegate fixes, and review the evidence. Use your existing checks. Keep acceptance in your team's hands.
+Landing explains CI failures, fixes delegated problems, and publishes reviews where your team works. It uses your existing tools and checks.
 
-**With Landing, you own and control the workflow.** Choose your model, run it locally, in CI, or as a service, and adapt the instructions and tools to your team. Start with the built-in workflow; the Apache-2.0 source lets you change how it works.
+With Landing, you own and control the workflow. Choose the model, prepare the execution environment, and adapt instructions and skills to your project. Run it in CI, locally, or as a service. Landing is open source under Apache-2.0 and requires no hosted Landing account.
 
-## Start with a task
+## Start in CI
 
-| Your task | Command | Result |
-| --- | --- | --- |
-| Understand a question or failure | `explain` | An explanation grounded in evidence and a useful next step. |
-| Make a problem actionable | `triage` | Expected behavior, reproduction evidence, and acceptance criteria. |
-| Repair a known problem | `fix` | Workspace changes, validation, and an explanation. |
-| Evaluate a candidate | `review` | Evidence-based findings and `allow`, `block`, or `inconclusive`. |
+[Set up your first PR review](docs/get-started.md). Configure a model, add the GitHub Action to your prepared workflow, and open a PR. Landing publishes a native review with code comments when it finds an actionable problem. Your native checks and team decide what to accept.
 
-Choose the action you need. Each command selects its work mode; the actions can run independently. Results are ordinary text. Native checks and human review remain part of acceptance.
+```text
+Configure CI -> Open a PR -> Read the review -> Decide what to accept
+```
 
-## Try it locally
+The Action uses your authenticated `gh`, project tools, and skills. It checks who can delegate before starting the agent. See [CI integration](docs/guides/ci.md) for other CI systems and [GitHub integration](docs/guides/github.md) for `/landing` commands, publishing identities, and trust policy.
+
+## Use it locally
 
 From a source checkout, with Python 3.12 or later, uv, and a POSIX host:
 
@@ -26,25 +25,12 @@ export LANDING_API_KEY="your-provider-api-key"
 uv run landing explain "Explain this failure and the next useful check." --input check.log
 ```
 
-Use an existing UTF-8 log for `check.log`. These are Landing's current model settings; no separate agent application or plugin setup is required.
+Use a saved UTF-8 log for `check.log`. The commands are `explain`, `triage`, `fix`, and `review`; each works independently. [Local use](docs/guides/local.md) shows how to delegate work and inspect the result.
 
-Follow [From a failed check to a reviewed fix](docs/get-started.md) for a complete, executable example in a disposable workspace. It includes an acceptance check, a delegated repair, and independent review.
+## Work with your team
 
-## Fit it into your team
+Reliable results draw on your documentation, work items, infrastructure, tests, benchmarks, and observability. [Working with Landing](docs/working-with-landing.md) explains how to connect that context and retain feedback. Automate the engineering work you can delegate, and use the time saved to stay involved with contributors and users. Community Over Code.
 
-Stable results need the system around the code: internal documentation, work items, infrastructure, tests, benchmarks, and observability. Provide the relevant context, define acceptance, verify independently, and retain feedback where your team works. See [Working with Landing](docs/working-with-landing.md) for the method and diagram.
+[Make Landing work for you](docs/make-it-yours.md) covers project instructions, skills, and tools. [Run the server](docs/guides/server.md) when you need shared execution. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
 
-Landing keeps actions and execution history in SQLite. Workspace files stay in your workspace; model requests go to your selected provider. GitHub replies and candidate PRs use an optional `gh` adapter. The CLI and generic HTTP interface work without that adapter.
-
-| Where to go | What it covers |
-| --- | --- |
-| [Why Landing](docs/index.md) | Adoption paths and the work Landing helps with. |
-| [Make Landing work for you](docs/make-it-yours.md) | Models, project instructions, checks, tools, and source changes. |
-| [CI](docs/guides/ci.md) / [GitHub](docs/guides/github.md) | Reusable GitHub Action, shell integration, native reviews, and candidate publication. |
-| [Server](docs/guides/server.md) | Shared execution and normalized webhook requests. |
-| [Deployment](docs/guides/deploy.md) / [Recovery](docs/guides/recovery.md) | Containers, ONCE, Litestream, and storage recovery. |
-| [CLI](docs/reference/cli.md) / [Configuration](docs/reference/configuration.md) / [HTTP](docs/reference/http.md) | Commands, settings, and request contracts. |
-| [Python API](docs/reference/python.md) | Embedding and runtime design. |
-| [Develop and dogfood](docs/development.md) | Checks, meaningful tests, and continuous real-task feedback. |
-
-[Contributions](CONTRIBUTING.md) are welcome. Licensed under [Apache-2.0](LICENSE). Powered by Bub.
+[Contributions](CONTRIBUTING.md) are welcome. Licensed under [Apache-2.0](LICENSE). Powered by [Bub](https://bub.build/) and [tape.systems](https://tape.systems/).

@@ -1,12 +1,12 @@
 # Replication and recovery
 
-Plan recovery for the database and workspaces separately. SQLite contains actions, events, request snapshots, idempotency keys, results, and model history. Workspace files and requested output files are ordinary filesystem artifacts.
+SQLite stores actions, request snapshots, events, results, idempotency keys, and model history. Workspace files and requested output files need separate recovery.
 
 ## Replicate the database
 
-Litestream 0.5.17 is included in the image. Server startup restores a missing database from the configured replica before starting Landing; an existing database is preserved. Litestream supervises the server, forwards shutdown signals, and attempts a final sync after Landing stops. It replicates the entire database, including actions, events, idempotency keys, and model execution history. Replication is asynchronous; `/up` reports application readiness, while Litestream logs and its optional heartbeat configuration report backup health.
+The image includes Litestream. Startup restores a missing database from the configured replica, preserves an existing database, then starts Landing. Litestream supervises the server, forwards shutdown signals, and attempts a final sync when it stops. Replication is asynchronous; `/up` measures application readiness, while Litestream logs and optional heartbeats report backup health.
 
-Compose defaults to `file:///replica/landing` in a separate named `replica` volume. This allows recovery after losing the primary volume, but both volumes remain on the same host. For a backup outside that host, set a unique replica URL for this installation and provide your storage credentials:
+Compose defaults to `file:///replica/landing` on a separate named volume. This covers primary-volume loss on the same host. For off-host recovery, select a unique destination and prepare storage credentials:
 
 ```bash
 export LITESTREAM_REPLICA_URL="s3://example-backups/landing/production"
@@ -16,24 +16,24 @@ export AWS_SECRET_ACCESS_KEY="your-storage-secret-key"
 docker compose up -d
 ```
 
-The bundled `/etc/litestream.yml` keeps snapshots for seven days and enables a local control socket at `/run/landing/litestream.sock`. For S3-compatible endpoints or other provider settings, mount a standard Litestream config and set `LITESTREAM_CONFIG` to its path. That config must replicate the same `LANDING_DB` used by Landing. A bare server container requires `LITESTREAM_REPLICA_URL` or an explicit config; it fails startup when neither is configured. CLI commands use the normal entry point and do not start replication automatically.
+The bundled config keeps snapshots for seven days and exposes a local control socket. To wait for synchronization:
 
 ```bash
 docker compose exec landing litestream sync -wait -socket /run/landing/litestream.sock /storage/landing.sqlite3
 ```
 
-To recover a lost database, stop the old container, retain its replica, and start the service with a fresh primary volume and the same replica configuration. Restored active actions become `interrupted`; queued actions resume. Restoring SQLite does not restore workspace files, so prepare the same registered checkouts before restarting the service. Single-use CI containers can explicitly back up a closed database with `litestream replicate -once -force-snapshot DB_PATH REPLICA_URL` using the image's binary.
+For other provider settings, mount a standard Litestream config and set `LITESTREAM_CONFIG`. It must replicate the same `LANDING_DB`. A bare server container requires a replica URL or explicit config. CLI commands do not start replication automatically; a single-use CI container can snapshot a closed database with `litestream replicate -once -force-snapshot DB_PATH REPLICA_URL`. See the upstream [container guide](https://litestream.io/guides/docker/) and [replication reference](https://litestream.io/reference/replicate/).
 
-## Verify recovery
+## Restore and verify
 
 1. Stop the old worker and prevent another writer from opening the database.
 2. Retain the replica and restore or prepare the registered workspaces.
 3. Start with a fresh primary volume and the same replica configuration.
-4. Check `/up`, then inspect action history and interrupted work.
-5. Run a task against the restored workspace and verify the relevant native checks.
+4. Check `/up`, inspect action history, and review interrupted work.
+5. Execute a task in the restored workspace and verify its native checks.
 
-Do not remove the original replica while exercising recovery. File replicas on the same host cover primary-volume loss, not host loss. Test your chosen remote storage and credentials in their actual environment.
+Restored active actions become `interrupted`; queued actions resume. Keep the original replica while verifying recovery. Exercise remote storage and its credentials in the environment where you will need them.
 
-## Cover workspace recovery
+## Recover workspaces
 
-Use your infrastructure's filesystem backup or checkout provisioning process. With ONCE, enable full-volume backups to cover workspace files as well as SQLite. The image uses ONCE's default paused-container backup behavior; it has no live workspace-copy hook. A Litestream replica and a full-volume backup address different recovery needs. See [Deploy Landing](deploy.md).
+Use your infrastructure's filesystem backups or checkout provisioning. With [ONCE](deploy.md#deploy-with-once), enable full-volume backups; Landing uses paused-container backups rather than claiming mutable workspaces are safe to copy live. Restoring SQLite alone does not restore the files a task needs.

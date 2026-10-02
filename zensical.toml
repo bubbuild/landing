@@ -6,14 +6,15 @@ site_description = "Explain CI failures, delegate fixes, and review evidence wit
 site_author = "Chojan Shang"
 edit_uri = "edit/main/docs/"
 repo_name = "PsiACE/landing"
-copyright = 'Maintained by <a href="https://PsiACE.com">PsiACE</a>. Powered by Bub.'
+copyright = 'Maintained by <a href="https://PsiACE.com">PsiACE</a>. Powered by <a href="https://bub.build/">Bub</a> and <a href="https://tape.systems/">tape.systems</a>.'
 
 nav = [
-    { "Why Landing" = "index.md" },
+    { "Landing" = "index.md" },
     { "Get started" = "get-started.md" },
     { "Working with Landing" = "working-with-landing.md" },
     { "Make Landing work for you" = "make-it-yours.md" },
-    { "Run Landing" = [
+    { "Guides" = [
+        { "Local use" = "guides/local.md" },
         { "CI" = "guides/ci.md" },
         { "GitHub" = "guides/github.md" },
         { "Server and webhooks" = "guides/server.md" },

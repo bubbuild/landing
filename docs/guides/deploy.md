@@ -1,6 +1,6 @@
 # Deploy Landing
 
-Build the image from the Landing checkout. No prebuilt registry image is required for this path. Configure the model and prepare a workspace with the dependencies your delegated tasks need.
+Build the image from the Landing checkout. Prepare model settings and a project workspace with the tools its tasks need.
 
 ## Start with Compose
 
@@ -9,35 +9,28 @@ export LANDING_TOKEN="your-server-token"
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 docker compose up --build -d
+curl --fail http://127.0.0.1:8080/up
 ```
 
-The image serves HTTP on port 80 as UID 1000. `/up` checks the worker and database; Docker also uses it for its healthcheck. The database is `/storage/landing.sqlite3`, and the default workspace is `/storage/workspace`. The image includes Git and uv for preparing and validating checkouts. Register additional workspaces with the ordinary `serve --workspace NAME=PATH` option. Each database still has one worker, regardless of the container's CPU allocation.
+The image serves port 80 as UID 1000. SQLite lives at `/storage/landing.sqlite3`; the default workspace is `/storage/workspace`. It starts empty, so prepare your checkout there before delegating. Git, gh, uv, and Python are included; add other project toolchains through your normal provisioning process. Register additional workspaces with `serve --workspace NAME=PATH`.
 
-The default workspace starts empty. Prepare a checkout under `/storage/workspace` using your normal provisioning process before delegating project work. The image includes Git, gh, uv, and Python; add other toolchains needed by your project.
-
-After preparing the workspace, call the service from a Landing source checkout with `uv sync` completed and the same `LANDING_TOKEN`:
+From a Landing source checkout with `uv sync` completed and the same token, submit a task using a saved failure log:
 
 ```bash
 export LANDING_SERVER="http://127.0.0.1:8080"
-uv run landing explain "Explain the latest validation failure." --workspace default --input check.log
+uv run landing explain "Explain this validation failure." --workspace default --input check.log
 ```
 
-Use a saved UTF-8 failure log for `check.log`.
-
-Compose forwards the environment listed in `compose.yaml`. See [Configuration](../reference/configuration.md) for adding a custom endpoint or provider options through an override.
+Compose forwards only the variables listed in `compose.yaml`. Use an override for additional settings or mounts; see [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.
 
 ## Deploy with ONCE
 
-The image follows [ONCE's application contract](https://github.com/basecamp/once#making-a-once-compatible-application): port 80, `/up`, and persistent application data under `/storage`. ONCE supplies `BASE_URL`; Landing uses it for public pagination links. TLS terminates at ONCE's proxy.
+The image follows [ONCE's application contract](https://github.com/basecamp/once#making-a-once-compatible-application): port 80, `/up`, and persistent data under `/storage`. ONCE supplies `BASE_URL` for public pagination links and terminates TLS at its proxy.
 
-After publishing your image to your own registry, deploy it with the standard ONCE CLI:
-
-Configure a replica destination and its credentials first as described in [Replication and recovery](recovery.md).
+Publish the image to your registry and configure the [replica destination](recovery.md#replicate-the-database) and credentials before deployment:
 
 ```bash
-once deploy registry.example.com/team/landing:0.0.0 --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+once deploy registry.example.com/team/landing:reviewed --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 ```
 
-Enable ONCE's full-volume backups in its settings to cover workspace files as well as SQLite. The image uses ONCE's default paused-container backup behavior; it has no pre-backup hook claiming mutable workspaces are safe to copy live. Litestream's SQLite replica and ONCE's full-volume backups serve different recovery needs. See [Litestream's container guide](https://litestream.io/guides/docker/) and [replication command](https://litestream.io/reference/replicate/) for the upstream lifecycle and restore behavior.
-
-The ONCE contract is supported by the image; deployment to your own ONCE host and remote replica still needs acceptance in that environment. See [Replication and recovery](recovery.md) for storage and restoration.
+Enable ONCE's full-volume backups for workspace files. Landing uses paused-container backup behavior. Litestream protects SQLite separately; [Recovery](recovery.md) describes both paths. Verify deployment and remote replication in your actual environment.

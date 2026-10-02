@@ -1,77 +1,63 @@
 # Make Landing work for you
 
-Start with the built-in modes, then adjust the parts your team needs. You choose the model, execution environment, instructions, evidence, and acceptance checks. The CLI and HTTP interface share the same action contract, so adopting a server does not require a different way to describe work.
+You choose the model, environment, instructions, tools, and acceptance checks. Start with the built-in commands and adapt the parts your team needs. CLI, CI, and HTTP calls share the same action contract.
 
-## Choose a model
+## Choose the model and environment
 
-Configure the provider model, API key, and optional endpoint in the environment where Landing runs. You can also save these settings in `~/.landing/config.yml`; an existing configuration remains available as a fallback. See [Configuration](reference/configuration.md) for the exact variables. These settings do not require another application or plugin setup.
+Configure the model where work executes:
 
 ```bash
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 ```
 
-Landing sends the task and relevant tool results to that provider. Choose a provider and execution environment suitable for the material you give it. Local storage and self-hosting do not change the provider's data handling.
+You can save settings in `~/.landing/config.yml`; see [Configuration](reference/configuration.md) for endpoints, precedence, and compatibility with existing settings. Model requests go to the selected provider, whose data handling applies.
 
-## Write project instructions
+Prepare checkouts, language runtimes, dependencies, credentials, and baseline data using your existing setup process. A remote client uses the server's prepared environment. Landing does not install project tools or skills for you.
 
-Landing reads the selected workspace's root `AGENTS.md` as project instructions. Its guidance asks the agent to read more specific `AGENTS.md` files along the paths it works on. Put durable conventions there and supply task-specific requirements in the instruction or `--input` files. For example:
+## Provide project guidance
+
+Landing reads the selected workspace's root `AGENTS.md`. Its guidance asks the agent to read more specific instructions along affected paths. Put durable project conventions there, and give task-specific requirements in the instruction or input files.
 
 ```markdown
 # Project instructions
 
-- Read docs/cli-contract.md before changing command behavior.
-- Use python acceptance.py to verify the public interface.
-- Compare benchmark results using the same workload and environment.
-- Record the deployed revision when investigating runtime failures.
-- Report missing evidence rather than treating it as a successful check.
+Use python acceptance.py to verify CLI behavior. Compare benchmarks with the same workload and environment. When investigating a deployed failure, record the deployed revision and the relevant logs.
 ```
 
-These instructions guide the agent; they do not add permissions or enforce an operating-system boundary. Built-in mode guidance lives in `src/landing/prompts.py` if you need to change it in your own distribution.
+Instructions guide the agent; they do not grant permissions or enforce an operating-system boundary.
 
-## Use skills
+## Prepare skills
 
-Landing discovers skills in the selected workspace's `.agents/skills` and your `~/.agents/skills`. Each skill has a directory matching its name and a `SKILL.md` with `name` and `description` YAML front matter. The agent can list and load applicable skills through its read-only `skill` tool. Name a skill as `$deployment-check` in your instruction to include its content directly.
+Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, and `~/.agents/skills`. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
 
 ```bash
 uv run landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
 ```
 
-Save trusted skill roots as `skill_dirs` in your Landing YAML configuration or set `LANDING_SKILL_DIRS` to a JSON list. Add roots for an individual command with repeatable global `--skill-dir` options. Repository skills take precedence over explicit roots, configured roots, and your home skills, in that order. Skills are instructions and resources; they do not install plugins or expand a mode's configured tool set. See [Skills configuration](reference/configuration.md#skills).
+For a skill repository on GitHub, prepare it with your normal gh login:
 
 ```bash
-uv run landing --skill-dir ~/.local/share/landing/team-skills explain "Explain the deployment against our team conventions." --workspace ./candidate --input deployment.log
+gh repo clone example/team-skills ~/.local/share/landing/team-skills
+uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explain 'Use $deployment-check to explain the failure.' --workspace ./candidate --input deployment.log
 ```
 
-For skills kept in GitHub, use your normal gh login to prepare a local checkout, then select its skill root. Update that checkout through your normal repository workflow; Landing does not fetch or execute remote skill repositories automatically.
+Configure roots on the executing host. Use `skill_dirs` or `LANDING_SKILL_DIRS` for saved settings and repeatable global `--skill-dir` options for individual calls. [Skills configuration](reference/configuration.md#skills) defines discovery precedence. Skills do not install plugins or expand configured tools.
 
-```bash
-/usr/bin/gh repo clone example/team-skills ~/.local/share/landing/team-skills
-uv run landing --skill-dir ~/.local/share/landing/team-skills/.agents/skills explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
-```
+## Select tools and checks
 
-Configure skill roots on the host that executes the action. A remote CLI caller cannot supply local directories to a server. Repository instructions and skills should come from a checkout you trust, particularly when delegating fixer work.
+Each mode can independently select its allowed tools and skills through [mode capabilities](reference/configuration.md#mode-capabilities). A Python embedding can register additional native tools. Enforce authorization in those tools and the execution environment; a shell tool can expose more than its name suggests.
 
-## Use your existing checks
+Use your existing checks for the behavior you need to establish:
 
 ```bash
 uv run landing fix "Resolve the reported compatibility problem." --input acceptance.txt --check "make acceptance" --check "make benchmark"
 ```
 
-Checks run in the target workspace using the host environment. You provide the language runtimes, project dependencies, credentials, and baseline data they need. A command's exit status determines whether that check passed. For a benchmark, the command must enforce your performance criterion; a report-only command returning zero does not prove that performance is acceptable.
+Checks execute in the task workspace. Exit status establishes pass or failure, so a benchmark command must enforce your performance criterion rather than merely print a report.
 
-## Connect your tools
+## Connect and extend
 
-Supply snapshots with `--input` before building a connector. The [GitHub integration](guides/github.md) supplies event context and checks publication receipts; the agent uses your prepared `gh` CLI. Other platforms can translate their events into the [HTTP action contract](reference/http.md) and deliver results through their own interfaces. Provider-specific signatures belong at that translation boundary.
+Supply focused evidence with `--input`, use the prepared gh CLI for [GitHub](guides/github.md), or translate another platform's events into the [HTTP contract](reference/http.md). Provider signatures belong at that translation boundary. Use a [service](guides/server.md) for shared callers.
 
-For an embedding application, the [Python API](reference/python.md) accepts additional tools. You own their authorization and capabilities; register them once, then select the tools and skills available to each mode in [configuration](reference/configuration.md#mode-capabilities).
-
-## Run Landing where you work
-
-Use a local command for an individual task, a [CI step](guides/ci.md) for a prepared checkout, or a [service](guides/server.md) for shared callers. Keep your existing checks and human review. Decide whether a gatekeeper recommendation should be advisory or affect the job's exit status.
-
-Landing keeps task records and execution history in SQLite. You choose the database location and its retention; workspace files are separate. Containers include [replication and recovery](guides/recovery.md). Each database has one worker, with serial action execution.
-
-## Change the behavior
-
-Landing's source is licensed under Apache-2.0. You can inspect and modify the runtime, mode prompts, and adapters, or embed the public API. No hosted Landing account or GitHub App installation is needed for the documented CLI and service paths. See [Develop and dogfood](development.md) for checks and contribution guidance, and [Python API](reference/python.md#runtime-design) for the internal SDK design.
+Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters, or embed the [Python API](reference/python.md). Actions and model history stay in SQLite; workspace files remain separate. Choose retention and [recovery](guides/recovery.md) for both.

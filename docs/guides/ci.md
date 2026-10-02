@@ -1,101 +1,36 @@
 # Use Landing in CI
 
-Your CI system prepares checkout, dependencies, credentials, native checks, and skills. Run Landing as a GitHub Action or an ordinary CLI command in that environment. Start with an explanation or advisory review; keep acceptance in your team's hands.
+Let CI prepare the checkout, dependencies, credentials, checks, and skills. Landing runs as a GitHub Action or an ordinary CLI command in that environment. [Your first PR review](../get-started.md) provides a complete GitHub workflow; the [Action reference](../reference/cli.md#github-action) lists its inputs and outputs.
 
-## GitHub Action
+## Prepare execution
 
-Use Landing's composite Action with a prepared checkout and model configuration. Replace the release reference with the reviewed commit or tag you want to run.
+Run admission before candidate setup when that setup receives credentials. Use a reviewed Landing revision and trusted workflow source. The Action installs its own isolated runtime, uses your prepared project tools and authenticated gh, and does not install project dependencies or skills. Prepare skills with your existing checkout actions or gh commands, then select them with `LANDING_SKILL_DIRS`.
 
-```yaml
-name: Review
-on:
-  pull_request:
-permissions:
-  contents: read
-  pull-requests: write
-concurrency:
-  group: landing-review-${{ github.repository_id }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-jobs:
-  admission:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      allowed: ${{ steps.admission.outputs.allowed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: PsiACE/landing
-          ref: YOUR_REVIEWED_COMMIT
-          persist-credentials: false
-      - id: admission
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 src/landing/adapters/admission.py --trust repository
-  review:
-    needs: admission
-    if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare project dependencies and native checks
-        run: make setup && make acceptance
-      - uses: PsiACE/landing@YOUR_REVIEWED_COMMIT
-        id: landing
-        env:
-          GH_TOKEN: ${{ github.token }}
-          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
-          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
-        with:
-          command: review
-          instruction: Review the candidate against repository guidance and the native checks. Publish actionable findings and record a decision.
-```
+Start with explanation or advisory review. Keep required native checks independent. [GitHub integration](github.md#choose-who-can-delegate) covers caller policy, protected sources, and publishing identities. Fork PRs can run native CI without model or publication credentials.
 
-The Action checks GitHub admission before installing its own runtime in an isolated environment. The separate admission job above uses the same dependency-free entry point before preparing candidate code; use a reviewed Landing revision and a trusted workflow source. For organization owner policy, prepare a Members-read admission token and use `--trust owner` in the admission step and `trust: owner` in the Action. Pass that token as `GH_ADMISSION_TOKEN` to the Action when publication uses a different credential. It uses the caller's prepared project tools, authenticated gh, and skill roots. Prepare skills during setup with your normal checkout actions or gh commands, then set `LANDING_SKILL_DIRS`. It does not install project dependencies, skills, or credentials. Run only trusted work with model and publication credentials; forks can keep native CI without those credentials.
+## Select scope
 
-| Input | Behavior |
-| --- | --- |
-| `command` | `review` (default), `fix`, `triage`, or `explain`. Comment events route their own command. |
-| `instruction` | Task and acceptance criteria. |
-| `repository` | Workflow repository; cross-repository Action targets fail. |
-| `trust` | `repository` (default) admits repository writers; `owner` admits the personal or organization owner. |
-| `upstream-workflow` | Allowed `workflow_run` source name; empty rejects these events. |
-| `number` | Issue or PR number; defaults to the event's target when available. |
-| `head` | Candidate head, separate from the CI checkout. PR events supply it. |
-| `checked-revision` | Actual checked revision, default `github.sha`. Supply the revision your native checks covered. |
-| `run-id` | Native workflow run to inspect, default the current run. |
-| `delivery-key` | Stable delivery identifier; default the run ID and attempt. |
-| `command-prefix` | Comment command prefix, default `/landing`. |
-| `checks` | Required shell commands, one per line, for fix or review. |
-| `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
-
-Outputs are `id`, `status`, `decision`, and `result`. An unrelated or unauthorized event returns `status: skipped` without invoking the model. Failed execution or missing required publication fails the step. Automatic issuer follow-up can complete without a public update when conditions are unchanged. Gate recommendations remain advisory; native checks retain their own status. Read [GitHub integration](github.md) for reviews, inline follow-ups, and publication rules.
-
-Landing's own workflows use `uses: ./` to exercise the same Action from the candidate checkout. They prepare project dependencies, gh, Git identity, authentication, and team skills separately, select per-mode capabilities with `LANDING_CONFIG: .github/landing.yml`, then retain the database as an artifact.
-
-## Choose the review scope
-
-Use your CI system's existing path filters and job conditions to select work before invoking Landing. For GitHub Actions, use `paths` or `paths-ignore` for a whole workflow, or an existing action such as [dorny/paths-filter](https://github.com/dorny/paths-filter) for individual jobs and file groups. Keep required native checks independent. Pass the selected scope, exclusions and relevant check conclusions through `instruction`; let the agent fetch the relevant diff or log when needed instead of injecting complete file or issue lists. Documentation review still uses `review`.
+Use your CI system's path filters and job conditions before invoking Landing. GitHub Actions provides `paths` and `paths-ignore`; [paths-filter](https://github.com/dorny/paths-filter) supports job-level groups. Pass the selected scope, exclusions, and check conclusions through `instruction`, then let the agent fetch relevant evidence.
 
 ```text
-Review the selected documentation changes for accurate commands and configuration. Generated site/** output is excluded; inspect related source when it resolves a specific claim. Native checks have passed for the supplied checkout revision.
+Review the documentation changes for accurate commands and configuration. Generated site/** output is excluded. Native checks passed for the supplied checkout revision; inspect related source only when it resolves a specific claim.
 ```
 
-Landing's Main workflow groups implementation and documentation changes with `paths-filter`. Implementation includes agent prompts, `AGENTS.md`, skills and workflow configuration. Generated `site/**` output is excluded. Native CI runs independently; successful checks with only excluded changes skip automatic feedback. Healthy default-branch checks also skip feedback; native failures receive triage for the affected jobs. Main groups automatic PR events and explicit candidate-check dispatches by repository and PR at the workflow entrance. A new candidate cancels unfinished checks and feedback for the old candidate immediately; the new candidate owns its native acceptance. Keep checks and reviews in separate workflows if old native runs must continue. Explicit candidate dispatch and comment delegations remain available.
+Record the actual checked revision separately from the PR head. A merge checkout can cover a candidate with a different SHA. When reviewing changes to Landing itself, install the candidate runtime in fresh CI; switching a workspace does not reload an already installed runtime.
 
-Self-checks install Landing from the candidate checkout. A comment task can instead use the default-branch runtime with a selected PR workspace; changing that workspace does not reload the installed runtime. Start fresh candidate CI to verify changes to Landing itself.
+## Cancel superseded reviews
 
-Put concurrency on the outer workflow, before native checks or `needs` delay agent admission. Do not put the SHA, event name or run ID in the group for the same PR. Use a different group for a called workflow: GitHub supplies the caller's workflow name inside reusable workflows, so reusing its cancelling group can cancel the caller itself. A composite Action cannot set workflow concurrency.
+Put concurrency on the outer workflow before checks delay agent admission. Group by repository and PR, without the SHA, event name, or run ID, and set `cancel-in-progress: true`. The [first-review example](../get-started.md#add-the-workflow) shows this arrangement. Keep native checks in a separate workflow if they must continue for old candidates.
 
-The bundled reusable workflow and duty listener queue explicit work with `queue: max` and `cancel-in-progress: false`. GitHub.com retains up to 100 pending runs; plain `cancel-in-progress: false` still replaces the single pending run by default. On GitHub Enterprise Server, check support for `queue: max`; use the existing Landing server queue if native multi-pending queues are unavailable. These queues preserve admitted requests, not commit-date ordering or unlimited capacity.
+Use a different group for a called workflow: GitHub supplies the caller's workflow name inside reusable workflows, so a shared cancelling group can cancel the caller. A composite Action cannot set workflow concurrency.
 
-## Ordinary CI commands
+For explicit delegations that must be preserved, GitHub.com supports `queue: max` with `cancel-in-progress: false`, retaining up to 100 pending runs. Without `queue: max`, a new pending run replaces the single pending run. Check availability on GitHub Enterprise Server, or use Landing's server queue. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Install Landing and configure the model on the executing host. From its source checkout use `uv sync` and prefix commands with `uv run`; use `--workspace` for another checkout.
+## Use an ordinary CI command
 
-Retain a native check's exit status when asking for an explanation:
+Install and configure Landing on the executing host. The examples run from its source checkout after `uv sync`; select another project with `--workspace`.
+
+Preserve the native check's exit status when asking for an explanation:
 
 ```bash
 status=0
@@ -106,15 +41,11 @@ fi
 exit "$status"
 ```
 
-Evaluate a candidate with required checks:
+To evaluate a candidate with required checks:
 
 ```bash
 export LANDING_DB="$PWD/.ci-state/landing.sqlite3"
 uv run landing review "Review the candidate against the acceptance criteria." --input acceptance.txt --input candidate.diff --check "make acceptance" --json --output review.json
 ```
 
-Review checks run before evaluation. The CLI exits nonzero for execution failure, `block`, or `inconclusive`. Keep advisory feedback in a separate step when it should not affect native acceptance. Record candidate revision and actual checked revision in the evidence, particularly when CI tests a merge checkout.
-
-## Preserve evidence
-
-Retain results, reports, logs, diffs, and SQLite after the action stops. Include workspace changes when delegating a fix. Separate databases allow independent jobs; each database has one worker. Choose a retention period and record lasting findings in your work system. See [Develop and dogfood](../development.md) for the continuous feedback process.
+CLI review returns nonzero for execution failure, `block`, or `inconclusive`. Put advisory feedback in a separate step when it should not affect native acceptance. Retain the result, relevant logs, workspace changes, and SQLite as CI artifacts. Each database has one worker; separate jobs can use separate databases. [Develop and dogfood](../development.md) describes Landing's own setup and feedback loop.

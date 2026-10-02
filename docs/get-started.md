@@ -1,94 +1,82 @@
-# From a failed check to a reviewed fix
+# Your first PR review
 
-Use Landing to explain a failure, delegate a repair, and review it against a check you control. This tutorial uses a small command-line program in a disposable workspace. Its missing-argument behavior is broken deliberately.
+Add Landing to an existing GitHub Actions workflow and verify that it publishes a review on a PR. Start with a same-repository branch whose author has write access. Fork PRs keep their native checks without receiving model or publication credentials.
 
-You need a POSIX host, Python 3.12 or later, uv, a Landing source checkout, and a model API key. Run these commands from the Landing checkout. The example target uses Python; Landing can work with other projects whose tools are available in its execution environment.
+You need a model API key, a repository where you can configure Actions, and a working native check command. The example uses a Python project with uv; replace its setup and check steps with your project's existing ones. Prepare a trusted workflow source before granting it credentials.
 
-## Configure Landing
+## Configure the model
 
-```bash
-uv sync
-export LANDING_MODEL="openai:gpt-4.1"
-export LANDING_API_KEY="your-provider-api-key"
-export LANDING_DB="$PWD/.ci-state/tutorial.sqlite3"
-```
-
-These are Landing's current model environment variables. No separate agent application or plugin setup is required. For another provider or API endpoint, see [Configuration](reference/configuration.md).
-
-## Prepare the failure and its acceptance check
+In repository settings, add the `LANDING_MODEL` variable and `LANDING_API_KEY` secret. You can also use your normal gh login:
 
 ```bash
-WORKSPACE=$(mktemp -d)
-printf '%s\n' "$WORKSPACE"
-cat > "$WORKSPACE/greet.py" <<'PY'
-import sys
-
-print(f"Hello, {' '.join(sys.argv[1:])}!")
-PY
-
-cat > "$WORKSPACE/acceptance.py" <<'PY'
-import subprocess
-import sys
-from pathlib import Path
-
-program = str(Path(__file__).with_name("greet.py"))
-valid = subprocess.run([sys.executable, program, "Ada"], capture_output=True, text=True)
-assert valid.returncode == 0, valid.stderr
-assert valid.stdout == "Hello, Ada!\n", valid.stdout
-missing = subprocess.run([sys.executable, program], capture_output=True, text=True)
-assert missing.returncode == 2, f"Expected exit 2, got {missing.returncode}"
-assert "usage" in missing.stderr.lower(), missing.stderr
-assert missing.stdout == "", missing.stdout
-print("Acceptance passed.")
-PY
-
-uv run python "$WORKSPACE/acceptance.py" > "$WORKSPACE/check.log" 2>&1
+gh variable set LANDING_MODEL --repo example/team-project --body "openai:gpt-4.1"
+gh secret set LANDING_API_KEY --repo example/team-project
 ```
 
-The last command should fail with `Expected exit 2, got 0`. The acceptance check describes what a user sees: a valid greeting, an error exit for a missing name, usage on stderr, and no success output on failure. It does not constrain the implementation of argument parsing.
+Use your actual repository and provider model. The secret command prompts for the key. See [Configuration](reference/configuration.md#model) for custom endpoints.
 
-## Explain the failed check
+## Add the workflow
 
-```bash
-uv run landing explain "Explain the failure. Cite the observed behavior and suggest the next check." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log"
+Save the following as `.github/workflows/review.yml`. Replace both `YOUR_REVIEWED_COMMIT` values with the same reviewed Landing commit or release tag. The admission job checks the caller before project setup; the Action repeats admission before installing its isolated runtime.
+
+```yaml
+name: Review
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: landing-review-${{ github.repository_id }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  admission:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      allowed: ${{ steps.admission.outputs.allowed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: PsiACE/landing
+          ref: YOUR_REVIEWED_COMMIT
+          persist-credentials: false
+      - id: admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 src/landing/adapters/admission.py --trust repository
+  review:
+    needs: admission
+    if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - name: Run native checks
+        run: uv sync --locked && uv run pytest
+      - uses: PsiACE/landing@YOUR_REVIEWED_COMMIT
+        id: landing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
+          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
+        with:
+          command: review
+          instruction: Review the candidate against repository guidance and the native checks. Publish actionable findings and record a decision.
 ```
 
-Look for an explanation connecting the missing-name invocation to exit code 0, and distinguishing that observation from a hypothesis about the cause. Wording varies with the model. A completed action means it returned an answer; you still judge whether the answer is useful and supported by the evidence.
+Ubuntu's runner provides gh; use your normal setup action on other runners. The example publishes as `github-actions[bot]`. Keep existing required checks independent; this review is advisory. For owner-restricted execution, use a protected workflow source and the [GitHub trust controls](guides/github.md#choose-who-can-delegate).
 
-## Delegate the fix
+## Open a PR and read the result
 
-```bash
-uv run landing fix "Fix greet.py. With a name, preserve the greeting and exit 0. Without a name, print usage to stderr, print nothing to stdout, and exit 2. Keep acceptance.py unchanged." --workspace "$WORKSPACE" --input "$WORKSPACE/check.log" --check "python acceptance.py" --json --output .ci-state/tutorial-fix.json
-```
+Put the workflow on your trusted branch, then open a same-repository PR with a small change. When the native checks pass, Landing reads the candidate and publishes a GitHub Review. Findings appear at the relevant code locations. A clean review can say `No blocking findings.` without adding code comments.
 
-Fixer can edit and execute commands in this workspace. Landing runs the required check after the agent finishes. Expect `status: completed` and an explanation of the change and verification. Read `greet.py` and verify that `acceptance.py` still expresses the intended contract. The ordinary CLI keeps the edits locally; it does not commit, push, or open a PR.
+Check the workflow and PR together. `status: completed` means the task finished and its required publication was verified; `decision` records `allow`, `block`, or `inconclusive`. The recommendation does not merge the PR or change the result of your native checks. Review guidance asks the agent to leave the candidate unchanged.
 
-If validation fails, inspect the explanation, check records, and files. Landing preserves partial work. Correct the delegation or provide missing context before requesting another action; repeated retries alone are not a repair strategy.
+Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs skip this workflow's agent jobs. Execution or required publication failure fails the Action step. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
 
-## Review independently
-
-```bash
-uv run landing review "Review greet.py against acceptance.py. Check valid and missing-name behavior, and identify any unverified claims." --workspace "$WORKSPACE" --check "python acceptance.py" --json --output .ci-state/tutorial-review.json
-uv run python "$WORKSPACE/acceptance.py"
-```
-
-Gatekeeper runs the check before reviewing and cannot edit the program. A failed check forces `block`; missing evidence can produce `inconclusive`. Its CLI command exits zero only for a completed action with `allow`. An allow is a recommendation, and the separate command gives you the actual acceptance result.
-
-Accept the candidate only after inspecting the change and the evidence. A wrong recommendation is useful feedback to record, even when the check passes.
-
-## Inspect and continue
-
-```bash
-uv run landing action list
-```
-
-Copy an ID from the list to inspect it:
-
-```bash
-uv run landing action view act_example --json
-uv run landing action logs act_example
-```
-
-The records use the database configured above. Workspace files remain in the temporary directory printed by `printf '%s\n' "$WORKSPACE"`.
-
-To use this with real work, replace the fixture with your checkout, its acceptance criteria, and its checks. Continue with [Working with Landing](working-with-landing.md), [CI](guides/ci.md), or [GitHub delivery](guides/github.md).
+Continue with [CI integration](guides/ci.md) for scope and concurrency, or [GitHub integration](guides/github.md#wire-commands-and-follow-ups) to delegate `/landing fix` and `/landing explain` from comments.

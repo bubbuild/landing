@@ -1,10 +1,10 @@
 # HTTP reference
 
-The service admits the same action used by the CLI. Admission and execution are separate: a successful POST records queued work, not a completed result. Provider webhook verification and payload translation belong to the caller's adapter.
+The service accepts the CLI's action contract. Admission persists queued work; execution follows asynchronously. Provider webhook signatures and payload translation belong to the caller's adapter.
 
 ## Authorization and admission
 
-When `LANDING_TOKEN` is set, requests require `Authorization: Bearer TOKEN`, except `/healthz` and `/up`. Submit action requests as `application/json`. The request limit is 16 MiB. Fields are strict and unknown fields are rejected.
+When `LANDING_TOKEN` is configured, every endpoint except `/healthz` and `/up` requires `Authorization: Bearer TOKEN`. Admission requires `application/json`, has a 16 MiB limit, and rejects unknown fields.
 
 ```json
 {
@@ -19,52 +19,52 @@ When `LANDING_TOKEN` is set, requests require `Authorization: Bearer TOKEN`, exc
 }
 ```
 
-| Request field | Contract |
+| Field | Contract |
 | --- | --- |
 | `mode` | Required: `issuer`, `fixer`, `gatekeeper`, or `explainer`. |
-| `instruction` | Optional string; a nonblank instruction or nonempty `input` is required. |
-| `workspace` | Optional registered name, default `default`. The service prepares no checkout. |
-| `input` | Array of inline text or file snapshots; default empty. A file requires `name` and `content`; `media_type` defaults to `text/plain`. |
-| `checks` | Array of nonblank shell commands; default empty. Only fixer and gatekeeper support checks. |
+| `instruction` | Optional string; a nonblank instruction or nonempty input is required. |
+| `workspace` | Registered name, default `default`; the service prepares no checkout. |
+| `input` | Text or file snapshots, default empty; files require `name` and `content`, with `media_type` defaulting to `text/plain`. |
+| `checks` | Nonblank commands, default empty; supported only by fixer and gatekeeper. |
 
-`POST /v1/actions` commits the request and queued event before returning `201 Created` with an action record and `Location: /v1/actions/{id}`. `Idempotency-Key` is optional and accepts 1–256 characters. Reusing a key with the same request returns the existing action with `200`; conflicting content returns `409`. Retry admission also supports this header.
+`POST /v1/actions` commits the request before returning `201` with an action record and `Location`. Optional `Idempotency-Key` accepts 1–256 characters. The same key and request return the existing action with `200`; conflicting content returns `409`. Retry admission also supports the header.
 
 ## Resources
 
-| Method and path | Behavior |
+| Method and path | Contract |
 | --- | --- |
-| `POST /v1/actions` | Durably accept an action. |
-| `GET /v1/actions?limit=50&cursor=act_example` | Read history, newest first. |
-| `GET /v1/actions/{id}` | Read the action record. |
-| `GET /v1/actions/{id}/events?after=0&limit=50` | Read lifecycle, validation, and publication records. |
-| `POST /v1/actions/{id}/cancellation` | Cancel queued work or request active cancellation. |
-| `POST /v1/actions/{id}/retries` | Create an explicit retry using the original request snapshot. |
+| `POST /v1/actions` | Admit work. |
+| `GET /v1/actions?limit=50&cursor=act_example` | History, newest first. |
+| `GET /v1/actions/{id}` | Action record. |
+| `GET /v1/actions/{id}/events?after=0&limit=50` | Lifecycle, validation, and publication events. |
+| `POST /v1/actions/{id}/cancellation` | Request cancellation. |
+| `POST /v1/actions/{id}/retries` | Retry a terminal action's original request. |
 | `GET /healthz` | HTTP liveness. |
 | `GET /up` | Worker and SQLite readiness. |
-| `GET /openapi.json` | Generated schema; requires authorization when configured. |
+| `GET /openapi.json` | Generated schema. |
 
-Collections are JSON arrays. `limit` accepts 1–100, default 50. Follow the `Link` header with `rel="next"` for subsequent pages. Action cursors use IDs; event pagination uses the last numeric event ID as `after` (nonnegative, default 0). `BASE_URL` sets the public origin for pagination links behind a proxy.
+Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `BASE_URL` supplies the public origin behind a proxy.
 
 ## Action records
 
-| Field | Meaning |
+| Field | Contract |
 | --- | --- |
-| `id`, `mode`, `instruction`, `workspace` | Identity and delegated work. IDs are opaque. |
+| `id`, `mode`, `instruction`, `workspace` | Identity and delegated work; IDs are opaque. |
 | `status` | `queued`, `running`, `completed`, `failed`, `cancelled`, or `interrupted`. |
-| `result` | Plain-text answer, or null; a failed action can retain an answer. |
-| `decision` | Gatekeeper `allow`, `block`, or `inconclusive`; otherwise null. Missing gatekeeper decisions are inconclusive. |
-| `error` | Error details, or null. |
-| `retry_of` | Original action ID for explicit retries, or null. |
+| `result` | Text or null; failed actions can retain an answer. |
+| `decision` | Gatekeeper `allow`, `block`, or `inconclusive`; null for other modes. A missing gatekeeper decision is inconclusive. |
+| `error` | Error details or null. |
+| `retry_of` | Original action ID or null. |
 | `created_at`, `updated_at` | Record timestamps. |
-| `started_at`, `completed_at`, `cancel_requested_at` | Lifecycle timestamps, or null. |
+| `started_at`, `completed_at`, `cancel_requested_at` | Lifecycle timestamps or null. |
 
-Poll the action resource until it reaches `completed`, `failed`, `cancelled`, or `interrupted`. Completion does not establish correct advice, successful platform delivery, or human acceptance. Events expose `id`, `type`, `created_at`, and `data`; validation records include command, output, exit code, and timeout status.
+Poll until `completed`, `failed`, `cancelled`, or `interrupted`. Events contain `id`, `type`, `created_at`, and `data`. Validation events record command, output, exit code, and timeout status.
 
-Cancellation returns `202` while active work is stopping and `200` for terminal work. Retries require a terminal action, create a new record, and do not reset workspace files. On worker restart, active work becomes `interrupted`, queued work resumes, and completed work is not replayed.
+Cancellation returns `202` while active work stops, otherwise `200` for terminal work. Retry requires a terminal action and preserves workspace edits. After worker restart, active work becomes `interrupted`, queued work resumes, and completed work does not replay.
 
 ## Errors
 
-Errors use `application/problem+json` with `type`, `title`, `status`, and `detail`:
+Errors use `application/problem+json`:
 
 ```json
 {
@@ -78,12 +78,12 @@ Errors use `application/problem+json` with `type`, `title`, `status`, and `detai
 | Status | Meaning |
 | --- | --- |
 | `400` | Malformed JSON. |
-| `401` | Missing or invalid bearer token. |
-| `404` | Action not found. |
-| `409` | Idempotency conflict or invalid state for retry. |
+| `401` | Missing or invalid token. |
+| `404` | Missing action. |
+| `409` | Idempotency conflict or invalid retry state. |
 | `413` | Request exceeds 16 MiB. |
-| `415` | Action admission is not `application/json`. |
+| `415` | Admission content type is not JSON. |
 | `422` | Invalid fields, checks, workspace, or query values. |
-| `503` | Worker or database unavailable. |
+| `503` | Unavailable worker or database. |
 
-Read [Run the server](../guides/server.md) for deployment prerequisites and an end-to-end request example.
+[Run the server](../guides/server.md) provides an end-to-end request example.

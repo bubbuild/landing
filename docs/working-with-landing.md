@@ -1,82 +1,61 @@
 # Working with Landing
 
-Reliable assistance depends on the context your team maintains and the evidence you use to accept work. Give Landing the system around the code: internal documentation, work items, infrastructure, tests, benchmarks, and observability.
-
-The same method applies to a release question, a failing benchmark, a documentation problem, or a code change. Delegate a concrete task, give it relevant evidence, validate the result independently, and retain what you learn.
+Landing can investigate failures, prepare issues, make changes, run checks, and publish reviews within the authority you give it. Reliable results depend on the engineering context your team maintains and the evidence you use to accept work.
 
 ## Connect the engineering context
 
-| Source | What it helps establish | How to supply it |
-| --- | --- | --- |
-| Internal documentation | Intended behavior, architecture, operating procedures | Workspace files, `AGENTS.md`, or text snapshots with `--input`. |
-| Work items | The problem, owner, prior attempts, acceptance criteria | An issue snapshot or the prepared `gh` CLI. |
-| Infrastructure | Deployment environment, configuration, release topology | Relevant manifests and sanitized command output. |
-| Tests | User-visible behavior and known regressions | Existing check commands and failure logs. |
-| Benchmarks | Performance expectations and measured changes | Baseline and candidate reports with environment and revision details. |
-| Observability | What happened in the running system | Relevant logs, metrics, and traces with time range and deployed revision. |
+Give Landing relevant documentation and work items to establish intended behavior and acceptance criteria. Infrastructure describes where the work runs. Tests, benchmarks, and observability establish what it does. Make these available through workspace files, focused snapshots, or tools in the prepared environment.
 
-Supply the material needed for the task. A complete engineering system does not mean attaching every document to every request. Start with files, snapshots, and tools your team already uses. Add an integration when real work shows what is missing. Landing does not automatically connect these systems for you.
+Start with the material needed for the question. Let the agent fetch a specific log or discussion when it needs more evidence. Connecting the engineering system does not require loading every document or issue into every task.
 
 ```mermaid
 flowchart TB
-    Context["Internal docs · Work items · Infrastructure"]
-    Evidence["Tests · Benchmarks · Observability"]
+    Community["Contributors and users"]
+    People["Maintainers"]
+    Context["Docs, work items, infrastructure"]
+    Evidence["Tests, benchmarks, observability"]
+    Landing["Landing"]
     Candidate["Candidate change"]
-    Landing["Landing<br/>Explain · Triage · Fix · Review"]
-    People["Maintainer"]
-    Learning["Project instructions · Checks · Regression cases"]
+    Learning["Project guidance and regression cases"]
 
-    Context -->|Relevant context| Landing
-    Candidate -->|Validate| Evidence
-    Evidence -->|Independent results| People
-    Evidence -->|Evidence| Landing
-    People -->|Delegate a task| Landing
-    Landing -->|Explanation, work item, recommendation| People
-    Landing -->|Propose a fix| Candidate
-    People -->|Accept, revise, or reject| Candidate
-    People -->|Retain lessons| Learning
+    Community <-->|"Listen and discuss"| People
+    People -->|"Delegate"| Landing
+    Context --> Landing
+    Evidence --> Landing
+    Landing -->|"Explain, triage, review"| People
+    Landing -->|"Propose a fix"| Candidate
+    Candidate -->|"Validate"| Evidence
+    Evidence -->|"Independent results"| People
+    People -->|"Accept or revise"| Candidate
+    People -->|"Retain feedback"| Learning
     Learning --> Context
     Learning --> Evidence
 ```
 
-Native checks and operational signals reach maintainers directly. Landing uses the same evidence to help them act. A proposed change goes through validation again. These arrows describe collaboration over time, not an automatic pipeline that invokes every mode.
+Native checks and operational signals reach maintainers directly. Landing helps them act on the same evidence. Each command works independently; the diagram does not require every task to pass through all four actions.
 
-## Make a problem actionable
+## Delegate a concrete task
 
-Use `triage` when a finding needs an owner and acceptance criteria. A useful work item explains the expected behavior, the observed failure, how to reproduce it, and what would demonstrate recovery. Reuse an existing issue for the same problem. Automatic follow-up updates it only for useful new evidence, changed conditions or verified progress; unchanged problems need no repeated status comment.
-
-```text
-Investigate the failed release check. Determine whether this is a product defect, a broken check, or an infrastructure failure. Reuse an existing issue if it describes the same problem. Include the failing revision and acceptance criteria.
-```
-
-Issue creation requires an authorized platform tool. Without one, issuer returns text that you can use in your own work system.
-
-## Delegate against acceptance
-
-Use `fix` for a defined problem. State the intended user behavior, relevant constraints, and how to verify it. Provide project instructions and the commands that matter. Keep the candidate in a workspace you can inspect.
+Use `explain` for a question, `triage` to make a problem actionable, `fix` for a repair, and `review` to evaluate a candidate. State the unresolved condition, expected outcome, relevant constraints, and evidence that would settle it.
 
 ```text
-Fix the documented timeout behavior. Reproduce the failure, preserve the public CLI contract, and use the existing acceptance check. Report actual validation and anything that still needs a human decision.
+Fix the documented timeout behavior. Reproduce the failure, preserve the public CLI contract, and use the existing acceptance check. Report the observed result and any remaining uncertainty.
 ```
 
-Fix edits the selected workspace. Prepare an isolated checkout when delegating changes. The agent publishes candidates only within the delegated scope, using the prepared environment and repository procedures. Required checks execute independently of the agent's claims.
+Reuse an existing issue when it describes the same problem. Automatic follow-up updates it only when evidence, conditions, or verified progress change. A new run ID alone does not justify another status comment. Explicit questions still receive a reply.
 
-## Review the evidence
+## Verify the outcome
 
-Use `review` to evaluate a candidate and `explain` to answer a question. Both need evidence with enough provenance to support the conclusion. Identify the diff revision, the revision checked by CI, and the deployed revision when discussing recovery. A PR head and a CI-tested merge commit can be different.
+Reuse independent checks that cover the candidate and its execution environment. Identify the checked revision when it affects the conclusion; a PR head, CI merge checkout, and deployed commit can differ. Use source inspection or a focused counterexample for an unresolved question.
 
-```text
-Review the candidate against the issue's acceptance criteria. State which revision each check covers. Separate verified behavior, hypotheses, and missing evidence. Recommend the next discriminating check when the cause is uncertain.
-```
+Keep the outcome clear: task completion, a model recommendation, a published reply, and actual recovery establish different things. An `allow` recommendation does not replace acceptance evidence. Review findings should explain a supported trigger and consequence at the useful repair location, with a short verdict when the details are inline.
 
-Keep execution status, model recommendation, native check results, platform delivery, and human acceptance distinct. An action can complete with a block recommendation. A successful reply can contain mistaken advice. A merged PR does not establish production recovery.
+Retain useful findings and mistaken assumptions in the relevant work item. Improve project guidance, tools, code, or checks where the problem belongs. Behavior tests cover the experience users see; regression tests cover actual mistakes likely to recur. See [Develop and dogfood](development.md) for Landing's own feedback loop.
 
-## Retain feedback where the team works
+## Community Over Code
 
-Record useful findings, mistaken assumptions, rejected repairs, human edits, and operational results in the relevant work item. Use those cases to improve project instructions, tools, checks, or the implementation at the layer that owns the problem.
+A healthy community sustains a project as its code changes. [The Apache Way](https://www.apache.org/theapacheway/) describes this as Community Over Code.
 
-Keep behavior tests for the experience users see and regression tests for actual mistakes likely to recur. End-to-end acceptance is valuable for platform wiring. Avoid tests that freeze helper structure or repeat simple implementation details. A rewrite preserving the user's experience should still satisfy the contract.
+Use the time saved by automation to listen to users, welcome contributions, and work through disagreements. Tools can help prepare a reply; personal thanks, empathy, and commitments need your attention. Stay involved when someone needs encouragement, clarification, or a conversation about the project's direction.
 
-Judge adoption by whether people can act more effectively: an explanation points to a useful next check, an issue has actionable acceptance, a repair survives independent validation, and incorrect advice is easy to identify and correct. Do not use the model's own recommendation as its quality score.
-
-See [Develop and dogfood](development.md) for how Landing uses this process on its own issues, checks, and candidate PRs.
+Authorized engineering tasks can run automatically, including investigation and publication. Maintain the relationships behind that work yourself. Judge the experience by whether people can make progress and remain willing to participate, as well as whether a candidate passes its checks.

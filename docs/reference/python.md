@@ -1,6 +1,6 @@
 # Python API
 
-Embed Landing to use the same commands, mode settings, SQLite tasks, and executor as the CLI and service. Use the streaming SDK for agent integration or `Runtime.run()` for a request-to-action call. Enter `Runtime.running()` while executing work; the caller owns the database and runtime lifecycle.
+Embed Landing with the same action contract and executor used by CLI and HTTP. The caller owns the database and runtime lifecycle; enter `Runtime.running()` while executing work.
 
 ## Delegate an action
 
@@ -21,13 +21,13 @@ async def review():
         ))
 ```
 
-Commands select the persisted mode: `triage` → `issuer`, `fix` → `fixer`, `review` → `gatekeeper`, and `explain` → `explainer`. `Runtime.run(ActionRequest(...))` directly admits the same task with its explicit mode. Inspect the returned action's status, decision, result, and error separately. Use `action.exit_code()` for ordinary CLI acceptance semantics.
+Commands select persisted modes: `triage` selects issuer, `fix` selects fixer, `review` selects gatekeeper, and `explain` selects explainer. `Runtime.run()` admits a request with its explicit mode. Read the returned action's status, decision, result, and error; `exit_code()` applies ordinary CLI semantics.
 
-`Runtime(path, workspaces={"candidate": Path("/srv/candidate")})` selects registered names instead of arbitrary local paths. `create_app()` accepts the same mapping, a bearer token, a public origin, and optional GitHub repository context. See the [HTTP contract](http.md).
+Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered names. `create_app()` accepts the same mapping, token, public origin, skills, and GitHub context for the [HTTP service](http.md).
 
 ## Streaming SDK
 
-`landing.agent.run_stream()` accepts the Bub 0.5.0 SDK options: `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`. Await it before iterating and close the stream when leaving early. Closing unfinished work requests durable cancellation.
+`landing.agent.run_stream()` accepts native Bub 0.5.0 options: `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
 
 ```python
 from contextlib import aclosing
@@ -51,17 +51,15 @@ async def explain():
         return stream.error, stream.usage
 ```
 
-These are native SDK events: `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`. A `final` event ends a model step; consume the complete stream to finish the task. Native model errors and usage remain available on the stream. Landing's validation or publication failures also produce an error and persist in the action record. Task errors retain native SDK error kinds; other execution failures use `unknown`.
+Await the stream, consume it fully, and close it when leaving early. Closing unfinished work requests durable cancellation. Events are native `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`; a final event ends a model step, not necessarily the whole task. Errors and usage remain on the stream. Validation and publication errors also persist in the action record. Native error kinds are retained; other execution failures use `unknown`.
 
-For a failed model stream, action logs retain available `model.failure` diagnostics from the public `after_llm_call` hook: the last call's ID, completion status, tool names, argument sizes and hashes, and native validation error types when present. They omit argument contents and do not establish the provider as the cause. Read them with `landing action logs ID` or the HTTP events endpoint.
+Model failure logs retain available call metadata and validation error types without argument contents. These diagnostics do not establish the provider as the cause.
 
-The four action commands and `mode` are native agent tools available through comma command dispatch. `,mode` reads the session's current mode; `,mode gatekeeper` selects a mode for subsequent ordinary prompts without running a task. Each action command selects its mode before executing. Selection persists in the workspace's SQLite tape and is isolated by session. Content parts remain evidence and do not dispatch comma commands.
-
-Supplying `state` bypasses hook-based state loading, as in the native SDK. The runtime binds the current agent and selected task workspace; a supplied native `Environment` remains authoritative. Per-call tools and skills can only narrow the selected mode's [configured capabilities](configuration.md#mode-capabilities). The caller serializes turns within a session.
+The four commands and `mode` are native agent tools. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task. Selection persists in the workspace tape and is isolated by session. Content parts stay evidence rather than dispatching commands. Explicit `state` bypasses hook-based state loading. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
 
 ## Hook integration
 
-Register Landing's business hooks in an existing Bub framework by passing it to `Runtime`. Existing host hooks remain registered; Landing adds mode state, task sidecars, prompts, and the shared executor. It does not discover external plugins.
+Pass an existing Bub framework to register Landing's business hooks alongside host hooks:
 
 ```python
 from pathlib import Path
@@ -82,19 +80,19 @@ async def handle():
         ))
 ```
 
-The framework message pipeline retains its build-prompt, state, rendering, and dispatch hooks. Direct SDK calls return stream events and do not render or dispatch messages. Both paths share task admission and execution. Request-based execution also loads framework state and uses its provided environment. Host-provided environments and outbound channels remain the embedding application's responsibility.
+The message pipeline retains state, prompt, rendering, and dispatch hooks. Direct SDK calls return events without rendering or dispatching. Both paths share durable tasks and execution. The runtime binds the task workspace; host-provided native environments remain authoritative. Outbound channels belong to the host.
 
 ## Skills and additional tools
 
-`Runtime(path, skill_dirs=[Path("/srv/team-skills")])` and `create_app(path, skill_dirs=[...])` add trusted skill roots. Discovery uses the selected workspace's `.agents/skills`, explicit roots, configured `skill_dirs`, and `~/.agents/skills`. Native skill discovery, the `skill` tool, and `$skill-name` expansion load permitted instructions.
+`Runtime(path, skill_dirs=[...])` and `create_app(path, skill_dirs=[...])` add trusted roots with native discovery, skill loading, and `$skill-name` expansion. [Configuration](configuration.md#skills) defines precedence.
 
-Pass Bub `Tool` instances to `Runtime(path, tools=[...])` to register additional capabilities, then select them independently in each mode's `allowed_tools`. Enforce authorization in the tool and execution environment. Instructions and skill lists are not an operating-system boundary.
+Pass Bub `Tool` instances with `Runtime(path, tools=[...])`, then select them per mode. Authorization belongs in each tool and its execution environment.
 
 ## Runtime design
 
-Landing is powered by the Bub 0.5.0 SDK. All four modes share one native agent loop. Landing registers its hooks explicitly, composes repository guidance with business prompts, and forwards SDK tool and skill selection. Standalone Landing does not discover installed plugins or packaged channel skills. End users configure and call Landing directly.
+All four modes share one Bub 0.5.0 agent loop. Landing registers hooks explicitly for mode state, prompts, a task sidecar, and execution. Standalone Landing does not discover external plugins or packaged channel skills.
 
-The task sidecar owns the `actions` and `action_events` SQLite tables. An inline tape store keeps model execution entries in the same database and reuses Bub's query implementation and async adapter. Model history resets do not remove task records. Completed work is not automatically replayed. See [Action records](http.md#action-records) and [Replication and recovery](../guides/recovery.md).
+The sidecar owns `actions` and `action_events`. SQLite tape storage in the same database reuses Bub's query and async adapter. Resetting model history does not remove task records; completed tasks do not replay. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
 
 ## Public objects
 
