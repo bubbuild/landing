@@ -19,13 +19,11 @@ Set `LANDING_*` variables directly or save model settings in `~/.landing/config.
 | `LANDING_CONFIG` | Model settings file, default `~/.landing/config.yml`. |
 
 ```bash
-export LANDING_MODEL="deepseek:deepseek-flash"
+export LANDING_MODEL="deepseek:deepseek-v4-pro"
 export LANDING_API_BASE="https://api.deepseek.com"
 export LANDING_API_KEY="your-provider-api-key"
 export LANDING_COMPLETION_ARGS='{"reasoning_effort":"none"}'
 ```
-
-DeepSeek documents `deepseek-flash` as the [model name for V4.1 Flash](https://api-docs.deepseek.com/). The bundled CI uses `deepseek:deepseek-flash` through its repository variable. Select a different model in your own configuration.
 
 The YAML file uses the same setting names without the prefix, in lowercase:
 

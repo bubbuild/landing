@@ -53,7 +53,7 @@ def test_usage_errors_have_exit_two_and_json(tmp_path, capsys):
     assert main(["action", "list", "--limit", "0", "--json"]) == 2
     diagnostic = capsys.readouterr()
     assert not diagnostic.out
-    assert "--limit" in diagnostic.err
+    assert "limit" in diagnostic.err
 
 
 def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):

@@ -56,7 +56,8 @@ def configure(
         typer.Option("--version", callback=show_version, is_eager=True, help="Print the installed version and exit."),
     ] = False,
 ) -> None:
-    ctx.obj = {"db": db, "server": server, "skill_dir": skill_dir or [], "github_repository": github_repository}
+    ctx.ensure_object(dict)
+    ctx.obj.update(db=db, server=server, skill_dir=skill_dir or [], github_repository=github_repository)
 
 
 def delegate(
@@ -356,7 +357,7 @@ def execute(ctx: typer.Context, **parameters) -> NoReturn:
     try:
         validate_args(args)
         if args.command == "serve":
-            start_server(args)
+            ctx.obj.get("start_server", start_server)(args)
             code = 0
         else:
             code = asyncio.run(remote(args) if args.server else local(args))
