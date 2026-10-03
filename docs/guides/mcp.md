@@ -2,10 +2,10 @@
 
 Add trusted server definitions to `.agents/mcp.json` in your workspace. Prepare the server commands, credentials, and any required binaries in the environment where Landing runs. See [MCP configuration](../reference/configuration.md#mcp-servers) for the JSON format, configuration precedence, and tool permissions.
 
-The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json). Prepare Node.js and Chrome, then adapt its arguments to your environment. Install Landing from the repository to use this integration:
+The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json). Prepare Node.js and Chrome, then adapt its arguments to your environment. Install Landing:
 
 ```bash
-uv tool install git+https://github.com/bubbuild/landing
+uv tool install "landing==0.1.2"
 ```
 
 Delegate work through the usual command:
