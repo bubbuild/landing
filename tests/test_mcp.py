@@ -19,6 +19,7 @@ from tests.test_sdk import output
 
 @pytest.fixture
 def mcp_server(tmp_path, monkeypatch):
+    monkeypatch.delenv("LANDING_MCP_CONFIG")
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))

@@ -90,7 +90,7 @@ The message pipeline retains state, prompt, rendering, and dispatch hooks. Direc
 
 Pass Bub `Tool` instances with `Runtime(path, tools=[...])`, then select them per mode. Authorization belongs in each tool and its execution environment.
 
-Prepared [MCP servers](../guides/mcp.md) bind tools to this same agent for each task and close afterward. The [Playwright example](https://github.com/bubbuild/landing/tree/main/examples/playwright) uses `Runtime.command` with ordinary MCP configuration; no plugin discovery or separate agent loop is needed.
+Prepared [MCP servers](../guides/mcp.md) bind tools to this same agent for each task and close afterward. `Runtime.command` uses ordinary MCP configuration; no plugin discovery or separate agent loop is needed.
 
 ## Runtime design
 

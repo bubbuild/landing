@@ -6,7 +6,12 @@
         "--yes",
         "@playwright/mcp@0.0.83",
         "--headless",
-        "--isolated"
+        "--isolated",
+        "--no-sandbox",
+        "--output-dir",
+        ".ci-state/browser",
+        "--image-responses",
+        "omit"
       ]
     }
   }

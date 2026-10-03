@@ -9,10 +9,13 @@ from bub.builtin.model_runner import ModelRunner
 
 
 @pytest.fixture(autouse=True)
-def local_cli_environment(monkeypatch):
+def local_cli_environment(monkeypatch, tmp_path):
     for name in tuple(os.environ):
         if name.startswith(("LANDING_", "BUB_")):
             monkeypatch.delenv(name)
+    mcp_config = tmp_path / "mcp.json"
+    mcp_config.write_text('{"mcpServers": {}}')
+    monkeypatch.setenv("LANDING_MCP_CONFIG", str(mcp_config))
 
 
 def completion(text=None, *, tool=None, arguments=None):
