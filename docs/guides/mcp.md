@@ -1,35 +1,17 @@
-# Use prepared MCP servers
+# Use MCP servers
 
-Landing includes [bub-mcp](https://github.com/bubbuild/bub-contrib/tree/main/packages/bub-mcp) and connects configured servers through the existing SDK agent. Prepare server commands, credentials, and browser binaries where work executes. CLI, server, Action, and embedded SDK calls share configuration and mode limits.
+Add trusted server definitions to `.agents/mcp.json` in your workspace. Prepare the server commands, credentials, and any required binaries in the environment where Landing runs. See [MCP configuration](../reference/configuration.md#mcp-servers) for the JSON format, configuration precedence, and tool permissions.
 
-## Review a local preview with Playwright
-
-Prepare Node.js 18 or later and Chrome, then prewarm the [official Playwright MCP server](https://github.com/microsoft/playwright-mcp):
-
-```bash
-npx --yes @playwright/mcp@0.0.83 --help
-```
-
-Install Landing from the repository:
+The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json). Prepare Node.js and Chrome, then adapt its arguments to your environment. Install Landing from the repository to use this integration:
 
 ```bash
 uv tool install git+https://github.com/bubbuild/landing
 ```
 
-Add the [Playwright configuration](../reference/configuration.md#mcp-servers) to your workspace's `.agents/mcp.json`. To use another installed Chromium binary, add `--executable-path` and its absolute path to the server's `args`. Start your application's preview, then delegate a review:
+Delegate work through the usual command:
 
 ```bash
-landing review "Check http://127.0.0.1:8000. Reproduce navigation or API reference problems and report concise evidence."
+landing review "Check http://127.0.0.1:8000. Reproduce navigation problems and report concise evidence."
 ```
 
-If a mode restricts tools, list the required native names, such as `mcp.playwright_browser_navigate`, `mcp.playwright_browser_snapshot`, and `mcp.playwright_browser_take_screenshot`. SDK callers can narrow these permissions further.
-
-## Prepare CI and service environments
-
-The Action inherits prepared settings; it does not install MCP servers or browsers. Landing's [dogfood workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing.yml) prewarms Playwright only when requested, reuses the runner's Chrome, and serves documentation built from the selected candidate. Main selects browser preparation for documentation pages, site configuration, or API contract changes. A manual run can set `browser=true`.
-
-Browser tasks select `.agents/mcp.json` explicitly and use `.github/landing-browser.yml`, which grants Playwright tools to gatekeeper. Other modes retain their ordinary capabilities. The workflow prepares the environment; the task runtime connects and discovers tools. Tasks without browser preparation select `.agents/mcp-disabled.json` and `.github/landing.yml`. Browser preparation failure uses the same fallback without claiming browser verification. Browser files join the Landing artifact after feedback.
-
-For a service, mount configuration and prepare executables on the server. Each task selects its registered workspace's configuration. Connections close on completion or cancellation; switching workspaces does not retain the previous task's MCP tools. Only run trusted configuration inside the admitted execution environment.
-
-Text and structured tool results reach the model through bub-mcp. In bub-mcp 0.3.0, binary images become text placeholders; saved screenshots are human evidence. Landing's project review skill owns screenshot publication guidance.
+CLI, server, Action, and SDK calls use the same MCP configuration. For a service or CI job, make the configuration and executables available in its execution environment.

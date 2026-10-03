@@ -85,7 +85,7 @@ Per-call SDK selections intersect with mode limits and cannot expand them. Setti
 
 The JSON format and transports come from bub-mcp and FastMCP. `.agents/mcp.json` is Landing's file convention; it does not load Agent Plugins. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
 
-Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `allowed_tools` and per-call limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use prepared MCP servers](../guides/mcp.md) for Playwright and CI preparation.
+Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `allowed_tools` and per-call limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
 
 ## Execution and service
 

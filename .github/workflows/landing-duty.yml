@@ -69,11 +69,17 @@ jobs:
           git var GIT_AUTHOR_IDENT
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare MCP tools
+        run: |
+          npx --yes @playwright/mcp@0.0.83 --help > /dev/null
+          mkdir -p .ci-state/browser
       - name: Handle the delegated comment or release event
         uses: ./
         env:
           LANDING_CONFIG: .github/landing.yml
-          LANDING_MCP_CONFIG: .agents/mcp-disabled.json
           LANDING_MODEL: ${{ vars.LANDING_MODEL }}
           LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
           LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
@@ -90,6 +96,13 @@ jobs:
             Read affected jobs or deployment evidence through gh. Search for a matching issue only when this event supplies relevant failure or recovery evidence.
             Update an existing issue only for useful new evidence, changed conditions or verified progress; otherwise complete without a public write.
             Do not scan unrelated open issues or resolved historical failures. A build does not establish deployed recovery.
+      - name: Collect browser evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/landing/browser"
+          if [ -d "$GITHUB_WORKSPACE/.ci-state/browser" ]; then
+            cp -a "$GITHUB_WORKSPACE/.ci-state/browser/." "$RUNNER_TEMP/landing/browser/"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
