@@ -80,8 +80,12 @@ def admitted(
     first = (comment.get("body") or "").strip().split(maxsplit=1) if comment else []
     if comment and (not first or first[0] != prefix):
         return False
-    # Native dispatch already requires workflow-write authority, including App tokens.
-    if trust == "repository" and os.getenv("GITHUB_ACTIONS") and os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
+    # Native writes and dispatch authenticate the source, including App tokens.
+    # workflow_run is covered only after validating its originating workflow above.
+    native_source = os.getenv("GITHUB_EVENT_NAME") in {"push", "release", "workflow_dispatch"} or (
+        os.getenv("GITHUB_EVENT_NAME") == "workflow_run" and run is not None
+    )
+    if trust == "repository" and os.getenv("GITHUB_ACTIONS") and native_source and not comment:
         return True
     actor = comment["user"] if comment else run["actor"] if run else event.get("sender")
     actor = actor or identity(f"users/{os.environ['GITHUB_ACTOR']}", repository)

@@ -17,7 +17,7 @@ Use your actual repository and provider model. The secret command prompts for th
 
 ## Add the workflow
 
-Save the following as `.github/workflows/review.yml`. The example pins Landing to release `0.1.2`; you can pin both references to the same reviewed commit instead. The admission job checks the caller before project setup; the Action repeats admission before installing its isolated runtime.
+Save the following as `.github/workflows/review.yml`. The example pins Landing to release `0.1.2`; you can pin it to a reviewed commit instead. Your workflow prepares the project and runs native checks, then calls Landing once. The Action checks the event and caller before starting the agent.
 
 ```yaml
 name: Review
@@ -30,26 +30,8 @@ concurrency:
   group: landing-review-${{ github.repository_id }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
-  admission:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      allowed: ${{ steps.admission.outputs.allowed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: bubbuild/landing
-          ref: 0.1.2
-          persist-credentials: false
-      - id: admission
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 src/landing/adapters/admission.py --trust repository
   review:
-    needs: admission
-    if: ${{ !cancelled() && needs.admission.outputs.allowed == 'true' }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

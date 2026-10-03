@@ -27,7 +27,7 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Run the feedback loop
 
-Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step: failures emit a warning and retain their task records without failing native CI. Admission and environment preparation outside the Action remain strict, as do explicit delegations. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
+Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step: failures emit a warning and retain their task records without failing native CI. Environment preparation outside the Action remains strict, as do explicit delegations. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
 
 The release workflow also deploys documentation from main on push or manual dispatch. Package publication runs only for a published release; documentation-only runs do not trigger issuer follow-up. Pages artifacts use attempt-specific names so deployment retries select one artifact.
 
@@ -38,7 +38,7 @@ Issue or failure -> Delegated work -> Candidate PR -> Native checks
       +-------------------------------------------------+
 ```
 
-The composite Action is `action.yml`. Main and duty call `uses: ./` directly and prepare project tools and skills separately. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty loads default-branch policy, admits explicit commands or trusted release events, and queues delegations separately. [GitHub integration](guides/github.md) explains identity, trust, and publication.
+The composite Action is `action.yml`. Main and duty prepare project tools and skills, then call `uses: ./` once with built-in admission. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty uses the default-branch checkout for its prepared environment, admits explicit commands or trusted release events, and queues delegations separately. Admission protects delegated agent work; native workflow policy governs the prepared environment. [GitHub integration](guides/github.md) explains identity, trust, and publication.
 
 For a workflow-token candidate, start Main explicitly using the repository procedure:
 

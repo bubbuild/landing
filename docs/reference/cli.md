@@ -76,7 +76,7 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 
 ## GitHub Action
 
-`bubbuild/landing@0.1.2` runs the same event adapter. [Get started](../get-started.md) shows complete admission and environment preparation.
+`bubbuild/landing@0.1.2` runs the same event adapter. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
 
 | Input | Contract |
 | --- | --- |
@@ -94,6 +94,6 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 | `checks` | Required check commands, one per line. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
-Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without a model call. Execution or required publication failure fails the step; gate recommendations remain advisory. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
+Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without task creation, model use, delegated tools or checks, or publication. Permission lookup errors fail the Action. Execution or required publication failure also fails the step; gate recommendations remain advisory. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
 
 For automatic feedback, set GitHub's step-level `continue-on-error: true`; this is a workflow property, not an Action input. `steps.landing.outcome` remains `failure` even though its conclusion becomes `success`. Use the outcome to warn and retain logs and artifacts. Omit this property for strict delegations.

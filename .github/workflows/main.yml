@@ -114,7 +114,8 @@ jobs:
       - name: Check the container and both backup recovery paths
         run: uv run python tests/container_smoke.py --image landing:ci
 
-  landing-admission:
+  landing-feedback:
+    name: Landing feedback
     needs: [quality, tests-and-type-check, check-docs, container, feedback-scope]
     if: >-
       always() && !cancelled() && vars.LANDING_MODEL != '' &&
@@ -124,27 +125,6 @@ jobs:
          needs.feedback-scope.outputs.documentation == 'true' || contains(needs.*.result, 'failure')))) &&
       (github.event_name == 'pull_request' || (inputs.number != '' && inputs.number != '0') ||
        contains(needs.*.result, 'failure'))
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      allowed: ${{ steps.admission.outputs.allowed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.workflow_sha }}
-          persist-credentials: false
-      - name: Admit the caller before preparing the candidate
-        id: admission
-        env:
-          GH_TOKEN: ${{ secrets.LANDING_ADMISSION_TOKEN || github.token }}
-          LANDING_TRUST: ${{ vars.LANDING_TRUST || 'repository' }}
-        run: python3 src/landing/adapters/admission.py --trust "$LANDING_TRUST"
-
-  landing-feedback:
-    name: Landing feedback
-    needs: [quality, tests-and-type-check, check-docs, container, feedback-scope, landing-admission]
-    if: ${{ !cancelled() && needs.landing-admission.outputs.allowed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:

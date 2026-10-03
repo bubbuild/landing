@@ -403,11 +403,6 @@ def main(argv: list[str] | None = None) -> Action | None:
             event = {**event, "pull_request": pull}
     elif event and "workflow_run" in event:
         run_event = event["workflow_run"]
-        default = event["repository"]["default_branch"]
-        if run_event["event"] == "pull_request" or (
-            run_event["event"] != "release" and run_event["head_branch"] != default
-        ):
-            return
         args.command, args.run_id = "triage", str(run_event["id"])
     elif event and not args.number:
         pull = event.get("pull_request")

@@ -4,7 +4,21 @@ Let CI prepare the checkout, dependencies, credentials, checks, and skills. Land
 
 ## Prepare execution
 
-Run admission before candidate setup when that setup receives credentials. Use a reviewed Landing revision and trusted workflow source. The Action installs its own isolated runtime, uses your prepared project tools and authenticated gh, and does not install project dependencies or skills. Prepare skills with your existing checkout actions or gh commands, then add their discovery roots with `LANDING_SKILL_DIRS`. To restrict available skills, configure the mode's `allowed_skills`; see [Mode capabilities](../reference/configuration.md#mode-capabilities).
+Prepare your project with the workflow's existing setup and check steps, then call Landing once. Admission inside the Action authorizes delegated model use, tools, checks, and publication; unauthorized events start no task and publish no refusal. Comments require their author's effective permission. Repository policy reuses GitHub's authorization for native dispatch, push, release, and validated upstream runs. Permission lookup failure fails the Action.
+
+Use a reviewed Action revision and trusted workflow source. Admission does not isolate the runner or protect earlier steps. Native trigger filters, token permissions, and environment protection rules govern workflow execution and credentials. Authorization to review a fork PR does not make its setup code trusted.
+
+For execution that requires human approval, configure a GitHub environment's required reviewers and branch restrictions, store credentials there, and reference it on the executing job:
+
+```yaml
+environment:
+  name: landing
+  deployment: false
+```
+
+GitHub enforces these rules before starting the job or releasing environment secrets, without creating deployment records. Required-reviewer availability depends on the repository's visibility and plan. An environment without required reviewers does not restrict comment authors. See [GitHub environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments#using-environments-without-deployments). A composite Action cannot configure the calling job's environment.
+
+The Action installs its own isolated runtime, uses your prepared project tools and authenticated gh, and does not install project dependencies or skills. Prepare skills with your existing checkout actions or gh commands, then add their discovery roots with `LANDING_SKILL_DIRS`. To restrict available skills, configure the mode's `allowed_skills`; see [Mode capabilities](../reference/configuration.md#mode-capabilities).
 
 Start with explanation or advisory review. Keep required native checks independent. For automatic GitHub feedback, set `continue-on-error: true` on the Action step and emit a warning when `steps.landing.outcome == 'failure'`, as in the first-review example. The task retains its failure and logs; the workflow can continue. Set the Action's step timeout shorter than the job timeout so a timed-out task leaves time for the warning and artifact upload. Omit this property for explicit delegations that must fail the job. [GitHub integration](github.md#choose-who-can-delegate) covers caller policy, protected sources, and publishing identities. Fork PRs can run native CI without model or publication credentials.
 

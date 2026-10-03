@@ -145,14 +145,28 @@ def test_runner_termination_cancels_work_and_stops_its_shell(tmp_path):
         os.kill(int(child.read_text()), 0)
 
 
-def test_native_manual_dispatch_uses_github_authorization_for_app_identity(tmp_path):
+@pytest.mark.parametrize("event_name", ["workflow_dispatch", "push", "release", "workflow_run"])
+def test_native_source_uses_github_authorization_for_app_identity(tmp_path, event_name):
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    executable = binary / "gh"
+    executable.write_text('#!/bin/sh\necho "GitHub identity lookup is unavailable" >&2\nexit 1\n')
+    executable.chmod(0o755)
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "sender": {"type": "Bot", "login": "team-app[bot]"},
+    }
+    if event_name == "workflow_run":
+        event["workflow_run"] = {
+            "id": 123,
+            "name": "release-main",
+            "head_repository": {"full_name": "example/landing"},
+            "actor": event["sender"],
+            "head_branch": "0.1.2",
+            "event": "release",
+        }
     source = tmp_path / "event.json"
-    source.write_text(
-        json.dumps({
-            "repository": {"full_name": "example/landing"},
-            "sender": {"type": "Bot", "login": "team-app[bot]"},
-        })
-    )
+    source.write_text(json.dumps(event))
     with provider([completion("Explained the requested release evidence.")]) as (api_base, requests):
         result = delegate(
             tmp_path,
@@ -161,10 +175,12 @@ def test_native_manual_dispatch_uses_github_authorization_for_app_identity(tmp_p
             "",
             extra_env={
                 "GITHUB_ACTIONS": "true",
-                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_EVENT_NAME": event_name,
                 "GITHUB_EVENT_PATH": str(source),
+                "INPUT_UPSTREAM_WORKFLOW": "release-main",
+                "PATH": str(binary) + os.pathsep + os.environ["PATH"],
             },
         )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["status"] == "completed"
-    assert requests
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["status"] == "completed"
+        assert requests

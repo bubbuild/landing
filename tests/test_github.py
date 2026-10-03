@@ -121,12 +121,14 @@ def test_comment_actions_require_maintainer_and_use_configurable_identity(platfo
     }
     event["comment"]["body"] = "Handled the task."
     assert invoke(event) is None
+    assert not model[1]
     event["comment"]["body"] = "/landing fix Repair retry behavior."
     event["comment"]["user"] = {"type": "User", "login": "contributor"}
     state = json.loads(platform.read_text())
     state["permission"] = "read"
     platform.write_text(json.dumps(state))
     assert invoke(event) is None
+    assert not model[1]
     state["permission"] = "write"
     platform.write_text(json.dumps(state))
     responses, _ = model
@@ -662,7 +664,11 @@ def test_owner_rerun_does_not_borrow_original_owners_authority(platform, invoke,
         ("release-main", "example/landing", "push", "candidate"),
     ],
 )
-def test_untrusted_upstream_does_not_delegate_even_when_successful(invoke, model, name, source, event_name, branch):
+def test_untrusted_upstream_does_not_delegate_even_when_successful(
+    invoke, model, monkeypatch, name, source, event_name, branch
+):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
     event = {
         "repository": {"full_name": "example/landing", "default_branch": "main"},
         "workflow_run": {
@@ -679,7 +685,8 @@ def test_untrusted_upstream_does_not_delegate_even_when_successful(invoke, model
     assert not model[1]
 
 
-def test_owner_admission_uses_current_repository_ownership(platform, invoke, model):
+@pytest.mark.parametrize("entry", ["comment", "workflow_dispatch"])
+def test_owner_admission_uses_current_repository_ownership(platform, invoke, model, monkeypatch, entry):
     state = json.loads(platform.read_text())
     state["owner"] = {"type": "User", "id": 2}
     platform.write_text(json.dumps(state))
@@ -688,6 +695,10 @@ def test_owner_admission_uses_current_repository_ownership(platform, invoke, mod
         "issue": {"number": 42},
         "comment": {"body": "/landing fix Repair this issue.", "user": {"id": 1, "login": "former-owner"}},
     }
+    if entry == "workflow_dispatch":
+        event["sender"] = event.pop("comment")["user"]
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     assert invoke(event, trust="owner") is None
     assert not model[1]
 

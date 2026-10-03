@@ -12,7 +12,7 @@ With Landing, you own and control the workflow. Choose the model, prepare the ex
 Configure CI -> Open a PR -> Read the review -> Decide what to accept
 ```
 
-Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and grant the review job `contents: read` and `pull-requests: write`. After trusted-caller admission, checkout, and successful native checks, add this step to your existing workflow:
+Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and grant the review job `contents: read` and `pull-requests: write`. After checkout and successful native checks, add this step to your existing workflow:
 
 ```yaml
 - uses: bubbuild/landing@0.1.2
