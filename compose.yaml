@@ -1,7 +1,7 @@
 services:
   landing:
     build: .
-    image: ${LANDING_IMAGE:-ghcr.io/bubbuild/landing:0.1.1}
+    image: ${LANDING_IMAGE:-ghcr.io/bubbuild/landing:0.1.2}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:80"

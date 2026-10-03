@@ -17,7 +17,7 @@ Use your actual repository and provider model. The secret command prompts for th
 
 ## Add the workflow
 
-Save the following as `.github/workflows/review.yml`. The example pins Landing to release `0.1.1`; you can pin both references to the same reviewed commit instead. The admission job checks the caller before project setup; the Action repeats admission before installing its isolated runtime.
+Save the following as `.github/workflows/review.yml`. The example pins Landing to release `0.1.2`; you can pin both references to the same reviewed commit instead. The admission job checks the caller before project setup; the Action repeats admission before installing its isolated runtime.
 
 ```yaml
 name: Review
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: bubbuild/landing
-          ref: 0.1.1
+          ref: 0.1.2
           persist-credentials: false
       - id: admission
         env:
@@ -58,7 +58,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Run native checks
         run: uv sync --locked && uv run pytest
-      - uses: bubbuild/landing@0.1.1
+      - uses: bubbuild/landing@0.1.2
         id: landing
         timeout-minutes: 20
         continue-on-error: true

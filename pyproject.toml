@@ -1,6 +1,6 @@
 [project]
 name = "landing"
-version = "0.1.1"
+version = "0.1.2"
 description = "Explain CI failures, delegate fixes, and review evidence with your own tools."
 authors = [{ name = "Chojan Shang", email = "psiace@apache.org" }]
 readme = "README.md"

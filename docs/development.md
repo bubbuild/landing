@@ -54,7 +54,7 @@ Bundled jobs use a 120-second model request timeout. Main's feedback Action has 
 
 ## Publish a release
 
-Set the version with `uv version VERSION` and update installation examples and Action references. After validation and merge, publish a GitHub release with the matching unprefixed tag, such as `0.1.1`. The workflow verifies the version, publishes to PyPI and GHCR, and deploys the documentation. The tag also selects the Action; stable images update `latest`.
+Set the version with `uv version VERSION` and update installation examples and Action references. After validation and merge, publish a GitHub release with the matching unprefixed tag, such as `0.1.2`. The workflow verifies the version, publishes to PyPI and GHCR, and deploys the documentation. The tag also selects the Action; stable images update `latest`.
 
 ## Learn from outcomes
 

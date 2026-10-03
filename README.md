@@ -15,7 +15,7 @@ Configure CI -> Open a PR -> Read the review -> Decide what to accept
 Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and grant the review job `contents: read` and `pull-requests: write`. After trusted-caller admission, checkout, and successful native checks, add this step to your existing workflow:
 
 ```yaml
-- uses: bubbuild/landing@0.1.1
+- uses: bubbuild/landing@0.1.2
   continue-on-error: true
   env:
     GH_TOKEN: ${{ github.token }}
@@ -35,7 +35,7 @@ To build the same review and delegated-fix experience, ask your agent to read [L
 With Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and a POSIX host:
 
 ```bash
-uv tool install "landing==0.1.1"
+uv tool install "landing==0.1.2"
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 landing explain "Explain this failure and the next useful check." --input check.log
@@ -47,6 +47,6 @@ Run from your project checkout and use a saved UTF-8 log for `check.log`. The co
 
 Reliable results draw on your documentation, work items, infrastructure, tests, benchmarks, and observability. [Working with Landing](https://getlanding.dev/working-with-landing/) explains how to connect that context and retain feedback. Automate the engineering work you can delegate, and use the time saved to stay involved with contributors and users. Community Over Code.
 
-[Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, and tools. For shared execution, [run the server](https://getlanding.dev/guides/server/) or [deploy the container](https://getlanding.dev/guides/deploy/) from `ghcr.io/bubbuild/landing:0.1.1`. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
+[Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, and tools. For shared execution, [run the server](https://getlanding.dev/guides/server/) or [deploy the container](https://getlanding.dev/guides/deploy/) from `ghcr.io/bubbuild/landing:0.1.2`. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
 
 [Contributions](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) are welcome. Licensed under [Apache-2.0](https://github.com/bubbuild/landing/blob/main/LICENSE). Powered by [Bub](https://bub.build/) and [tape.systems](https://tape.systems/).

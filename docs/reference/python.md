@@ -2,7 +2,7 @@
 
 Embed Landing with the same action contract and executor used by CLI and HTTP. The caller owns the database and runtime lifecycle; enter `Runtime.running()` while executing work.
 
-Add Landing to your application's environment with `uv add "landing==0.1.1"`. The isolated `uv tool install` path provides the CLI; embedding uses the package in your application's environment. Configure the model as described in [Configuration](configuration.md#model).
+Add Landing to your application's environment with `uv add "landing==0.1.2"`. The isolated `uv tool install` path provides the CLI; embedding uses the package in your application's environment. Configure the model as described in [Configuration](configuration.md#model).
 
 ## Delegate an action
 
