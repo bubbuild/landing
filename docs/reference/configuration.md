@@ -108,7 +108,7 @@ These settings apply to Landing's bundled workflows; a caller's own workflow pre
 | Variable `LANDING_MODEL` | Model identifier. |
 | Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
 | Secret `LANDING_API_KEY` | Provider key. |
-| Variable `LANDING_TRUST` | Caller policy override; takes precedence over reusable-workflow inputs. |
+| Variable `LANDING_TRUST` | Caller policy for the project workflows; defaults to `repository`. |
 | Secret `LANDING_ADMISSION_TOKEN` | Optional read-only admission credential; organization owner checks need Members read. |
 | Secret `LANDING_GITHUB_TOKEN` | Publication token; defaults to the workflow token. |
 | Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |

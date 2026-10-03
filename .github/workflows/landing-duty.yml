@@ -79,7 +79,6 @@ jobs:
       - name: Handle the delegated comment or release event
         uses: ./
         env:
-          LANDING_CONFIG: .github/landing.yml
           LANDING_MODEL: ${{ vars.LANDING_MODEL }}
           LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
           LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}

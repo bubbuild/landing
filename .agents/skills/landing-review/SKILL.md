@@ -10,7 +10,7 @@ Select the affected entry point and owning layer. Use these project constraints 
 - Preserve Landing-first configuration with native Bub fallback, prepared skill roots, and per-mode capability limits. Instructions and tool filters do not create a sandbox.
 - Keep GitHub adaptation thin: use prepared identities, native caller permissions, exact publication destinations, and stale-candidate cancellation. Quiet issuer follow-up is for unchanged automatic work; explicit delegations require replies.
 - Use `github-context.json`'s `ci_checkout` for the native check revision, not the trigger SHA. A switched workspace does not reload the installed runtime. Follow actual workflow preparation when evaluating CI behavior.
-- Tests isolate ambient Landing and Bub settings. `.github/landing.yml` limits dogfood capabilities and must not become test configuration. Local protocol fixtures establish exercised behavior, not real-provider quality or deployment recovery.
+- Tests isolate ambient Landing and Bub settings. Local protocol fixtures establish exercised behavior, not real-provider quality or deployment recovery.
 
 Use the source or a focused counterexample for an unresolved claim. Reuse completed checks that cover it. Follow `docs/development.md` for behavior testing and evaluate operational recovery against the relevant failure, rather than an unrelated healthy matrix.
 

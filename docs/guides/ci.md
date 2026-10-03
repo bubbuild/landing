@@ -20,9 +20,9 @@ Record the actual checked revision separately from the PR head. A merge checkout
 
 ## Cancel superseded reviews
 
-Put concurrency on the outer workflow before checks delay agent admission. Group by repository and PR, without the SHA, event name, or run ID, and set `cancel-in-progress: true`. The [first-review example](../get-started.md#add-the-workflow) shows this arrangement. Keep native checks in a separate workflow if they must continue for old candidates.
+Put concurrency on the calling workflow before checks delay agent admission. Group by repository and PR, without the SHA, event name, or run ID, and set `cancel-in-progress: true`. The [first-review example](../get-started.md#add-the-workflow) shows this arrangement. Keep native checks in a separate workflow if they must continue for old candidates.
 
-Use a different group for a called workflow: GitHub supplies the caller's workflow name inside reusable workflows, so a shared cancelling group can cancel the caller. A composite Action cannot set workflow concurrency.
+The calling workflow owns concurrency; a composite Action cannot configure it.
 
 For explicit delegations that must be preserved, GitHub.com supports `queue: max` with `cancel-in-progress: false`, retaining up to 100 pending runs. Without `queue: max`, a new pending run replaces the single pending run. Check availability on GitHub Enterprise Server, or use Landing's server queue. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 

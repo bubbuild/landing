@@ -23,7 +23,7 @@ Behavior tests cover supported CLI, HTTP, SDK, and workflow outcomes. Regression
 
 Avoid tests for helper structure, internal event positions, database rows, or upstream parameter translation. Straightforward glue can be inspected and accepted through a real workflow. Add a focused counterexample for an unresolved behavior rather than testing every intermediate state or field.
 
-The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate Landing and Bub settings; `.github/landing.yml` is dogfood configuration, not test configuration. Real workflow results establish downstream delivery and model quality.
+The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
 
 ## Run the feedback loop
 
@@ -38,7 +38,7 @@ Issue or failure -> Delegated work -> Candidate PR -> Native checks
       +-------------------------------------------------+
 ```
 
-The composite Action is `action.yml`. Project workflows call `uses: ./`, prepare tools and skills separately, and select mode capabilities through `.github/landing.yml`. Main groups review work by PR and cancels old candidates; duty loads default-branch policy, admits explicit commands or trusted release events, and queues delegations separately. [GitHub integration](guides/github.md) explains identity, trust, and publication.
+The composite Action is `action.yml`. Main and duty call `uses: ./` directly and prepare project tools and skills separately. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty loads default-branch policy, admits explicit commands or trusted release events, and queues delegations separately. [GitHub integration](guides/github.md) explains identity, trust, and publication.
 
 For a workflow-token candidate, start Main explicitly using the repository procedure:
 
