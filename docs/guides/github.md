@@ -4,7 +4,7 @@ Prepare a trusted checkout, authenticated gh in PATH, project dependencies, mode
 
 ## Choose the publishing identity
 
-Gh credentials determine who publishes. Git's author and committer settings determine commit attribution. Prepare both before delegating a write. The `/landing` prefix and delivery markers identify commands and deliveries, not accounts.
+Gh credentials determine who publishes. Landing verifies required reviews and replies against that publisher's immutable GitHub account ID. Git's author and committer settings determine commit attribution. Prepare both before delegating a write. The `/landing` prefix and delivery markers identify commands and deliveries, not accounts.
 
 The bundled workflows publish with `github-actions[bot]` by default. For another account, pass its token or prepared gh login and use its actual Git identity. For an organization, use an organization-owned GitHub App or authorized machine account; organizations cannot act as users. The official [App-token Action](https://github.com/actions/create-github-app-token#configure-git-cli-for-an-apps-bot-user) shows token and bot identity setup.
 

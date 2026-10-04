@@ -1,13 +1,14 @@
 """A Bub-compatible stream facade sharing Landing's task executor."""
 
-from contextlib import aclosing
 from typing import TYPE_CHECKING
 
 from bub.builtin import Agent as BubAgent
 from bub.builtin.commands import strip_command_prefix
 from bub.streaming import AsyncStreamEvents
+from bub.tools import ToolContext
 from bub.turn import TurnState
 
+from landing.commands import admit
 from landing.models import ActionRequest
 
 if TYPE_CHECKING:
@@ -53,21 +54,13 @@ class Agent:
         workspace = None if self.runtime.workspaces is not None else state.get("_runtime_workspace")
         state.setdefault("landing_request", {"workspace": workspace})
         if isinstance(prompt, str) and strip_command_prefix(prompt, self.bub.command_prefix) is not None:
-            events = []
             async with self.runtime.execution:
                 stream = await self.bub.run_stream(prompt=prompt, state=state, **invocation)
-                async with aclosing(stream):
-                    async for event in stream:
-                        events.append(event)
-            pending = state.pop("landing_pending_action", None)
-            if pending is None:
-
-                async def replay():
-                    for event in events:
-                        yield event
-
-                return AsyncStreamEvents(replay())
-            state["landing_action_id"] = pending
+                pending = state.pop("landing_pending_action", None)
+                if pending is None:
+                    return stream
+                async for _ in stream:
+                    pass
             return self.runtime.stream(pending, state=state)
 
         request = ActionRequest(
@@ -75,16 +68,6 @@ class Agent:
             instruction=prompt if isinstance(prompt, str) else "Continue the delegated task.",
             workspace=workspace,
         )
-        action, _ = self.runtime.tasks.create(
-            request,
-            scope="sdk",
-            event=(
-                "sdk.invocation",
-                {
-                    **invocation,
-                    "prompt": prompt,
-                },
-            ),
-        )
-        state["landing_action_id"] = action.id
+        state["landing_invocation"] = {**invocation, "prompt": prompt}
+        action = admit(request, context=ToolContext(tape=self.tape, state=state))
         return self.runtime.stream(action.id, state=state)

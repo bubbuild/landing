@@ -24,6 +24,17 @@ async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
     return cast("Mode", context.state.get("landing_mode", "explainer"))
 
 
+def admit(request: ActionRequest, *, context: ToolContext) -> Action:
+    action, _ = cast("Tasks", context.tape.get_sidecar("tasks")).create(
+        request,
+        scope=context.state.get("landing_scope", "sdk"),
+        key=context.state.get("landing_delivery_key"),
+        event=("sdk.invocation", context.state["landing_invocation"]),
+    )
+    context.state["landing_action_id"] = action.id
+    return action
+
+
 def register_command(name: str, selected: Mode) -> None:
     @tool(name=name, context=True, agent_use=False)
     async def delegate(instruction: str = "", *, context: ToolContext) -> Action:
@@ -33,13 +44,7 @@ def register_command(name: str, selected: Mode) -> None:
             "mode": selected,
             "instruction": instruction or None,
         })
-        tasks = cast("Tasks", context.tape.get_sidecar("tasks"))
-        action, _ = tasks.create(
-            request,
-            scope=context.state.get("landing_scope", "sdk"),
-            key=context.state.get("landing_delivery_key"),
-            event=("sdk.invocation", context.state["landing_invocation"]),
-        )
+        action = admit(request, context=context)
         await mode.run(selected, context=context)
         context.state["landing_pending_action"] = action.id
         return action

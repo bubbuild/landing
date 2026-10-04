@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import fcntl
 import json
-import shlex
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
@@ -134,16 +133,19 @@ class Runtime:
     async def run(self, request: ActionRequest, *, retry_of: str | None = None) -> Action:
         self.workspace(request)
         action, _ = self.tasks.create(request, retry_of=retry_of)
-        task = asyncio.create_task(self.execute(action.id))
-        self.active[action.id] = task
+        return await self._wait(action.id)
+
+    async def _wait(self, action_id: str, **kwargs) -> Action:
+        task = asyncio.create_task(self.execute(action_id, **kwargs))
+        self.active[action_id] = task
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            self.cancel(action.id)
+            self.cancel(action_id)
             await asyncio.gather(task, return_exceptions=True)
             raise
         finally:
-            self.active.pop(action.id, None)
+            self.active.pop(action_id, None)
 
     async def command(
         self, name: str, request: ActionRequest, *, session_id: str = "cli", scope: str = "cli", key: str | None = None
@@ -159,13 +161,15 @@ class Runtime:
             landing_request=request.model_dump(),
             landing_scope=scope,
             landing_delivery_key=key,
+            landing_invocation={"session_id": session_id},
         )
-        prompt = shlex.join([self.agent.bub.command_prefix + name, "instruction=" + (request.instruction or "")])
-        stream = await self.agent.run_stream(session_id=session_id, prompt=prompt, state=state)
-        async with contextlib.aclosing(stream):
-            async for _ in stream:
-                pass
-        return self.tasks.get(state["landing_action_id"])
+        async with self.execution:
+            tape = self.agent.tape.session_tape(session_id, workspace)
+            action = await self.agent.bub.tools[name].run(
+                instruction=request.instruction or "", context=ToolContext(tape=tape, state=state)
+            )
+        state.pop("landing_pending_action")
+        return await self._wait(action.id, state=state)
 
     async def watch_cancellations(self) -> None:
         while True:
@@ -240,14 +244,17 @@ class Runtime:
             self.hooks.record_failure(action_id, state, exc)
             raise
         finally:
-            if stream.error is not None:
-                self.hooks.record_failure(action_id, state, stream.error)
-            state.pop("landing_llm_call", None)
             if stream_state is not None:
                 stream_state.error, stream_state.usage = stream.error, stream.usage
         if stream.error is not None:
+            self.hooks.record_failure(action_id, state, stream.error)
             raise stream.error
-        decision = self._decision(request, state, checks)
+        state.pop("landing_llm_call", None)
+        decision: Decision | None = None
+        if request.mode == "gatekeeper":
+            decision = (
+                "block" if checks_failed(checks) else cast("Decision", state.get("landing_decision", "inconclusive"))
+            )
         if not output.strip():
             self.tasks.output(action_id, output, decision)
             message = "The model returned empty output."
@@ -272,14 +279,6 @@ class Runtime:
                 else configured_skills & {name.casefold() for name in requested_skills}
             )
 
-    @staticmethod
-    def _decision(request: ActionRequest, state: TurnState, checks: list[dict]) -> Decision | None:
-        if request.mode != "gatekeeper":
-            return None
-        if checks_failed(checks):
-            return "block"
-        return cast("Decision", state.get("landing_decision", "inconclusive"))
-
     async def perform(self, action_id: str, **kwargs) -> tuple[str, Decision | None]:
         request = self.tasks.request(action_id)
         workspace = self.workspace(request)
@@ -291,7 +290,6 @@ class Runtime:
         ):
             output, decision = await self.consume(action_id, request, workspace, checks, mcp=channel, **kwargs)
         if request.mode == "gatekeeper" and checks_failed(checks):
-            decision = "block"
             output += "\nRequired validation failed; the change cannot proceed."
         self.tasks.output(action_id, output, decision)
         if request.mode == "fixer" and checks_failed(await self.checks(action_id, request, workspace)):
