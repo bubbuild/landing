@@ -8,7 +8,7 @@ import shutil
 import signal
 import subprocess
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Literal, cast
 from uuid import uuid4
@@ -16,7 +16,7 @@ from uuid import uuid4
 import typer
 from bub import hookimpl
 from bub.hooks.interception import ToolCallDecision
-from bub.tools import Tool, ToolContext
+from bub.tools import ToolContext, tool
 from pydantic import AliasChoices, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -188,6 +188,10 @@ class Publication:
     publisher: int = field(default=0, init=False)
     previous_replies: set[int] = field(default_factory=set, init=False)
 
+    @hookimpl
+    def load_state(self):
+        return {"_runtime_github_publication": self}
+
     def __post_init__(self) -> None:
         if self.number:
             identity = gh(
@@ -229,17 +233,6 @@ class Publication:
             raise ValueError(message)
         return receipt
 
-    def confirm_reply(self, comment_id: int, *, context: ToolContext) -> str:
-        """Read back a published reply at the delegated conversation or inline review thread."""
-        if comment_id in self.previous_replies:
-            message = "The reply predates this delegation."
-            raise ValueError(message)
-        receipt = self.read_reply(comment_id)
-        cast("Tasks", context.tape.get_sidecar("tasks")).event(
-            context.state["landing_action_id"], "github.reply_confirmed", {"id": comment_id}
-        )
-        return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
-
     def verify(self, action: Action, tasks: Tasks) -> None:
         if not self.number:
             return
@@ -269,6 +262,20 @@ class Publication:
                 message = "The PR head changed; delegate a new review for the current candidate."
                 raise RuntimeError(message)
         tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
+
+
+@tool(context=True, agent_use=False)
+def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
+    """Read back a published reply at the delegated conversation or inline review thread."""
+    publication = cast("Publication", context.state["_runtime_github_publication"])
+    if comment_id in publication.previous_replies:
+        message = "The reply predates this delegation."
+        raise ValueError(message)
+    receipt = publication.read_reply(comment_id)
+    cast("Tasks", context.tape.get_sidecar("tasks")).event(
+        context.state["landing_action_id"], "github.reply_confirmed", {"id": comment_id}
+    )
+    return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
 
 
 class CandidateGuard:
@@ -440,8 +447,9 @@ async def run(
         db,
         verify=lambda action: publication.verify(action, landing.tasks),
         skill_dirs=skill_dirs,
-        tools=[Tool.from_callable(publication.confirm_reply, context=True)],
+        tools=[replace(confirm_reply, agent_use=True)],
     )
+    landing.framework.plugin_manager.register(publication, name="github-publication")
     guard = CandidateGuard(landing, repository, number, head) if expected_review else None
     if guard:
         landing.framework.plugin_manager.register(guard, name="github-candidate")
