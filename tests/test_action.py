@@ -15,7 +15,7 @@ from tests.conftest import completion
 from tests.provider import provider
 
 
-def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when=None):
+def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when=None, arguments=()):
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith(("LANDING_", "BUB_", "GITHUB_", "INPUT_"))
     }
@@ -35,7 +35,7 @@ def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when
         GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"),
     )
     environment.update(extra_env or {})
-    args = [sys.executable, "-m", "landing.action"]
+    args = [sys.executable, "-m", "landing", "github", "event", *arguments]
     if cancel_when is None:
         return subprocess.run(args, cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=30)  # noqa: S603 -- fixed entry point in a disposable workspace.
     with subprocess.Popen(  # noqa: S603 -- fixed public Action entry point in a disposable workspace.
@@ -103,7 +103,8 @@ def test_action_does_not_attribute_unknown_checks_to_the_trigger_revision(tmp_pa
     assert json.loads(result.stdout)["result"] == "The checked revision is unknown."
 
 
-def test_action_preserves_instruction_assignments_and_quotes(tmp_path):
+@pytest.mark.parametrize("source", ["environment", "options"])
+def test_action_preserves_instruction_assignments_and_quotes(tmp_path, source):
     instruction = 'Native checks: quality=success. Explain "key=value" in https://example.test/?page=2.'
 
     def explain(request):
@@ -115,7 +116,14 @@ def test_action_preserves_instruction_assignments_and_quotes(tmp_path):
         return completion(answer)
 
     with provider([explain]) as (api_base, _):
-        result = delegate(tmp_path, api_base, "explain", "", extra_env={"INPUT_INSTRUCTION": instruction})
+        result = delegate(
+            tmp_path,
+            api_base,
+            "explain",
+            "",
+            extra_env={"INPUT_INSTRUCTION": instruction if source == "environment" else "Explain the other evidence."},
+            arguments=["--instruction", instruction] if source == "options" else [],
+        )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["result"] == "The quality check passed; key=value and page=2 remain task evidence."
 

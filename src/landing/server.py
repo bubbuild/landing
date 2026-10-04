@@ -101,8 +101,10 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
         if app.state.worker.done():
             raise HTTPException(503, "The worker is unavailable.")
         runtime.workspace(body)
-        if github_repository and repository_context(github_repository) not in body.input:
-            body = body.model_copy(update={"input": [*body.input, repository_context(github_repository)]})
+        if github_repository:
+            context = repository_context(github_repository)
+            if context not in body.input:
+                body = body.model_copy(update={"input": [*body.input, context]})
         action, created = runtime.tasks.create(body, key=key, scope="server", retry_of=retry_of)
         response.status_code = 201 if created else 200
         response.headers["Location"] = f"/v1/actions/{action.id}"

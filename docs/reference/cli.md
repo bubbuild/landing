@@ -59,7 +59,7 @@ All accept `--json`. Retry does not revert workspace changes. Read and cancellat
 landing [GLOBAL OPTIONS] serve [--host HOST] [--port PORT] [--workspace NAME=PATH]
 ```
 
-Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. `serve` cannot combine with `--server`. Listening beyond localhost requires `LANDING_TOKEN`. See [Run the server](../guides/server.md).
+Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. `serve` and `github` cannot combine with `--server`. Listening beyond localhost requires `LANDING_TOKEN`. See [Run the server](../guides/server.md).
 
 ## Exit codes and interruption
 
@@ -73,6 +73,16 @@ Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatab
 Local creation cancels on Ctrl-C and closes owned shell processes. Remote waiting stops without cancelling the task. [GitHub event delivery](../guides/github.md#publish-native-results) uses advisory decision semantics.
 
 Help and syntax diagnostics remain plain in captured output. Syntax errors use stderr and exit 2. Valid commands encountering invalid task input or local configuration also return 2 and, with `--json`, emit an `error` object on stdout. Remote connection and timeout failures report on stderr with exit 1; HTTP status errors report the server's detail.
+
+## GitHub events
+
+```bash
+landing --db landing.sqlite3 github event --repository example/service --event event.json --delivery-key comment:123
+```
+
+`github event` admits and routes a native event through the same adapter as the Action. It uses the prepared gh identity and current workspace, returns an action record as JSON, and treats review decisions as advisory. `--help` lists its typed options. Use repeatable `--check` and `--upstream-workflow` options for local calls. An unrelated or unauthorized event exits successfully without an action record.
+
+In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT_*` environment. Multiline `INPUT_CHECKS` and `INPUT_UPSTREAM_WORKFLOW` supply checks and allowed workflow names. Explicit options take precedence. The database uses `--db`, then `INPUT_DATABASE`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`. Outside a workflow, supply `--delivery-key`. Native output and summary files receive the same values as the composite Action.
 
 ## GitHub Action
 

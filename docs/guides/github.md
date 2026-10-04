@@ -18,19 +18,13 @@ When creating an authorized issue or PR, the agent reads the applicable template
 
 ## Invoke locally
 
-The event runner also works outside Actions with your normal gh login:
-
-```bash
-uv run python -m landing.adapters.github review --repository example/team-project --number 42 --head candidate-head-sha --instruction "Review the candidate and publish actionable findings." --delivery-key "review-42-request-1" --db ./evidence/landing.sqlite3
-```
-
-Replace the target and head with the candidate you intend to review. Use `--help` for event files, check provenance, trust, and skill roots. Ordinary CLI calls can supply repository context without requiring event-runner delivery:
+Use the ordinary CLI with your prepared gh login and repository context:
 
 ```bash
 landing --github-repository example/team-project triage "Investigate the evidence and make the problem actionable." --input report.txt
 ```
 
-The runner supplies the trigger, target, and relevant revisions. The agent fetches specific discussions, templates, diffs, or logs through gh; complete histories and issue lists are not injected. Use `--instruction` for task scope and relevant new evidence.
+In Actions, Landing supplies the trigger, target, and relevant revisions. The agent fetches specific discussions, templates, diffs, or logs through gh; complete histories and issue lists are not injected. Use the Action's `instruction` input for task scope and relevant new evidence.
 
 ## Publish native results
 
@@ -40,13 +34,13 @@ Explicit delegations require a reply to their selected issue or PR. Inline follo
 
 Automatic issuer follow-up publishes only useful new evidence, changed conditions, or verified progress. Unchanged conditions complete quietly through `no_update`, retaining the reason in SQLite. Failed tool execution cannot waive required publication. Explicit questions still require replies.
 
-The same database and delivery key reuse a completed delivery without another model call. A new delegation needs a new key. Missing or mismatched required publication fails the task. The runner exits nonzero for execution or delivery failure, while `block` and `inconclusive` remain advisory; [ordinary CLI review](../reference/cli.md#exit-codes-and-interruption) has stricter exit semantics.
+The same database and delivery key reuse a completed delivery without another model call. A new delegation needs a new key. Missing or mismatched required publication fails the task. The Action fails for execution or delivery failure, while `block` and `inconclusive` remain advisory; [ordinary CLI review](../reference/cli.md#exit-codes-and-interruption) has stricter exit semantics.
 
 Use GitHub conversation references such as #42 or owner/repo#42, and link commits with short, unambiguous hashes. Other destinations need explicit links. Full identities remain in API calls and verification.
 
 ## Wire commands and follow-ups
 
-Listen for `issue_comment` and `pull_request_review_comment` and pass the event file to the Action or `--event`. An admitted caller delegates with the first nonblank line:
+Listen for `issue_comment` and `pull_request_review_comment`; the Action reads the native event file. An admitted caller delegates with the first nonblank line:
 
 ```text
 /landing triage Track the recurring release failure with acceptance criteria.
