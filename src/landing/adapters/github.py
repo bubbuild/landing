@@ -1,6 +1,5 @@
 """Minimal GitHub admission and publication receipts around native agent tools."""
 
-import argparse
 import asyncio
 import hashlib
 import json
@@ -10,16 +9,109 @@ import signal
 import subprocess
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Annotated, Literal
+from uuid import uuid4
 
+import typer
 from bub import hookimpl
 from bub.hooks.interception import ToolCallDecision
 from bub.tools import Tool, ToolContext
 
-from landing.adapters.admission import admitted, gh
 from landing.commands import COMMANDS
 from landing.models import Action, ActionRequest, FileInput, Mode
 from landing.runtime import Runtime
 from landing.tasks import Tasks
+
+
+def gh(args: list[str], repository: str, *, token: str | None = None) -> str:
+    executable = shutil.which("gh")
+    if executable is None:
+        message = "Prepare gh in PATH before using the GitHub integration."
+        raise FileNotFoundError(message)
+    environment = {**os.environ, "GH_REPO": repository}
+    if token:
+        environment["GH_TOKEN"] = token
+    result = subprocess.run(  # noqa: S603 -- explicit argv with caller-prepared authentication.
+        [executable, *args], env=environment, capture_output=True, text=True, timeout=120
+    )
+    if result.returncode:
+        message = result.stderr.strip() or "GitHub CLI failed."
+        raise RuntimeError(message)
+    return result.stdout
+
+
+def identity(endpoint: str, repository: str) -> dict:
+    return json.loads(gh(["api", endpoint], repository, token=os.getenv("GH_ADMISSION_TOKEN")))
+
+
+def permitted(repository: str, user: dict, trust: str, owner: dict) -> bool:
+    if trust == "owner" and owner["type"] == "User":
+        return user["id"] == owner["id"]
+    # Organization owners have admin access to every repository. Reject known
+    # non-owners before querying private membership, where 404 can hide access.
+    permission = identity(f"repos/{repository}/collaborators/{user['login']}/permission", repository)
+    if trust == "repository":
+        return permission["permission"] in {"admin", "write"}
+    if permission["permission"] != "admin":
+        return False
+    membership = identity(f"orgs/{owner['login']}/memberships/{user['login']}", repository)
+    return membership["state"] == "active" and membership["role"] == "admin"
+
+
+def workflow_source(repository: str, event: dict, upstream: tuple[str, ...]) -> bool:
+    run = event["workflow_run"]
+    return (
+        run["name"] in upstream
+        and run["head_repository"]["full_name"].casefold() == repository.casefold()
+        and run["event"] in {"push", "release", "workflow_dispatch"}
+        and (run["event"] == "release" or run["head_branch"] == event["repository"]["default_branch"])
+    )
+
+
+def admitted(
+    repository: str,
+    event: dict | None,
+    *,
+    trust: str = "repository",
+    upstream: tuple[str, ...] = (),
+    prefix: str = "/landing",
+) -> bool:
+    native = os.getenv("GITHUB_REPOSITORY")
+    if native and repository.casefold() != native.casefold():
+        message = "The Action target must be the workflow repository."
+        raise ValueError(message)
+    if event and event["repository"]["full_name"].casefold() != repository.casefold():
+        message = "The event belongs to another repository."
+        raise ValueError(message)
+    # A local invocation without an event uses the caller's prepared credentials.
+    if not event and not os.getenv("GITHUB_ACTIONS"):
+        return True
+    event = event or {}
+    run = event.get("workflow_run")
+    if run and not workflow_source(repository, event, upstream):
+        return False
+    comment = event.get("comment")
+    body = (comment.get("body") or "").strip() if comment else ""
+    first = body.split(maxsplit=1)
+    if comment and (body.startswith("<!-- landing:") or not first or first[0] != prefix):
+        return False
+    # Native writes and dispatch authenticate the source, including App tokens.
+    # workflow_run is covered only after validating its originating workflow above.
+    native_source = os.getenv("GITHUB_EVENT_NAME") in {"push", "release", "workflow_dispatch"} or (
+        os.getenv("GITHUB_EVENT_NAME") == "workflow_run" and run is not None
+    )
+    if trust == "repository" and os.getenv("GITHUB_ACTIONS") and native_source and not comment:
+        return True
+    actor = comment["user"] if comment else run["actor"] if run else event.get("sender")
+    actor = actor or identity(f"users/{os.environ['GITHUB_ACTOR']}", repository)
+    owner = identity(f"repos/{repository}", repository)["owner"] if trust == "owner" else {}
+    if not permitted(repository, actor, trust, owner):
+        return False
+    rerunner = os.getenv("GITHUB_TRIGGERING_ACTOR")
+    if trust == "owner" and rerunner and rerunner != os.getenv("GITHUB_ACTOR"):
+        user = identity(f"users/{rerunner}", repository)
+        return permitted(repository, user, trust, owner)
+    return True
 
 
 def rows(endpoint: str, repository: str) -> list[dict]:
@@ -30,29 +122,6 @@ def rows(endpoint: str, repository: str) -> list[dict]:
 def marker(mode: Mode, key: str) -> str:
     digest = hashlib.sha256(key.encode()).hexdigest()[:24]
     return f"<!-- landing:{mode}:{digest} -->"
-
-
-def delegation(event: dict, repository: str, prefix: str = "/landing") -> tuple[str, str, int] | None:
-    if event["repository"]["full_name"].lower() != repository.lower():
-        message = "The event belongs to another repository."
-        raise ValueError(message)
-    comment = event["comment"]
-    if (comment.get("body") or "").lstrip().startswith("<!-- landing:"):
-        return None
-    first = (comment.get("body") or "").strip().splitlines()
-    parts = first[0].split(maxsplit=2) if first else []
-    command = ""
-    instruction = ""
-    if parts and parts[0] == prefix:
-        if len(parts) < 2 or parts[1] not in COMMANDS:
-            message = "Choose triage, fix, review, or explain after the command prefix."
-            raise ValueError(message)
-        command = parts[1]
-        instruction = "\n".join([parts[2] if len(parts) > 2 else "", *first[1:]]).strip()
-    if not command:
-        return None
-    target = event.get("issue") or event["pull_request"]
-    return command, instruction, target["number"]
 
 
 def publication(repository: str, number: int, stamp: str, *, review: bool, thread: int = 0) -> dict | None:
@@ -234,7 +303,7 @@ def reply_tool(repository: str, number: int, thread: int, record: Callable[[str,
 
 async def run(
     repository: str,
-    mode: Mode,
+    command: str,
     instruction: str,
     db: Path,
     workspace: Path,
@@ -246,9 +315,10 @@ async def run(
     key: str,
     checks: list[str],
     event: dict | None = None,
-    skill_dirs: Iterable[Path] = (),
     reply_required: bool = True,
+    skill_dirs: Iterable[Path] = (),
 ) -> Action:
+    mode = COMMANDS[command]
     stamp = marker(mode, key)
     is_pr, thread, head = pull_target(repository, number, head, event, review=mode == "gatekeeper")
     expected_review = is_pr and mode == "gatekeeper" and not thread
@@ -324,8 +394,8 @@ async def run(
 
     landing = Runtime(
         db,
-        skill_dirs=skill_dirs,
         verify=verify,
+        skill_dirs=skill_dirs,
         tools=[
             reply_tool(
                 repository,
@@ -352,7 +422,6 @@ async def run(
             verify(action)
             action = landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
             return action
-        command = next(name for name, value in COMMANDS.items() if value == mode)
         try:
             action = await landing.command(
                 command, request, session_id=f"github:{number or key}", scope=repository, key=key
@@ -361,78 +430,151 @@ async def run(
             if not guard or not guard.action_id:
                 raise
             action = landing.tasks.get(guard.action_id)
-        db.parent.joinpath("summary.md").write_text((action.result or json.dumps(action.error)) + "\n")
         return action
 
 
-def main(argv: list[str] | None = None) -> Action | None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=COMMANDS, nargs="?", default="review")
-    parser.add_argument(
-        "--repository", default=os.getenv("GITHUB_REPOSITORY"), required=not bool(os.getenv("GITHUB_REPOSITORY"))
-    )
-    parser.add_argument("--number", type=int, default=0)
-    parser.add_argument("--head", default="")
-    parser.add_argument("--run-id", default="")
-    parser.add_argument("--checked-revision", default="")
-    parser.add_argument(
-        "--instruction", default="Carry out the delegated task using repository guidance and independent checks."
-    )
-    parser.add_argument("--event", type=Path)
-    parser.add_argument("--command-prefix", default="/landing")
-    parser.add_argument("--trust", choices=["repository", "owner"], default="repository")
-    parser.add_argument("--upstream-workflow", action="append", default=[])
-    parser.add_argument("--db", type=Path, required=True)
-    parser.add_argument("--check", action="append", default=[])
-    parser.add_argument("--skill-dir", type=Path, action="append", default=[])
-    parser.add_argument("--delivery-key", required=True)
-    args = parser.parse_args(argv)
-    event = json.loads(args.event.read_text()) if args.event else None
-    if not admitted(
-        args.repository, event, trust=args.trust, upstream=tuple(args.upstream_workflow), prefix=args.command_prefix
-    ):
-        return
+def write_outputs(action: Action | None) -> None:
+    """Write native Action outputs and the step summary when available."""
+    outputs = {
+        "id": action.id if action else "",
+        "status": action.status if action else "skipped",
+        "decision": action.decision or "" if action else "",
+        "result": action.result or "" if action else "",
+    }
+    if destination := os.getenv("GITHUB_OUTPUT"):
+        with Path(destination).open("a") as output:
+            for name, value in outputs.items():
+                delimiter = uuid4().hex
+                output.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+    if summary := os.getenv("GITHUB_STEP_SUMMARY"):
+        with Path(summary).open("a") as output:
+            output.write(outputs["result"] + "\n")
+
+
+app = typer.Typer(name="github", help="Handle native GitHub events with prepared credentials.", no_args_is_help=True)
+
+
+@app.command("event")
+def github_event(
+    ctx: typer.Context,
+    repository: Annotated[
+        str, typer.Option(envvar=["INPUT_REPOSITORY", "GITHUB_REPOSITORY"], help="Workflow repository.")
+    ],
+    event: Annotated[
+        Path | None,
+        typer.Option(envvar="GITHUB_EVENT_PATH", exists=True, dir_okay=False, help="Native event JSON file."),
+    ] = None,
+    delegated_command: Annotated[
+        Literal["review", "fix", "triage", "explain"],
+        typer.Option("--command", envvar="INPUT_COMMAND", help="Default delegated action."),
+    ] = "review",
+    instruction: Annotated[
+        str, typer.Option(envvar="INPUT_INSTRUCTION", help="Work and acceptance criteria.")
+    ] = "Carry out the delegated task using repository guidance.",
+    trust: Annotated[
+        Literal["repository", "owner"], typer.Option(envvar="INPUT_TRUST", help="Native caller scope.")
+    ] = "repository",
+    upstream_workflow: Annotated[list[str] | None, typer.Option(help="Allowed upstream workflow (repeatable).")] = None,
+    command_prefix: Annotated[
+        str, typer.Option(envvar="INPUT_COMMAND_PREFIX", help="Comment command prefix.")
+    ] = "/landing",
+    number: Annotated[int, typer.Option(envvar="INPUT_NUMBER", min=0, help="Issue or PR number.")] = 0,
+    head: Annotated[str, typer.Option(envvar="INPUT_HEAD", help="Candidate commit.")] = "",
+    checked_revision: Annotated[
+        str | None, typer.Option(envvar="INPUT_CHECKED_REVISION", help="Revision covered by native checks.")
+    ] = None,
+    run_id: Annotated[str, typer.Option(envvar=["INPUT_RUN_ID", "GITHUB_RUN_ID"], help="Native run to inspect.")] = "",
+    delivery_key: Annotated[
+        str | None, typer.Option(envvar="INPUT_DELIVERY_KEY", help="Stable delivery identity.")
+    ] = None,
+    check: Annotated[list[str] | None, typer.Option(help="Required validation (repeatable).")] = None,
+) -> None:
+    """Admit and route an event, then confirm native publication."""
+    ctx.obj["execute"](**locals(), handler=delivery)
+
+
+def route_event(args, event: dict | None) -> dict | None:
     if event and "comment" in event:
-        delegated = delegation(event, args.repository, args.command_prefix)
-        if delegated is None:
-            return
-        args.command, args.instruction, args.number = delegated
+        lines = event["comment"]["body"].strip().splitlines()
+        parts = lines[0].split(maxsplit=2)
+        if len(parts) < 2 or parts[1] not in COMMANDS:
+            message = "Choose triage, fix, review, or explain after the command prefix."
+            raise ValueError(message)
+        args.delegated_command = parts[1]
+        args.instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
+        target = event.get("issue") or event["pull_request"]
+        args.number = target["number"]
         if "pull_request" in event or "pull_request" in event.get("issue", {}):
             pull = json.loads(gh(["api", f"repos/{args.repository}/pulls/{args.number}"], args.repository))
             args.head = pull["head"]["sha"]
             event = {**event, "pull_request": pull}
     elif event and "workflow_run" in event:
-        run_event = event["workflow_run"]
-        args.command, args.run_id = "triage", str(run_event["id"])
+        args.delegated_command, args.run_id = "triage", str(event["workflow_run"]["id"])
     elif event and not args.number:
         pull = event.get("pull_request")
         if pull:
             args.number, args.head = pull["number"], pull["head"]["sha"]
-    selected = COMMANDS[args.command]
-    action = asyncio.run(
-        interruptible(
-            run(
-                args.repository,
-                selected,
-                args.instruction,
-                args.db,
-                Path.cwd(),
-                number=args.number,
-                head=args.head,
-                run_id=args.run_id,
-                checked_revision=args.checked_revision,
-                key=args.delivery_key,
-                checks=args.check,
-                event=event,
-                skill_dirs=args.skill_dir,
-                reply_required=not bool(event and "workflow_run" in event),
-            )
+
+    return event
+
+
+async def delivery(args) -> int:
+    if args.server:
+        message = "--server cannot be combined with github."
+        raise ValueError(message)
+
+    event = json.loads(args.event.read_text()) if args.event else None
+    upstream = (
+        args.upstream_workflow
+        if args.upstream_workflow is not None
+        else os.getenv("INPUT_UPSTREAM_WORKFLOW", "").splitlines()
+    )
+    if not admitted(
+        args.repository,
+        event,
+        trust=args.trust,
+        upstream=tuple(name.strip() for name in upstream if name.strip()),
+        prefix=args.command_prefix,
+    ):
+        write_outputs(None)
+        return 0
+    event = route_event(args, event)
+
+    key = args.delivery_key
+    if not key:
+        if not (run_id := os.getenv("GITHUB_RUN_ID")):
+            message = "Supply --delivery-key outside a GitHub workflow."
+            raise ValueError(message)
+        key = f"action:{run_id}:{os.getenv('GITHUB_RUN_ATTEMPT', '1')}"
+    action = await interruptible(
+        run(
+            args.repository,
+            args.delegated_command,
+            args.instruction,
+            (
+                args.db
+                or Path(
+                    os.getenv("INPUT_DATABASE")
+                    or os.getenv("LANDING_DB")
+                    or Path(os.getenv("RUNNER_TEMP", ".")) / "landing/landing.sqlite3"
+                )
+            ).expanduser(),
+            Path.cwd(),
+            key=key,
+            checks=args.check
+            if args.check is not None
+            else [line for line in os.getenv("INPUT_CHECKS", "").splitlines() if line.strip()],
+            event=event,
+            reply_required=not bool(event and "workflow_run" in event),
+            number=args.number,
+            head=args.head,
+            run_id=args.run_id,
+            checked_revision=args.checked_revision
+            if args.checked_revision is not None
+            else os.getenv("INPUT_CHECKED_REVISION", os.getenv("GITHUB_SHA", "")),
+            skill_dirs=args.skill_dir,
         )
     )
-    print(action.model_dump_json(indent=2))
-    return action
-
-
-if __name__ == "__main__":
-    result = main()
-    raise SystemExit(int(result is not None and result.status != "completed"))
+    typer.echo(action.model_dump_json(indent=2))
+    write_outputs(action)
+    return int(action.status != "completed")
