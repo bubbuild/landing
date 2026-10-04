@@ -12,7 +12,7 @@ Select the affected entry point and owning layer. Use these project constraints 
 - Use `github-context.json`'s `ci_checkout` for the native check revision, not the trigger SHA. A switched workspace does not reload the installed runtime. Follow actual workflow preparation when evaluating CI behavior.
 - Tests isolate ambient Landing and Bub settings. Local protocol fixtures establish exercised behavior, not real-provider quality or deployment recovery.
 
-Use the source or a focused counterexample for an unresolved claim. Reuse completed checks that cover it. Follow `docs/development.md` for behavior testing and evaluate operational recovery against the relevant failure, rather than an unrelated healthy matrix.
+Trace the actual caller when checking delegation: typed calls and the streaming facade share execution without sharing every step. An admission receipt does not establish the final outcome; read the action's current status and result. Follow `docs/development.md` for behavior testing and verify recovery against the relevant failure.
 
 For a frontend problem that needs reproduction, use Playwright MCP with an existing URL or start the project's service through the shell. Check that the behavior corresponds to the candidate under review. Report only reproduced problems; a screenshot alone does not establish a bug, and binary image placeholders do not mean the model inspected the image.
 
