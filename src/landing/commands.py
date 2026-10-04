@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from bub.tools import Tool, ToolContext, tool
+from bub.tools import ToolContext, tool
 
 from landing.models import Action, ActionRequest, Mode
 from landing.tasks import Tasks
@@ -24,7 +24,7 @@ async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
     return cast("Mode", context.state.get("landing_mode", "explainer"))
 
 
-def command_tool(name: str, selected: Mode) -> Tool:
+def register_command(name: str, selected: Mode) -> None:
     @tool(name=name, context=True, agent_use=False)
     async def delegate(instruction: str = "", *, context: ToolContext) -> Action:
         """Delegate work in the prepared workspace and return its task receipt."""
@@ -44,8 +44,6 @@ def command_tool(name: str, selected: Mode) -> Tool:
         context.state["landing_pending_action"] = action.id
         return action
 
-    return delegate
-
 
 for name, selected in COMMANDS.items():
-    command_tool(name, selected)
+    register_command(name, selected)

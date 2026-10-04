@@ -14,9 +14,6 @@ command = ["landing", *sys.argv[1:]]
 
 
 def start_server(args):
-    if not os.getenv("LITESTREAM_REPLICA_URL") and not os.getenv("LITESTREAM_CONFIG"):
-        sys.exit("Set LITESTREAM_REPLICA_URL or mount a config and set LITESTREAM_CONFIG before serving.")
-
     os.environ["LANDING_DB"] = str(database(args).resolve())
     os.execvp("litestream", ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)])
 

@@ -96,11 +96,12 @@ def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkey
     assert all(not receipt.exists() for name, receipt in receipts.items() if name != expected)
 
 
-@pytest.mark.parametrize("integration", ["sdk", "hooks"])
-def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, model, monkeypatch, integration):
+@pytest.mark.parametrize(("integration", "source"), [("sdk", "framework"), ("hooks", "project")])
+def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, model, monkeypatch, integration, source):
     _, configure = mcp_server
     receipt = tmp_path / "record.txt"
-    configure(tmp_path / ".agents/mcp.json", receipt)
+    selected = tmp_path / ".agents/mcp.json" if source == "project" else tmp_path / "custom.json"
+    configure(selected, receipt)
     monkeypatch.setenv(
         "LANDING_MODES", '{"explainer":{"allowed_tools":[]},"fixer":{"allowed_tools":["mcp.evidence_record"]}}'
     )
@@ -112,7 +113,9 @@ def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, mode
         ])
 
     async def run():
-        framework = BubFramework()
+        settings = tmp_path / "host.yml"
+        settings.write_text(json.dumps({"mcp_config": str(selected)}))
+        framework = BubFramework(config_file=settings) if source == "framework" else BubFramework()
         framework.workspace = tmp_path
         framework.load_builtin_hooks()
         async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:

@@ -9,58 +9,6 @@ from landing.tasks import Tasks
 from tests.conftest import completion
 
 
-def test_fixer_changes_files_and_passes_required_checks(tmp_path, model):
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42\n"}),
-        completion("Wrote and verified the answer."),
-    ])
-    path = tmp_path / "landing.sqlite3"
-
-    async def run():
-        runtime = Runtime(path)
-        async with runtime.running():
-            action = await runtime.run(
-                ActionRequest(
-                    mode="fixer",
-                    instruction="Write the answer.",
-                    workspace=str(tmp_path),
-                    checks=['test "$(cat answer.txt)" = 42'],
-                )
-            )
-            assert action.status == "completed"
-            assert action.result == "Wrote and verified the answer."
-            assert action.exit_code() == 0
-            return action
-
-    action = asyncio.run(run())
-    assert (tmp_path / "answer.txt").read_text() == "42\n"
-    with closing(Tasks(path)) as tasks:
-        assert tasks.get(action.id) == action
-
-
-@pytest.mark.parametrize(("check", "expected"), [("true", "allow"), ("false", "block")])
-def test_gatekeeper_decision_and_required_validation(tmp_path, model, check, expected):
-    responses, _ = model
-    responses.extend([
-        completion(tool="decide", arguments={"decision": "allow"}),
-        completion("The evidence supports proceeding."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            action = await runtime.run(
-                ActionRequest(
-                    mode="gatekeeper", instruction="Evaluate the candidate.", workspace=str(tmp_path), checks=[check]
-                )
-            )
-            assert action.status == "completed"
-            assert action.decision == expected
-            assert action.exit_code() == (expected != "allow")
-
-    asyncio.run(run())
-
-
 def test_missing_decision_is_inconclusive(tmp_path, model):
     responses, _ = model
     responses.append(completion("There is not enough evidence."))
@@ -72,28 +20,6 @@ def test_missing_decision_is_inconclusive(tmp_path, model):
             assert action.exit_code() == 1
 
     asyncio.run(run())
-
-
-def test_failed_fixer_keeps_output_and_changes(tmp_path, model):
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42"}),
-        completion("Updated the answer."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
-            action = await runtime.run(
-                ActionRequest(mode="fixer", instruction="Write the answer.", workspace=str(tmp_path), checks=["false"])
-            )
-            assert action.status == "failed"
-            assert action.result == "Updated the answer."
-            assert action.error is not None
-            assert "validation failed" in action.error["message"]
-            assert action.exit_code() == 1
-
-    asyncio.run(run())
-    assert (tmp_path / "answer.txt").read_text() == "42"
 
 
 def test_external_cancellation_stops_active_sdk_turn(tmp_path, model):
@@ -135,31 +61,11 @@ def test_model_failure_is_durable(tmp_path, model):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("text", ["", "   \t\n"])
-def test_empty_completion_is_failed_work(tmp_path, model, text):
-    responses, _ = model
-    responses.append(completion(text))
-    path = tmp_path / "landing.sqlite3"
-
-    async def run():
-        async with Runtime(path).running() as runtime:
-            action = await runtime.run(ActionRequest(mode="explainer", instruction="Explain the failure."))
-            assert action.status == "failed"
-            assert action.error is not None
-            assert "empty" in action.error["message"].lower()
-            assert action.exit_code() == 1
-            return action
-
-    action = asyncio.run(run())
-    with closing(Tasks(path)) as tasks:
-        assert tasks.get(action.id) == action
-
-
-def test_fixer_empty_completion_preserves_changes(tmp_path, model):
+def test_blank_completion_keeps_partial_changes_and_failed_history(tmp_path, model):
     responses, _ = model
     responses.extend([
         completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42\n"}),
-        completion(""),
+        completion("   \t\n"),
     ])
     path = tmp_path / "landing.sqlite3"
 

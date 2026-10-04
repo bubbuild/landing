@@ -76,7 +76,6 @@ class Runtime:
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         self.settings = ensure_config(Settings)
-        self.mcp = MCPChannel.from_server_configs({})
         if framework is None:
             self.framework.plugin_manager.register(SDKDefaults(self.framework), name="builtin")
         self.hooks = LandingHooks(self)
@@ -198,6 +197,7 @@ class Runtime:
         workspace: Path,
         checks: list[dict],
         *,
+        mcp: MCPChannel,
         state: TurnState | None = None,
         events: asyncio.Queue | None = None,
         stream_state: StreamState | None = None,
@@ -212,7 +212,7 @@ class Runtime:
         if state is None:
             state = await self.framework.build_state({"_runtime_agent": self.agent.bub}, session_id)
         state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
-        state["mcp"] = self.mcp
+        state["mcp"] = mcp
         state.pop("landing_decision", None)
         state.pop("landing_llm_call", None)
         state.pop("landing_no_update", None)
@@ -287,13 +287,9 @@ class Runtime:
         # Finish model-owned background processes before validating its changes.
         async with (
             shell_manager.lifespan(),
-            connected_tools(self.agent.bub, workspace, self.settings.mcp_config) as channel,
+            connected_tools(self.agent.bub, workspace) as channel,
         ):
-            previous, self.mcp = self.mcp, channel
-            try:
-                output, decision = await self.consume(action_id, request, workspace, checks, **kwargs)
-            finally:
-                self.mcp = previous
+            output, decision = await self.consume(action_id, request, workspace, checks, mcp=channel, **kwargs)
         if request.mode == "gatekeeper" and checks_failed(checks):
             decision = "block"
             output += "\nRequired validation failed; the change cannot proceed."

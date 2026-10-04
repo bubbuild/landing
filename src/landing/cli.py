@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
-import os
 import sys
 from collections.abc import Callable, Coroutine
 from contextlib import closing
@@ -17,12 +16,28 @@ from typing import Annotated, Any, NoReturn
 
 import httpx
 import typer
-from pydantic import ValidationError
+from pydantic import AliasChoices, Field, ValidationError
+from pydantic_settings import SettingsConfigDict
 
 from landing.adapters.github import app as github_app
 from landing.commands import COMMANDS
 from landing.models import TERMINAL, Action, ActionRequest, FileInput
+from landing.settings import FileSettings
 from landing.tasks import Tasks
+
+
+class ExecutionSettings(FileSettings):
+    """CLI and service configuration, independent of SDK model settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LANDING_", env_ignore_empty=True, populate_by_name=True, extra="ignore", hide_input_in_errors=True
+    )
+    db: Path | None = None
+    server: str | None = None
+    token: str | None = Field(default=None, repr=False)
+    github_repository: str | None = None
+    base_url: str | None = Field(default=None, validation_alias=AliasChoices("LANDING_BASE_URL", "BASE_URL"))
+
 
 app = typer.Typer(
     help="Explain CI failures, delegate fixes, and review evidence.",
@@ -47,11 +62,11 @@ def show_version(value: bool) -> None:
 def configure(
     ctx: typer.Context,
     db: Annotated[Path | None, typer.Option(help="Local SQLite path; overrides LANDING_DB.")] = None,
-    server: Annotated[str | None, typer.Option(envvar="LANDING_SERVER", help="Remote Landing server URL.")] = None,
+    server: Annotated[str | None, typer.Option(help="Remote Landing server URL.")] = None,
     skill_dir: Annotated[list[Path] | None, typer.Option(help="Additional trusted skill root (repeatable).")] = None,
     github_repository: Annotated[
         str | None,
-        typer.Option(envvar="LANDING_GITHUB_REPOSITORY", help="Repository context for the prepared gh CLI."),
+        typer.Option(help="Repository context for the prepared gh CLI."),
     ] = None,
     version: Annotated[
         bool,
@@ -138,7 +153,7 @@ def retry(
 
 
 def database(args) -> Path:
-    return (args.db or Path(os.getenv("LANDING_DB", "~/.local/share/landing/landing.sqlite3"))).expanduser()
+    return (args.db or Path("~/.local/share/landing/landing.sqlite3")).expanduser()
 
 
 def build_request(args) -> ActionRequest:
@@ -214,7 +229,7 @@ async def call_api(client: httpx.AsyncClient, method: str, path: str, **kwargs):
 
 
 async def remote(args) -> int:
-    headers = {"Authorization": "Bearer " + os.environ["LANDING_TOKEN"]} if os.getenv("LANDING_TOKEN") else {}
+    headers = {"Authorization": "Bearer " + args.token} if args.token else {}
     async with httpx.AsyncClient(base_url=args.server.rstrip("/"), headers=headers, timeout=30) as client:
         call = partial(call_api, client)
 
@@ -294,8 +309,8 @@ async def local(args) -> int:
         return action.exit_code()
 
 
-def validate_args(args) -> None:
-    if args.server and (args.db is not None or args.command == "serve"):
+def validate_args(args, ctx: typer.Context) -> None:
+    if args.server and (ctx.obj["db"] is not None or args.command == "serve"):
         message = "--server cannot be combined with --db or serve."
         raise ValueError(message)
     if args.server and args.skill_dir:
@@ -331,7 +346,7 @@ def start_server(args) -> None:
             message = "Register a workspace as NAME=PATH."
             raise ValueError(message)
         workspaces[name] = Path(path).expanduser().resolve()
-    token = os.getenv("LANDING_TOKEN")
+    token = args.token
     if args.host not in {"127.0.0.1", "localhost", "::1"} and not token:
         message = "Set LANDING_TOKEN before listening beyond localhost."
         raise ValueError(message)
@@ -340,7 +355,7 @@ def start_server(args) -> None:
             database(args),
             workspaces=workspaces,
             token=token,
-            base_url=os.getenv("BASE_URL"),
+            base_url=args.base_url,
             github_repository=args.github_repository,
             skill_dirs=args.skill_dir,
         ),
@@ -354,7 +369,10 @@ def execute(
 ) -> NoReturn:
     args = SimpleNamespace(**ctx.obj, **parameters, operation=ctx.info_name)
     try:
-        validate_args(args)
+        vars(args).update(
+            ExecutionSettings(**{name: value for name, value in vars(args).items() if value is not None}).model_dump()
+        )
+        validate_args(args, ctx)
         if handler is not None:
             code = asyncio.run(handler(args))
         elif args.command == "serve":

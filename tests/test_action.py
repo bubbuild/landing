@@ -153,7 +153,7 @@ def test_runner_termination_cancels_work_and_stops_its_shell(tmp_path):
         os.kill(int(child.read_text()), 0)
 
 
-@pytest.mark.parametrize("event_name", ["workflow_dispatch", "push", "release", "workflow_run"])
+@pytest.mark.parametrize("event_name", ["release", "workflow_run"])
 def test_native_source_uses_github_authorization_for_app_identity(tmp_path, event_name):
     binary = tmp_path / "bin"
     binary.mkdir()

@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 import time
@@ -27,8 +28,7 @@ def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, m
         completion("The change needs attention."),
         completion("Explained the failing check."),
     ])
-    monkeypatch.delenv("LANDING_TOKEN", raising=False)
-    app = create_app(tmp_path / "landing.sqlite3", workspaces={"candidate": tmp_path})
+    app = create_app(tmp_path / "landing.sqlite3", workspaces={"candidate": tmp_path}, token="remote-fixture")  # noqa: S106 -- test-only credential.
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -40,18 +40,34 @@ def test_remote_cli_waits_and_detaches_over_real_http(tmp_path, model, capsys, m
             while not server.started and thread.is_alive() and time.monotonic() < deadline:
                 time.sleep(0.01)
             assert server.started
-            base = ["--server", f"http://127.0.0.1:{port}"]
-            assert main([*base, "review", "Review the change.", "--workspace", "candidate", "--json"]) == 1
-            import json
-
+            monkeypatch.setenv("LANDING_COMPLETION_ARGS", "not-json")
+            settings = {"server": f"http://127.0.0.1:{port}", "token": "remote-fixture"}
+            config_file = tmp_path / "landing.yml"
+            monkeypatch.setenv("LANDING_CONFIG", str(config_file))
+            config_file.write_text(json.dumps(settings))
+            assert main(["review", "Review the change.", "--workspace", "candidate", "--json"]) == 1
             assert json.loads(capsys.readouterr().out)["decision"] == "block"
+            config_file.write_text(json.dumps({"server": 42, "token": "invalid"}))
+            monkeypatch.setenv("LANDING_SERVER", "http://127.0.0.1:1")
+            monkeypatch.setenv("LANDING_TOKEN", settings["token"])
             assert (
-                main([*base, "explain", "Explain the failure.", "--workspace", "candidate", "--detach", "--json"]) == 0
+                main([
+                    "--server",
+                    settings["server"],
+                    "explain",
+                    "Explain the failure.",
+                    "--workspace",
+                    "candidate",
+                    "--detach",
+                    "--json",
+                ])
+                == 0
             )
             action = json.loads(capsys.readouterr().out)
-            assert main([*base, "action", "watch", action["id"], "--exit-status", "--json"]) == 0
+            monkeypatch.setenv("LANDING_SERVER", settings["server"])
+            assert main(["action", "watch", action["id"], "--exit-status", "--json"]) == 0
             assert json.loads(capsys.readouterr().out)["result"] == "Explained the failing check."
-            assert main([*base, "action", "list", "--json"]) == 0
+            assert main(["action", "list", "--json"]) == 0
             assert len(json.loads(capsys.readouterr().out)) == 2
         finally:
             server.should_exit = True

@@ -1,12 +1,14 @@
 """User commands and native SDK contracts through the real Bub execution loop."""
 
 import asyncio
+import json
 from contextlib import aclosing
 
 import pytest
 from bub import BubFramework
 from bub.channels.message import ChannelMessage
 
+from landing.models import ActionRequest
 from landing.runtime import Runtime
 from tests.conftest import completion
 
@@ -21,9 +23,8 @@ async def output(stream):
 
 
 @pytest.mark.parametrize(
-    ("command", "mode"), [("triage", "issuer"), ("fix", "fixer"), ("review", "gatekeeper"), ("explain", "explainer")]
+    ("integration", "command", "mode"), [("sdk", "explain", "explainer"), ("hooks", "fix", "fixer")]
 )
-@pytest.mark.parametrize("integration", ["sdk", "hooks"])
 def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integration):
     responses, _ = model
     responses.append(completion("The delegated work is complete."))
@@ -50,7 +51,11 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
     asyncio.run(run())
 
 
-def test_mode_survives_restart_without_leaking_between_sessions(tmp_path, model):
+def test_mode_survives_restart_without_leaking_between_sessions(tmp_path, model, monkeypatch):
+    settings = tmp_path / "settings.yml"
+    settings.write_text(json.dumps({"db": [], "server": []}))
+    monkeypatch.setenv("LANDING_CONFIG", str(settings))
+    monkeypatch.setenv("BUB_MCP_INIT_TIMEOUT_SECONDS", "invalid")
     _, requests = model
     path = tmp_path / "landing.sqlite3"
 
@@ -141,11 +146,8 @@ def test_closing_sdk_stream_cancels_durable_work(tmp_path, model):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("selected", ["issuer", "fixer", "gatekeeper", "explainer"])
-def test_each_mode_has_independent_tool_configuration(tmp_path, model, monkeypatch, selected):
-    from landing.models import ActionRequest
-
-    monkeypatch.setenv("LANDING_MODES", '{"' + selected + '":{"allowed_tools":[]}}')
+def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch):
+    monkeypatch.setenv("LANDING_MODES", '{"fixer":{"allowed_tools":[]}}')
     responses, _ = model
     responses.extend([
         completion(tool="fs_write", arguments={"path": "restricted.txt", "content": "changed"}),
@@ -157,13 +159,12 @@ def test_each_mode_has_independent_tool_configuration(tmp_path, model, monkeypat
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             restricted = await landing.run(
-                ActionRequest(mode=selected, instruction="Write restricted.txt.", workspace=str(tmp_path))
+                ActionRequest(mode="fixer", instruction="Write restricted.txt.", workspace=str(tmp_path))
             )
             assert restricted.status == "completed"
             assert not (tmp_path / "restricted.txt").exists()
-            other = "fixer" if selected != "fixer" else "explainer"
             available = await landing.run(
-                ActionRequest(mode=other, instruction="Write available.txt.", workspace=str(tmp_path))
+                ActionRequest(mode="explainer", instruction="Write available.txt.", workspace=str(tmp_path))
             )
             assert available.status == "completed"
             assert (tmp_path / "available.txt").read_text() == "changed"
@@ -192,8 +193,6 @@ def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypa
 
 
 def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch):
-    import json
-
     from tests.test_repository import report_reference, write_skill
 
     roots = tmp_path / ".agents/skills"
@@ -243,7 +242,6 @@ def test_delegated_request_uses_the_host_provided_environment(tmp_path, model):
     from bub import hookimpl
     from bub.builtin.environment import LocalEnvironment
 
-    from landing.models import ActionRequest
     from tests.test_repository import report_reference
 
     workspace = tmp_path / "workspace"

@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from landing.cli import main
 from tests.conftest import completion
 from tests.provider import provider
 
@@ -91,3 +92,19 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
         assert "The evidence explains the failed check." in result.stdout
         assert requests[0]["model"] == settings["model"].split(":", 1)[1]
         assert authorization and all(value == "Bearer selected-key" for value in authorization)
+
+
+def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch, model, capsys):
+    configured = tmp_path / "configured.sqlite3"
+    explicit = tmp_path / "explicit.sqlite3"
+    config_file = tmp_path / "landing.yml"
+    monkeypatch.setenv("LANDING_CONFIG", str(config_file))
+    config_file.write_text(json.dumps({"db": str(configured)}))
+    responses, _ = model
+    responses.append(completion("Explained the configured project."))
+    assert main(["explain", "Explain this project.", "--workspace", str(tmp_path), "--json"]) == 0
+    action = json.loads(capsys.readouterr().out)
+    assert main(["action", "view", action["id"], "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == action
+    assert main(["--db", str(explicit), "action", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []

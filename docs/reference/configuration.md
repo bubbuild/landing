@@ -95,7 +95,9 @@ Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `
 | `LANDING_SERVER` | Remote CLI service URL. |
 | `LANDING_TOKEN` | Server and client bearer token; required to listen beyond localhost. |
 | `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
-| `BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. |
+| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. `BASE_URL` remains an alias. |
+
+CLI and service settings read their own fields from environment, Landing YAML and existing Bub YAML. YAML keys are `db`, `server`, `token`, `github_repository` and `base_url`. CLI options override corresponding settings. SDK calls do not validate CLI settings; remote clients do not validate model or MCP settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
 
 Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`.
 
@@ -113,7 +115,9 @@ These settings apply to Landing's bundled workflows; a caller's own workflow pre
 | Secret `LANDING_GITHUB_TOKEN` | Publication token; defaults to the workflow token. |
 | Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
 
-The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
+The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
+
+Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 
 ## Container replication
 

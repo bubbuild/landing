@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from bub import config
-from bub.builtin.settings import AgentSettings, ProviderSpecificEnvSource
+from bub.builtin.settings import AgentSettings
 from pydantic import AliasChoices, AliasGenerator, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
@@ -25,8 +25,31 @@ class ConfigurationFile(BaseSettings):
     )
 
 
+class FileSettings(BaseSettings):
+    """Add YAML fallback sources without sharing component fields or prefixes."""
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources = super().settings_customise_sources(
+            settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+        )
+        return (
+            *sources[:3],
+            YamlConfigSettingsSource(settings_cls, yaml_file=ConfigurationFile().config_file.expanduser()),
+            YamlConfigSettingsSource(settings_cls, yaml_file=Path.home() / ".bub" / "config.yml"),
+            *sources[3:],
+        )
+
+
 @config()
-class Settings(AgentSettings):
+class Settings(FileSettings, AgentSettings):
     """Use Landing names first and reuse the SDK's model validation and clients."""
 
     model_config = SettingsConfigDict(
@@ -39,26 +62,4 @@ class Settings(AgentSettings):
         ),
     )
     skill_dirs: list[Path] = Field(default_factory=list)
-    mcp_config: Path | None = Field(
-        default=None, validation_alias=AliasChoices("LANDING_MCP_CONFIG", "BUB_MCP_CONFIG_PATH")
-    )
     modes: dict[Mode, ModeSettings] = Field(default_factory=dict)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            env_settings,
-            dotenv_settings,
-            init_settings,
-            YamlConfigSettingsSource(settings_cls, yaml_file=ConfigurationFile().config_file.expanduser()),
-            YamlConfigSettingsSource(settings_cls, yaml_file=Path.home() / ".bub" / "config.yml"),
-            ProviderSpecificEnvSource(settings_cls),
-            file_secret_settings,
-        )
