@@ -27,7 +27,25 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. `LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Bub's lifespan owns one SQLAlchemy Core Engine; task and tape adapters use scoped connections, and action transitions record their events in the same transaction. Task records remain independent of model history.
+CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. Synchronous calls, streams and the HTTP worker share execution tracking and cancellation. User cancellation stops delegated work; worker shutdown leaves active work interrupted for inspection and queued work available after restart.
+
+```text
+CLI / GitHub / SDK commands --> Native command tool --+
+HTTP / typed requests -------------------------------+--> Tasks sidecar
+SDK text / message hooks ----------------------------+         |
+                                                               v
+                                                   Shared task execution
+                                                               |
+                                                    Bub Agent + checks
+                                                               |
+                                                   Publication verification
+                                                               |
+                                                         Final Action
+```
+
+`LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Its system prompt supplies common behavior, the selected mode and root `AGENTS.md`; task inputs contain instructions and evidence. GitHub adaptation adds destination and platform requirements.
+
+Bub's lifespan owns one SQLAlchemy Core Engine shared by the task sidecar and tape adapter. Both use scoped connections; action transitions record their events in the same transaction. Task records remain independent of model history.
 
 ## Run the feedback loop
 

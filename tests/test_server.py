@@ -76,7 +76,7 @@ def test_admission_rejects_invalid_requests_without_tasks(tmp_path, model):
         assert client.get("/v1/actions").json() == []
 
 
-def test_cancel_queued_and_running_actions_without_stopping_worker(tmp_path, model):
+def test_cancellation_and_restart_preserve_work_outcomes(tmp_path, model):
     responses, _ = model
     started = threading.Event()
 
@@ -84,8 +84,14 @@ def test_cancel_queued_and_running_actions_without_stopping_worker(tmp_path, mod
         started.set()
         await asyncio.Event().wait()
 
-    responses.extend([blocked, completion("Explained the next failure.")])
-    with TestClient(create_app(tmp_path / "landing.sqlite3")) as client:
+    responses.extend([
+        blocked,
+        completion("Explained the next failure."),
+        blocked,
+        completion("Explained queued work."),
+    ])
+    path = tmp_path / "landing.sqlite3"
+    with TestClient(create_app(path)) as client:
         body = {"mode": "explainer", "instruction": "Explain the failure."}
         first = client.post("/v1/actions", json=body).headers["Location"]
         assert started.wait(timeout=5)
@@ -98,6 +104,14 @@ def test_cancel_queued_and_running_actions_without_stopping_worker(tmp_path, mod
         assert active.status_code == 202
         third = client.post("/v1/actions", json=body).headers["Location"]
         assert wait(client, third)["result"] == "Explained the next failure."
+        assert client.get(first).json()["status"] == "cancelled"
+        started.clear()
+        interrupted = client.post("/v1/actions", json=body).headers["Location"]
+        assert started.wait(timeout=5)
+        pending = client.post("/v1/actions", json=body).headers["Location"]
+    with TestClient(create_app(path)) as client:
+        assert client.get(interrupted).json()["status"] == "interrupted"
+        assert wait(client, pending)["result"] == "Explained queued work."
         assert client.get(first).json()["status"] == "cancelled"
 
 
