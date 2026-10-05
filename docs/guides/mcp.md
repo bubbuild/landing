@@ -5,7 +5,7 @@ Add trusted server definitions to `.agents/mcp.json` in your workspace. Prepare 
 The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json). Prepare Node.js and Chrome, then adapt its arguments to your environment. Install Landing:
 
 ```bash
-uv tool install "landing==0.1.2"
+uv tool install "landing==0.2.0"
 ```
 
 Delegate work through the usual command:

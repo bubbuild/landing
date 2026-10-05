@@ -1,6 +1,6 @@
 # Run the server
 
-Use a service for a shared queue or HTTP admission point. Prepare checkouts, dependencies, model settings, and skills on the executing host. Install the CLI with `uv tool install "landing==0.1.2"`.
+Use a service for a shared queue or HTTP admission point. Prepare checkouts, dependencies, model settings, and skills on the executing host. Install the CLI with `uv tool install "landing==0.2.0"`.
 
 ## Start with registered workspaces
 

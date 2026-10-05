@@ -2,7 +2,7 @@
 
 Delegate actions from Python with the same requests and results as CLI and HTTP. Enter `Runtime.running()` while executing work; leaving the context closes active work and releases the database for another worker.
 
-Add Landing to your application's environment with `uv add "landing==0.1.2"`. The isolated `uv tool install` path provides the CLI; embedding uses the package in your application's environment. Configure the model as described in [Configuration](configuration.md#model).
+Add Landing to your application's environment with `uv add "landing==0.2.0"`. The isolated `uv tool install` path provides the CLI; embedding uses the package in your application's environment. Configure the model as described in [Configuration](configuration.md#model).
 
 ## Delegate an action
 
