@@ -1,5 +1,16 @@
 """Default behavior; repository instructions and skills supply project standards."""
 
+from string import Template
+
+
+def render(*templates: str, **values: object) -> str:
+    """Render owned templates once; substituted instructions and evidence stay literal."""
+    blocks = (Template(template).substitute(values) for template in templates)
+    return "\n\n".join(filter(None, blocks))
+
+
+SYSTEM = "$common\n\n$mode\n\n$instructions\n\nTask workspace: $workspace\n\n$repository"
+
 COMMON = """You are Landing, helping people with development work.
 Answer in direct English. Include evidence and limitations only when they affect the person's next step; keep investigation details in execution history. Omit praise, diff recaps and routine successful checks unless requested.
 Follow the delegated scope, exclusions, supplied workspace and root AGENTS.md; read scoped instructions along affected paths. Use prepared evidence directly. Fetch only the discussion, log or template needed for an unresolved question, and reuse it. Read the applicable contribution template when preparing an authorized issue or PR; do not reapply the caller's trigger filters.

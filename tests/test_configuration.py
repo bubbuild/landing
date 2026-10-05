@@ -108,3 +108,45 @@ def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch,
     assert json.loads(capsys.readouterr().out) == action
     assert main(["--db", str(explicit), "action", "list", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == []
+
+
+@pytest.mark.parametrize("source", ["environment", "yaml"])
+def test_cli_uses_selected_mode_instructions(tmp_path, monkeypatch, model, capsys, source):
+    from tests.test_repository import report_reference
+
+    modes = {
+        "explainer": {"instructions": "Report reference=approved. Preserve ${release_tag} literally."},
+        "fixer": {"instructions": "Report reference=repair."},
+    }
+    if source == "environment":
+        monkeypatch.setenv("LANDING_MODES", json.dumps(modes))
+    else:
+        config = tmp_path / "landing.yml"
+        config.write_text(json.dumps({"modes": modes}))
+        monkeypatch.setenv("LANDING_CONFIG", str(config))
+
+    async def report(**kwargs):
+        reply = (await report_reference(**kwargs)).choices[0].message.content
+        if "${release_tag}" in str(kwargs["messages"]):
+            reply += "; ${release_tag}"
+        return completion(reply)
+
+    responses, _ = model
+    responses.extend([report, report])
+    for command, expected in (
+        ("explain", "Deployment reference: approved; ${release_tag}"),
+        ("fix", "Deployment reference: repair"),
+    ):
+        assert (
+            main([
+                "--db",
+                str(tmp_path / f"{command}.sqlite3"),
+                command,
+                "Identify deployment.",
+                "--workspace",
+                str(tmp_path),
+                "--json",
+            ])
+            == 0
+        )
+        assert json.loads(capsys.readouterr().out)["result"] == expected

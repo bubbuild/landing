@@ -46,7 +46,7 @@ Discovery precedence is workspace `.agents/skills`, explicit roots, configured r
 
 ## Mode capabilities
 
-YAML `modes` or JSON `LANDING_MODES` selects tools and skills independently for each mode:
+YAML `modes` or JSON `LANDING_MODES` configures additional instructions, tools and skills independently for each mode:
 
 ```yaml
 modes:
@@ -57,12 +57,17 @@ modes:
     allowed_tools: [spill.read, fs.read, fs.write, fs.edit, bash, skill]
     allowed_skills: [friendly-python, piglet]
   gatekeeper:
+    instructions: |
+      Review supported user-visible behavior.
+      Use $landing-review for project-specific standards.
     allowed_tools: [spill.read, fs.read, bash, skill, decide]
     allowed_skills: [landing-review]
   explainer:
     allowed_tools: [spill.read, fs.read, skill]
     allowed_skills: [documentation-writer]
 ```
+
+`instructions` adds literal text to the selected mode's default guidance; it does not replace that guidance or grant capabilities. Omit it or use an empty string for defaults. Use existing `LANDING_CONFIG` to manage these settings; no separate prompt file is required. Keep shared project rules in `AGENTS.md` and reusable methods in prepared skills. Task evidence and instructions preserve literal `$` expressions; they are not evaluated as templates.
 
 Omitted or `null` lists are unrestricted; `[]` disables the collection. Tools accept native names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive and must exist in prepared roots. Include `skill` for tool-loaded skills, `spill.read` for oversized output, `decide` for gate recommendations, and `no_update` for quiet issuer completion. GitHub publication normally needs `bash` and authenticated gh; inline reply confirmation also needs `confirm_reply`.
 

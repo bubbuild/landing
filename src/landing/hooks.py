@@ -10,7 +10,8 @@ from bub.utils import workspace_from_state
 from pydantic import ValidationError
 
 from landing.database import open_database
-from landing.prompts import COMMON, MODES
+from landing.prompts import COMMON, MODES, SYSTEM, render
+from landing.settings import ModeSettings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
 
@@ -45,11 +46,14 @@ class LandingHooks(BuiltinImpl):
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
         workspace = workspace_from_state(state)
-        return (
-            COMMON
-            + MODES[state.get("landing_mode", "explainer")]
-            + f"\nTask workspace: {workspace}\n"
-            + self._read_agents_file(state)
+        selected = state.get("landing_mode", "explainer")
+        return render(
+            SYSTEM,
+            common=COMMON,
+            mode=MODES[selected],
+            instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
+            workspace=workspace,
+            repository=self._read_agents_file(state),
         )
 
     @hookimpl

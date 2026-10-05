@@ -11,9 +11,10 @@ from landing.models import Mode
 
 
 class ModeSettings(BaseModel):
-    """Native SDK capabilities available to a mode; None leaves them unrestricted."""
+    """Additional mode instructions and native SDK capability limits."""
 
     model_config = ConfigDict(extra="forbid")
+    instructions: str = ""
     allowed_tools: list[str] | None = None
     allowed_skills: list[str] | None = None
 

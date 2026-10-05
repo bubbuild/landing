@@ -22,6 +22,7 @@ from landing.commands import COMMANDS
 from landing.hooks import install_hooks
 from landing.mcp import MCPChannel, connected_tools
 from landing.models import Action, ActionRequest, Decision
+from landing.prompts import render
 from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -49,11 +50,16 @@ def checks_failed(checks: list[dict]) -> bool:
 
 
 def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
-    prompt = request.instruction or "Carry out the delegated work using the supplied evidence."
-    for item in request.input:
-        prompt += "\n\n" + (item.text if item.type == "text" else f"{item.name}:\n{item.content}")
-    if checks:
-        prompt += "\n\nValidation results:\n" + json.dumps(checks)
+    evidence = "\n\n".join(
+        item.text if item.type == "text" else render("$name:\n$content", name=item.name, content=item.content)
+        for item in request.input
+    )
+    prompt = render(
+        "$instruction\n\n$evidence\n\n$checks",
+        instruction=request.instruction or "Carry out the delegated work using the supplied evidence.",
+        evidence=evidence,
+        checks=render("Validation results:\n$results", results=json.dumps(checks)) if checks else "",
+    )
     return [{"type": "text", "text": prompt}]
 
 
