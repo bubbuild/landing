@@ -9,12 +9,6 @@ Review the affected user workflow on the current candidate. Use the gatekeeper's
 
 Trace the actual caller through admission, execution, and the result the person receives. An admission receipt is not completion; inspect the action's final status and result. For shared behavior changes, inspect the equivalent CLI, HTTP, SDK, or message path before reporting a mismatch. Do not require identical internals or port a fix to an unaffected path. CLI review exit codes and advisory GitHub decisions intentionally differ; direct SDK streams leave rendering and delivery to the host.
 
-## Use candidate evidence
-
-Establish check coverage from the recorded checkout revision and execution environment, not the event's trigger commit. A merge checkout can cover its included candidate head. Follow the workflow's actual preparation: changing workspaces does not reload an installed runtime. Reuse covered checks and settled conclusions; inspect changed behavior and unresolved findings.
-
-Probe the unchanged candidate through the affected supported entry point. Confirm which installed package runs and whether the request reaches the operation; invalid arguments and ambient configuration can invalidate a counterexample. A finding identifies the supported trigger, observed consequence, and owning repair location. Keep detailed probes in execution history and the verdict brief. Missing evidence matters when it leaves a concrete acceptance condition unresolved.
-
 ## Check relevant contracts
 
 - Lifecycle changes preserve cancellation, shutdown interruption, queued recovery, idempotency, and one worker per database. Exercise released SQLite data when assessing upgrades; fresh databases do not establish history preservation. Resetting model history must not erase action records. Container recovery uses the actual Litestream replica or volume backup being claimed.
