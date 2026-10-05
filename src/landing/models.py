@@ -61,9 +61,9 @@ class Action(Model):
     mode: Mode
     instruction: str | None
     workspace: str | None
-    status: Status
+    status: Status = Field(description="Delegated task execution status; not human acceptance.")
     result: str | None = None
-    decision: Decision | None = None
+    decision: Decision | None = Field(default=None, description="Review recommendation; not human approval.")
     error: dict[str, str] | None = None
     retry_of: str | None = None
     created_at: str

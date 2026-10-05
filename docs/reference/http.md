@@ -53,9 +53,9 @@ Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"
 | Field | Contract |
 | --- | --- |
 | `id`, `mode`, `instruction`, `workspace` | Identity and delegated work; IDs are opaque. |
-| `status` | `queued`, `running`, `completed`, `failed`, `cancelled`, or `interrupted`. |
+| `status` | Execution status: `queued`, `running`, `completed`, `failed`, `cancelled`, or `interrupted`. |
 | `result` | Text or null; failed actions can retain an answer. |
-| `decision` | Gatekeeper `allow`, `block`, or `inconclusive`; null for other modes. A missing gatekeeper decision is inconclusive. |
+| `decision` | Gatekeeper recommendation: `allow`, `block`, or `inconclusive`; null for other modes. A missing gatekeeper decision is inconclusive. |
 | `error` | Error details or null. |
 | `retry_of` | Original action ID or null. |
 | `created_at`, `updated_at` | Record timestamps. |

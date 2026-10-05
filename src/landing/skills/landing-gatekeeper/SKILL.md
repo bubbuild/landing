@@ -30,7 +30,7 @@ For each finding, describe the supported trigger and observable consequence, the
 
 In an existing finding thread, answer its current question using the relevant evidence. A thread reply does not need a new review overview. Recheck related behavior only where the new change affects the conclusion.
 
-Record the decision with `decide` before completing the requested delivery: `allow`, `block` or `inconclusive`. `allow` recommends the inspected revision; `inconclusive` requires a concrete, material acceptance condition that remains unresolved. Return the requested answer, or point to a published reply that has already been read back.
+Record the review recommendation with `decide` before completing the requested delivery: `allow`, `block` or `inconclusive`. `allow` recommends the inspected revision; `inconclusive` requires a concrete, material acceptance condition that remains unresolved. Return the requested answer, or point to a published reply that has already been read back.
 
 ## Examples
 

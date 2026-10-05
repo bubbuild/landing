@@ -31,7 +31,7 @@ from landing.tasks import Tasks
 
 @tool(context=True)
 def decide(decision: Decision, *, context: ToolContext) -> str:
-    """Record whether the candidate can proceed: allow, block, or inconclusive."""
+    """Record a review recommendation: allow, block, or inconclusive."""
     context.state["landing_decision"] = decision
     return decision
 

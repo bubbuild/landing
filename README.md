@@ -1,15 +1,15 @@
 # Landing
 
-Landing explains CI failures, fixes delegated problems, triages issues, and publishes reviews where your team works. It uses your existing tools and checks.
+Landing explains CI failures, fixes delegated problems, triages issues, and publishes review feedback where your team works. It uses your existing tools and checks.
 
 With Landing, you own and control the workflow. Choose the model, prepare the execution environment, and adapt instructions and skills to your project. Run it in CI, locally, or as a service. Landing is open source under Apache-2.0 and requires no hosted Landing account.
 
 ## Start in CI
 
-[Set up your first PR review](https://getlanding.dev/get-started/). Configure a model, add the GitHub Action to your prepared workflow, and open a PR. Landing publishes a native review with code comments when it finds an actionable problem. Your native checks and team decide what to accept.
+[Set up your first PR review](https://getlanding.dev/get-started/). Configure a model, add the GitHub Action to your prepared workflow, and open a PR. Landing publishes review feedback with code comments for actionable findings. Your team decides what to accept using that feedback and independent checks.
 
 ```text
-Configure CI -> Open a PR -> Read the review -> Decide what to accept
+Configure CI -> Open a PR -> Read the feedback -> Decide what to accept
 ```
 
 Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and grant the review job `contents: read` and `pull-requests: write`. After checkout and successful native checks, add this step to your existing workflow:
