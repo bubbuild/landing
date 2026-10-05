@@ -1,11 +1,34 @@
-# Project instructions
+# AGENTS.md
 
-Use English in code, documentation, commits, and GitHub contributions. Write direct, present-tense prose; keep paragraphs and commands on one line unless their format requires newlines.
+Landing delegates development work through CLI, HTTP, Python, and a GitHub Action. Explain, triage, fix, and review select four modes in one agent. SQLite stores accepted work and model history; users prepare their own execution environment and publishing identity.
 
-Read the affected contract before changing it. CLI, HTTP, SDK, and CI share action semantics. Use one Bub 0.5.0 SDK runtime with native configuration, state, hooks, tools, and skill discovery; do not add external plugin discovery or a second runtime.
+## Development
 
-For Python work, use friendly-python and piglet. For documentation structure and prose, use documentation-writer and humanizer. For review, load `.agents/skills/landing-review/SKILL.md`; use relevant evidence rather than exhausting a checklist.
+Use Python 3.12 or later and the repository's uv environment. Install with `uv sync --frozen` from the repository root. For implementation changes, run:
 
-For changes, run affected behavior tests, `uv run ty check`, `uv run pre-commit run --all-files`, and strict docs builds when applicable. Follow `docs/development.md` for test philosophy and dogfooding. Reviews reuse native checks for their recorded revision and environment; focused checks resolve remaining questions.
+```bash
+uv run ty check
+uv run pre-commit run --all-files
+```
 
-GitHub fixes use task-named branches and the applicable contribution template. Verify before publishing. With a workflow token, start candidate CI explicitly: `gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA`. Main records its actual checkout revision. Publish native reviews with inline findings, reply in the original thread, and do not merge or change credentials.
+Run affected behavior tests, for example `uv run python -m pytest tests/test_cli.py`. Run `make docs-test` for documentation changes and `uv build` for packaging changes. [Develop and dogfood](docs/development.md) covers the CI matrix, container recovery, and workflow preparation. Correct environment and probe mistakes before treating a failure as a product defect.
+
+## Design
+
+Read the affected contract in `docs/reference/`. Keep action semantics consistent across entry points while preserving intentional transport and delivery differences. Use one Bub 0.5.0 SDK runtime with native state, hooks, tools, and skill discovery. Declare owned tools with `@tool`, adapter commands with Typer, and component settings with Pydantic Settings. Integrations own their configuration and platform rules; the prepared environment owns extension installation.
+
+Repair the owning layer. Prefer public upstream APIs, existing dependencies, and the standard library. Extract helpers only for cohesive responsibilities with matching contracts and reasons to change. Avoid forwarding wrappers, unnecessary adapter splits, and compatibility branches for unreleased intermediate designs. Preserve released public behavior and stored data unless the task authorizes a change. Keep patches focused and lockfile changes intentional.
+
+## Tests
+
+Tests verify supported user behavior or demonstrated mistakes likely to recur; they should survive an implementation rewrite. Avoid assertions on helper structure, internal fields, prompt wording, and upstream argument translation. A changed file does not itself require a new test. Use the smallest counterexample that reaches the claimed operation. Local fixtures do not establish real-provider compatibility, external delivery, or backup recovery. Reuse applicable recorded checks; repeat them for changed behavior or unresolved questions. See [test philosophy](docs/development.md#test-what-people-observe).
+
+## Writing and instructions
+
+Use English in repository files and GitHub contributions. Write direct, present-tense prose; keep paragraphs and commands on one line unless their format requires newlines. Comments explain non-obvious intent. Public documentation describes user-visible behavior; implementation details belong in development and dogfood documentation.
+
+Use friendly-python and piglet for Python; documentation-writer and humanizer for documentation. Keep shared agent behavior in default prompts, project rules here, and review methods in [.agents/skills/landing-review/SKILL.md](.agents/skills/landing-review/SKILL.md). Keep reusable system prompt prefixes stable and task evidence in task inputs. Avoid duplicating instructions.
+
+## Contributions
+
+Use task-named branches, Conventional Commit titles, and the applicable contribution template. Verify before publishing and report actual results. With a workflow token, start candidate CI explicitly: `gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA`. For review, load the Landing review skill and reply in the original discussion. Do not merge or change credentials without explicit delegation. Keep feedback short and useful; maintainers own contributor relationships and decisions.
