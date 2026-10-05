@@ -36,7 +36,7 @@ REVIEW_GUIDANCE = "Publish a native GitHub COMMENT review on PR #$number; APPROV
 
 AUTOMATIC_GUIDANCE = "This is automatic follow-up; no_update is available when there is no useful change."
 
-CONVERSATION_GUIDANCE = "Reply to issue or PR #$number with the result and publication links. Call confirm_reply with the returned conversation comment ID to read back the published body."
+CONVERSATION_GUIDANCE = "Answer the delegation in issue or PR #$number. Link a repair or supporting evidence when needed; do not repeat an explanation already published in the linked issue, PR or review. Call confirm_reply with the returned conversation comment ID to read back the published body."
 
 
 class GitHubEnvironment(BaseSettings):
