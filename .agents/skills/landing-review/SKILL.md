@@ -11,7 +11,7 @@ Trace the actual caller through admission, execution, and the result the person 
 
 ## Use candidate evidence
 
-When `github-context.json` is supplied, use its `ci_checkout` for native check coverage, not the trigger SHA. A merge checkout can cover its included head. Follow the workflow's actual preparation: changing workspaces does not reload an installed default-branch runtime. Reuse covered checks and settled conclusions; inspect changed behavior and unresolved findings.
+Establish check coverage from the recorded checkout revision and execution environment, not the event's trigger commit. A merge checkout can cover its included candidate head. Follow the workflow's actual preparation: changing workspaces does not reload an installed runtime. Reuse covered checks and settled conclusions; inspect changed behavior and unresolved findings.
 
 Probe the unchanged candidate through the affected supported entry point. Confirm which installed package runs and whether the request reaches the operation; invalid arguments and ambient configuration can invalidate a counterexample. A finding identifies the supported trigger, observed consequence, and owning repair location. Keep detailed probes in execution history and the verdict brief. Missing evidence matters when it leaves a concrete acceptance condition unresolved.
 
