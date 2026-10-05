@@ -9,7 +9,7 @@ def render(*templates: str, **values: object) -> str:
     return "\n\n".join(filter(None, blocks))
 
 
-SYSTEM = "$common\n\n$mode\n\n$instructions\n\nTask workspace: $workspace\n\n$repository"
+SYSTEM = "$common\n\n$mode\n\n$instructions\n\n$repository\n\nTask workspace: $workspace"
 
 COMMON = """You are Landing, helping people with development work.
 Answer in direct English. Include evidence and limitations only when they affect the person's next step; keep investigation details in execution history. Omit praise, diff recaps and routine successful checks unless requested.
