@@ -1,6 +1,6 @@
 # HTTP reference
 
-The service accepts the CLI's action contract. Admission persists queued work; execution follows asynchronously. Provider webhook signatures and payload translation belong to the caller's adapter.
+Submit an action, then read its record for progress and results. The service saves accepted work before execution and uses the same requests and results as the CLI. When connecting a platform webhook, verify its signature and translate its payload to the request below before submitting it.
 
 ## Authorization and admission
 

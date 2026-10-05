@@ -6,7 +6,7 @@ landing [--db PATH | --server URL] [--github-repository OWNER/REPO] [--skill-dir
 
 Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. Install the CLI with `uv tool install "landing==0.1.2"`; from a Landing source checkout, use `uv run landing`. See [Local use](../guides/local.md) for a task example.
 
-`--help` and `-h` show options; `--version` prints the installed version. Typer supplies `--install-completion` and `--show-completion`. Commands are noninteractive, write results to stdout, and diagnostics to stderr. `--json` returns structured records.
+`--help` and `-h` show options; `--version` prints the installed version. Use `--install-completion` to install shell completion or `--show-completion` to print it. Commands are noninteractive, write results to stdout, and diagnostics to stderr. `--json` returns structured records.
 
 ## Global options
 
@@ -80,13 +80,13 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 landing --db landing.sqlite3 github event --repository example/service --event event.json --delivery-key comment:123
 ```
 
-`github event` admits and routes a native event through the same adapter as the Action. It uses the prepared gh identity and current workspace, returns an action record as JSON, and treats review decisions as advisory. `--help` lists its typed options. Use repeatable `--check` and `--upstream-workflow` options for local calls. An unrelated or unauthorized event exits successfully without an action record.
+`github event` reads a GitHub event, checks caller authority, and executes the selected command. It uses the prepared gh identity and current workspace, returns an action record as JSON, and treats review decisions as advisory. `--help` lists its options. Use repeatable `--check` and `--upstream-workflow` options for local calls. An unrelated or unauthorized event exits successfully without an action record.
 
 In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT_*` environment. Multiline `INPUT_CHECKS` and `INPUT_UPSTREAM_WORKFLOW` supply checks and allowed workflow names. Explicit options take precedence. The database uses `--db`, then `INPUT_DATABASE`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`. Outside a workflow, supply `--delivery-key`. Native output and summary files receive the same values as the composite Action.
 
 ## GitHub Action
 
-`bubbuild/landing@0.1.2` runs the same event adapter. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
+`bubbuild/landing@0.1.2` executes work from GitHub workflow events. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
 
 | Input | Contract |
 | --- | --- |

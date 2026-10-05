@@ -20,7 +20,6 @@ Replace the ID with the affected action. Start with the observed failure, then c
 | Work continues after Ctrl-C | Remote waiting stops independently; use `action cancel` to stop the task. |
 | GitHub task skipped | Check caller permission, trust policy, explicit command prefix, and upstream workflow source. |
 | Review cancelled | Inspect the current PR head and `github.review_stopped`; an unverifiable head also stops tools. |
-| Duty timed out after a push | Inspect the last tool and native timeout; finish with candidate and pending-check links rather than waiting for the current feedback job. |
 | Required publication failed | Inspect gh authorization and the requested destination; reuse the same database and delivery key when retrying delivery. |
 | Advice is wrong despite passing checks | Record the concrete mistake in the work item and improve guidance, tools, or code where it belongs. |
 | Restored action is interrupted | Inspect its history and workspace before retrying. |

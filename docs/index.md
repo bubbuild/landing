@@ -2,7 +2,7 @@
 
 Landing helps your team act on engineering problems: explain a failure, make it actionable, delegate a fix, or review a candidate. It works with the tools and checks you already use.
 
-Start with [your first PR review](get-started.md) to use Landing in GitHub Actions, or [run a local task](guides/local.md) from the CLI. Both paths use the same commands and action records. GitHub is an optional adapter; other CI systems can call the CLI, and a shared service exposes an HTTP interface.
+Start with [your first PR review](get-started.md) to use Landing in GitHub Actions, or [run a local task](guides/local.md) from the CLI. Both paths use the same commands and action records. Use the CLI in other CI systems or connect callers to a shared HTTP service.
 
 You control the model, execution environment, instructions, and tools. Landing is open source, and the documented paths require no hosted Landing account. Read [Make Landing work for you](make-it-yours.md) to adapt it to your team.
 

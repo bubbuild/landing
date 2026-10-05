@@ -109,9 +109,8 @@ def test_once_health_checks_worker_and_database_without_auth(tmp_path):
         assert client.portal is not None
         client.portal.call(app.state.worker.cancel)
         deadline = time.monotonic() + 5
-        while not app.state.worker.done() and time.monotonic() < deadline:
+        while client.get("/up").status_code == 200 and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert app.state.worker.done()
         assert client.get("/up").status_code == 503
         assert client.get("/healthz").status_code == 200
         response = client.post(

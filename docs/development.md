@@ -25,6 +25,10 @@ Avoid tests for helper structure, internal event positions, database rows, or up
 
 The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
 
+## Runtime architecture
+
+CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. `LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Bub's lifespan owns one SQLAlchemy Core Engine; task and tape adapters use scoped connections, and action transitions record their events in the same transaction. Task records remain independent of model history.
+
 ## Run the feedback loop
 
 Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step: failures emit a warning and retain their task records without failing native CI. Environment preparation outside the Action remains strict, as do explicit delegations. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
@@ -39,6 +43,18 @@ Issue or failure -> Delegated work -> Candidate PR -> Native checks
 ```
 
 The composite Action is `action.yml`. Main and duty prepare project tools and skills, then call `uses: ./` once with built-in admission. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty uses the default-branch checkout for its prepared environment, admits explicit commands or trusted release events, and queues delegations separately. Admission protects delegated agent work; native workflow policy governs the prepared environment. [GitHub integration](guides/github.md) explains identity, trust, and publication.
+
+Configure this repository's workflows with these GitHub variables and secrets:
+
+| Setting | Purpose |
+| --- | --- |
+| Variable `LANDING_MODEL` | Model identifier; unset disables feedback. |
+| Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
+| Secret `LANDING_API_KEY` | Provider key. |
+| Variable `LANDING_TRUST` | Caller policy, default `repository`. |
+| Secret `LANDING_ADMISSION_TOKEN` | Optional admission credential; organization owner checks need Members read. |
+| Secret `LANDING_GITHUB_TOKEN` | Publication token, default workflow token. |
+| Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
 
 For a workflow-token candidate, start Main explicitly using the repository procedure:
 

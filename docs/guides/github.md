@@ -4,11 +4,11 @@ Prepare a trusted checkout, authenticated gh in PATH, project dependencies, mode
 
 ## Choose the publishing identity
 
-Gh credentials determine who publishes. Landing verifies required reviews and replies against that publisher's immutable GitHub account ID. Git's author and committer settings determine commit attribution. Prepare both before delegating a write. The `/landing` prefix and delivery markers identify commands and deliveries, not accounts.
+Gh credentials determine who publishes. Landing verifies that required reviews and replies come from that account. Git's author and committer settings determine commit attribution. Prepare both before delegating a write. The `/landing` prefix and delivery markers identify commands and deliveries, not accounts.
 
-The bundled workflows publish with `github-actions[bot]` by default. For another account, pass its token or prepared gh login and use its actual Git identity. For an organization, use an organization-owned GitHub App or authorized machine account; organizations cannot act as users. The official [App-token Action](https://github.com/actions/create-github-app-token#configure-git-cli-for-an-apps-bot-user) shows token and bot identity setup.
+With the workflow token, GitHub publishes as `github-actions[bot]`. For another account, pass its token or prepared gh login and use its actual Git identity. For an organization, use an organization-owned GitHub App or authorized machine account; organizations cannot act as users. The official [App-token Action](https://github.com/actions/create-github-app-token#configure-git-cli-for-an-apps-bot-user) shows token and bot identity setup.
 
-Use existing Git configuration or the standard `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables. Run `gh auth setup-git` when authorizing pushes. Landing preserves caller-provided identity and does not change authentication. Bundled-workflow overrides are listed in [Configuration](../reference/configuration.md#github-workflows-and-runner).
+Use existing Git configuration or the standard `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables. Run `gh auth setup-git` when authorizing pushes. Landing preserves caller-provided identity and does not change authentication. See [Configuration](../reference/configuration.md#github-workflows-and-runner) for runner credentials.
 
 ## Follow repository conventions
 
@@ -28,9 +28,9 @@ In Actions, Landing supplies the trigger, target, and relevant revisions. The ag
 
 ## Publish native results
 
-PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested `commit_id`. Findings use verified diff `path`, `line`, and `side`; ranges add `start_line` and `start_side`. A clean review needs no code comments. The default event is `COMMENT`; approvals and change requests require explicit authorization. The gate recommendation remains separate.
+PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested commit, with findings attached to the affected lines. A clean review needs no code comments. Reviews comment by default; approvals and change requests require explicit authorization. The gate recommendation remains separate.
 
-Explicit delegations require a reply to their selected issue or PR. Inline follow-ups use the [review-comment replies API](https://docs.github.com/en/rest/pulls/comments#create-a-reply-for-a-review-comment) in the original thread. The reply carries the delivery marker, or the agent records its returned native comment ID with `confirm_reply`. That tool verifies a new reply at the exact delegated PR and thread; completion verifies it again. Include `confirm_reply` when restricting tools for these tasks.
+Explicit delegations require a reply to their selected issue or PR; inline follow-ups reply in the original review thread. Landing verifies that the prepared identity published to the requested destination before reporting completion. Include `confirm_reply` when restricting tools for inline follow-ups.
 
 Automatic issuer follow-up publishes only useful new evidence, changed conditions, or verified progress. Unchanged conditions complete quietly through `no_update`, retaining the reason in SQLite. Failed tool execution cannot waive required publication. Explicit questions still require replies.
 

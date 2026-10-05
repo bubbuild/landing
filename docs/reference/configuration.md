@@ -66,7 +66,7 @@ modes:
 
 Omitted or `null` lists are unrestricted; `[]` disables the collection. Tools accept native names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive and must exist in prepared roots. Include `skill` for tool-loaded skills, `spill.read` for oversized output, `decide` for gate recommendations, and `no_update` for quiet issuer completion. GitHub publication normally needs `bash` and authenticated gh; inline reply confirmation also needs `confirm_reply`.
 
-Per-call SDK selections intersect with mode limits and cannot expand them. Settings apply to CLI, HTTP, SDK, hooks, and CI. Comma commands select modes outside the model loop without adding capabilities. Tool filtering is not a sandbox: shell or delegation tools may expose broader authority.
+Per-call SDK selections intersect with mode limits and cannot expand them. Settings apply to CLI, HTTP, SDK, hooks, and CI. `,mode` selects a mode without calling the model or adding capabilities. Tool filtering is not a sandbox: shell or delegation tools may expose broader authority.
 
 ## MCP servers
 
@@ -83,7 +83,7 @@ Per-call SDK selections intersect with mode limits and cannot expand them. Setti
 }
 ```
 
-The JSON format and transports come from bub-mcp and FastMCP. `.agents/mcp.json` is Landing's file convention; it does not load Agent Plugins. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
+Use the `mcpServers` JSON format shown above. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
 
 Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `allowed_tools` and per-call limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
 
@@ -102,18 +102,6 @@ CLI and service settings read their own fields from environment, Landing YAML an
 Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`.
 
 ## GitHub workflows and runner
-
-These settings apply to Landing's bundled workflows; a caller's own workflow prepares its environment explicitly.
-
-| Setting | Contract |
-| --- | --- |
-| Variable `LANDING_MODEL` | Model identifier. |
-| Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
-| Secret `LANDING_API_KEY` | Provider key. |
-| Variable `LANDING_TRUST` | Caller policy for the project workflows; defaults to `repository`. |
-| Secret `LANDING_ADMISSION_TOKEN` | Optional read-only admission credential; organization owner checks need Members read. |
-| Secret `LANDING_GITHUB_TOKEN` | Publication token; defaults to the workflow token. |
-| Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
 
 The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
 

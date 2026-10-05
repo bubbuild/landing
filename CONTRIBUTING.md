@@ -14,7 +14,7 @@ AI-assisted contributions are welcome. Understand and take responsibility for th
 
 ## Improve the documentation
 
-Pages live in `docs/`, with navigation in `zensical.toml`. Use English, direct prose, and examples that match the current interface. Tutorials lead to a working result, guides complete a task, reference defines contracts, and explanation describes the method. Keep parameter details in reference.
+Pages live in `docs/`, with navigation in `zensical.toml`. Use English, direct prose, and examples that match the current interface. Tutorials lead to a working result, guides complete a task, reference defines contracts, and explanation describes the method. Describe user-visible behavior; keep implementation details in development and dogfood documentation, and parameter details in reference.
 
 ```bash
 make docs

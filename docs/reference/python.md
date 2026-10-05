@@ -1,6 +1,6 @@
 # Python API
 
-Embed Landing with the same action contract and executor used by CLI and HTTP. The caller owns the database and runtime lifecycle; enter `Runtime.running()` while executing work.
+Delegate actions from Python with the same requests and results as CLI and HTTP. Enter `Runtime.running()` while executing work; leaving the context closes active work and releases the database for another worker.
 
 Add Landing to your application's environment with `uv add "landing==0.1.2"`. The isolated `uv tool install` path provides the CLI; embedding uses the package in your application's environment. Configure the model as described in [Configuration](configuration.md#model).
 
@@ -29,7 +29,7 @@ Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered nam
 
 ## Streaming SDK
 
-`landing.agent.run_stream()` accepts native Bub 0.5.0 options: `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
+`landing.agent.run_stream()` accepts `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
 
 ```python
 from contextlib import aclosing
@@ -57,11 +57,11 @@ Await the stream, consume it fully, and close it when leaving early. Closing unf
 
 Model failure logs retain available call metadata and validation error types without argument contents. These diagnostics do not establish the provider as the cause.
 
-The four commands and `mode` are native agent tools. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task. Selection persists in the workspace tape and is isolated by session. Content parts stay evidence rather than dispatching commands. Explicit `state` bypasses hook-based state loading. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
+Use `,triage`, `,fix`, `,review`, or `,explain` to delegate work. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task or calling the model. Selection survives restarts and is isolated by workspace and session. Content parts stay evidence rather than dispatching commands. Explicit `state` takes precedence over saved state. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
 
 ## Hook integration
 
-Pass an existing Bub framework to use the same Landing hooks and agent alongside host hooks:
+Pass an existing Bub framework to handle Landing commands through your application's message pipeline:
 
 ```python
 from pathlib import Path
@@ -81,21 +81,19 @@ async def handle():
         ))
 ```
 
-The message pipeline retains state, prompt, rendering, and dispatch hooks. Direct SDK calls return events without rendering or dispatching. Both paths share durable tasks and execution. The runtime binds the task workspace; host-provided native environments remain authoritative. Outbound channels belong to the host.
+Your application's hooks continue to handle state, prompts, rendering, and delivery. Direct SDK calls return events for your application to display. Both paths save action records and use the selected task workspace unless the host provides its own execution environment.
 
 ## Skills and additional tools
 
-`Runtime(path, skill_dirs=[...])` and `create_app(path, skill_dirs=[...])` add trusted roots with native discovery, skill loading, and `$skill-name` expansion. [Configuration](configuration.md#skills) defines precedence.
+`Runtime(path, skill_dirs=[...])` and `create_app(path, skill_dirs=[...])` add trusted skill directories. Use `$skill-name` in instructions to select a prepared skill. [Configuration](configuration.md#skills) defines precedence.
 
 Pass Bub `Tool` instances with `Runtime(path, tools=[...])`, then select them per mode. Authorization belongs in each tool and its execution environment.
 
-Prepared [MCP servers](../guides/mcp.md) bind tools to this same agent for each task and close afterward. `Runtime.command` uses ordinary MCP configuration; no plugin discovery or separate agent loop is needed.
+Configured [MCP servers](../guides/mcp.md) make their tools available during work, subject to mode and per-call limits. Landing opens and closes these connections automatically.
 
-## Runtime design
+## History and recovery
 
-All four modes share one Bub 0.5.0 agent loop. One hook provider binds native defaults, business state, and storage through Bub's SDK hook runtime in both standalone and embedded use. Host hooks remain available; Landing replaces the standard built-in provider. Standalone Landing does not discover external plugins or packaged channel skills.
-
-Bub's lifespan opens and closes one SQLAlchemy Engine for the SQLite database. The task sidecar owns `actions` and `action_events`; tape storage reuses Bub's query and async adapter. Each storage operation uses a scoped connection, and action transitions record their events in the same transaction. Resetting model history does not remove task records; completed tasks do not replay. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
+Action records survive restarts. Resetting model history does not remove them; completed tasks do not replay automatically. Inspect interrupted work before retrying. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
 
 ## Public objects
 
