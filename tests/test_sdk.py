@@ -24,7 +24,13 @@ async def output(stream):
 
 
 @pytest.mark.parametrize(
-    ("integration", "command", "mode"), [("sdk", "explain", "explainer"), ("hooks", "fix", "fixer")]
+    ("integration", "command", "mode"),
+    [
+        ("sdk", "explain", "explainer"),
+        ("hooks", "fix", "fixer"),
+        ("sdk", "triage", "issuer"),
+        ("hooks", "review", "gatekeeper"),
+    ],
 )
 def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integration):
     from tests.test_repository import report_reference, write_skill
@@ -197,7 +203,14 @@ def test_closing_sdk_stream_cancels_durable_work(tmp_path, model):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("limits", [{"allowed_tools": []}, {"excluded_tools": ["fs.write"]}])
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"allowed_tools": []},
+        {"excluded_tools": ["fs.write"]},
+        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
+    ],
+)
 def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch, limits):
     monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
     responses, _ = model
@@ -224,7 +237,14 @@ def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch,
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("limits", [{"allowed_tools": ["fs.read"]}, {"excluded_tools": ["fs.write"]}])
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"allowed_tools": ["fs.read"]},
+        {"excluded_tools": ["fs.write"]},
+        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
+    ],
+)
 def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypatch, limits):
     monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
     responses, _ = model
@@ -245,28 +265,25 @@ def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypa
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("selection", ["allow", "exclude"])
+@pytest.mark.parametrize("selection", ["allow", "exclude", "overlap"])
 def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch, selection):
     from tests.test_repository import report_reference, write_skill
 
     roots = tmp_path / ".agents/skills"
     write_skill(roots, "review-policy", "review")
     write_skill(roots, "repair-policy", "repair")
-    monkeypatch.setenv(
-        "LANDING_MODES",
-        json.dumps({
-            "gatekeeper": (
-                {"allowed_skills": ["Review-Policy"]}
-                if selection == "allow"
-                else {"excluded_skills": ["Repair-Policy"]}
-            ),
-            "fixer": (
-                {"allowed_skills": ["repair-policy"]}
-                if selection == "allow"
-                else {"excluded_skills": ["review-policy"]}
-            ),
-        }),
-    )
+    modes = {}
+    for mode, allowed, excluded in (
+        ("gatekeeper", "Review-Policy", "Repair-Policy"),
+        ("fixer", "repair-policy", "review-policy"),
+    ):
+        limits = {}
+        if selection != "exclude":
+            limits["allowed_skills"] = [allowed, excluded] if selection == "overlap" else [allowed]
+        if selection != "allow":
+            limits["excluded_skills"] = [excluded]
+        modes[mode] = limits
+    monkeypatch.setenv("LANDING_MODES", json.dumps(modes))
     responses, _ = model
     responses.extend([
         completion(tool="skill", arguments={"name": "review-policy"}),
