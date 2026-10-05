@@ -13,6 +13,7 @@ from bub import BubFramework, ensure_config
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.errors import BubError, ErrorKind
+from bub.skills import discover_skills
 from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
 from bub.tools import REGISTRY, Tool, ToolContext, tool
 from bub.turn import TurnState
@@ -212,7 +213,6 @@ class Runtime:
         invocation = self.tasks.event_data(action_id, "sdk.invocation") or {}
         session_id = invocation.pop("session_id", action_id)
         supplied_prompt = invocation.pop("prompt", None)
-        self.capabilities(request.mode, invocation)
         if state is None:
             state = await self.framework.build_state({"_runtime_agent": self.agent.bub}, session_id)
         state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
@@ -223,7 +223,13 @@ class Runtime:
         state.pop("landing_tool_failed", None)
         state.pop("allowed_skills", None)
         # Actions are serialized; discovery and the native skill tool share these per-turn SDK roots.
-        self.agent.bub.skill_dirs = (workspace / ".agents/skills", *self.skill_dirs, Path.home() / ".agents/skills")
+        self.agent.bub.skill_dirs = (
+            workspace / ".agents/skills",
+            *self.skill_dirs,
+            Path.home() / ".agents/skills",
+            Path(__file__).with_name("skills"),
+        )
+        self.capabilities(request.mode, invocation, workspace)
         # Content parts keep task evidence outside native command dispatch.
         stream = await self.agent.bub.run_stream(
             session_id=session_id,
@@ -262,22 +268,20 @@ class Runtime:
         self.hooks.record_completion(state)
         return output, decision
 
-    def capabilities(self, mode, invocation) -> None:
-        """Apply independent mode limits using the SDK's native tool resolution."""
+    def capabilities(self, mode, invocation, workspace: Path) -> None:
+        """Intersect mode and call selections, then exclude unavailable capabilities."""
         limits = self.settings.modes.get(mode, ModeSettings())
-        if limits.allowed_tools is not None:
+        if limits.allowed_tools is not None or limits.excluded_tools:
             available = self.agent.bub.tools
-            configured = resolve_tool_names(limits.allowed_tools, all_names=available)
+            configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)
             requested = resolve_tool_names(invocation.get("allowed_tools"), all_names=available)
             invocation["allowed_tools"] = sorted(configured & requested)
-        if limits.allowed_skills is not None:
-            configured_skills = {name.casefold() for name in limits.allowed_skills}
-            requested_skills = invocation.get("allowed_skills")
-            invocation["allowed_skills"] = sorted(
-                configured_skills
-                if requested_skills is None
-                else configured_skills & {name.casefold() for name in requested_skills}
-            )
+        if limits.allowed_skills is not None or limits.excluded_skills:
+            skills = {item.name.casefold() for item in discover_skills(workspace, skill_dirs=self.agent.bub.skill_dirs)}
+            for allowed in (limits.allowed_skills, invocation.get("allowed_skills")):
+                if allowed is not None:
+                    skills &= {name.casefold() for name in allowed}
+            invocation["allowed_skills"] = sorted(skills - {name.casefold() for name in limits.excluded_skills})
 
     async def perform(self, action_id: str, **kwargs) -> tuple[str, Decision | None]:
         request = self.tasks.request(action_id)

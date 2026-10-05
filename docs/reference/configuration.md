@@ -42,36 +42,40 @@ Precedence is environment, Landing YAML, existing Bub YAML, legacy provider-spec
 | `LANDING_SKILL_DIRS` | The same roots as a JSON list. |
 | Global `--skill-dir PATH` | Repeatable per-call or server roots. |
 
-Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, then `~/.agents/skills`. Explicit roots add to configured roots; duplicate skill names select the earlier root. Existing `BUB_SKILL_DIRS` is a fallback alias. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
+Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, `~/.agents/skills`, then bundled Landing skills. Explicit roots add to configured roots; duplicate skill names select the earlier root. Existing `BUB_SKILL_DIRS` is a fallback alias. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
 
 ## Mode capabilities
 
-YAML `modes` or JSON `LANDING_MODES` configures additional instructions, tools and skills independently for each mode:
+YAML `modes` or JSON `LANDING_MODES` configures additional instructions and allowed or excluded tools and skills independently for each mode:
 
 ```yaml
 modes:
   issuer:
     allowed_tools: [spill.read, fs.read, bash, skill, no_update]
-    allowed_skills: [issue-triage]
+    allowed_skills: [landing-issuer, issue-triage]
   fixer:
     allowed_tools: [spill.read, fs.read, fs.write, fs.edit, bash, skill]
-    allowed_skills: [friendly-python, piglet]
+    allowed_skills: [landing-fixer, friendly-python, piglet]
   gatekeeper:
     instructions: |
       Review supported user-visible behavior.
       Use $landing-review for project-specific standards.
-    allowed_tools: [spill.read, fs.read, bash, skill, decide]
-    allowed_skills: [landing-review]
+    allowed_skills: [landing-gatekeeper, landing-review]
+    excluded_tools: [fs.write, fs.edit]
   explainer:
     allowed_tools: [spill.read, fs.read, skill]
-    allowed_skills: [documentation-writer]
+    allowed_skills: [landing-explainer, documentation-writer]
 ```
 
 `instructions` adds literal text to the selected mode's default guidance; it does not replace that guidance or grant capabilities. Omit it or use an empty string for defaults. Use existing `LANDING_CONFIG` to manage these settings; no separate prompt file is required. Keep shared project rules in `AGENTS.md` and reusable methods in prepared skills. Task evidence and instructions preserve literal `$` expressions; they are not evaluated as templates.
 
-Omitted or `null` lists are unrestricted; `[]` disables the collection. Tools accept native names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive and must exist in prepared roots. Include `skill` for tool-loaded skills, `spill.read` for oversized output, `decide` for gate recommendations, and `no_update` for quiet issuer completion. GitHub publication normally needs `bash` and authenticated gh; inline reply confirmation also needs `confirm_reply`.
+Same-named skill overrides resolve before filtering. Effective capabilities are the intersection of discovered or registered capabilities, the mode allow list, and any per-call allow list, minus the mode exclusions. Omitted or `null` allow lists are unrestricted; `[]` disables the collection. `excluded_tools` and `excluded_skills` default to empty lists and remove matching capabilities even when allowed. Allow and exclude lists accept native tool names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive and must exist in the discovered roots. Include `skill` for tool-loaded skills, `spill.read` for oversized output, `decide` for gate recommendations, and `no_update` for quiet issuer completion. GitHub publication normally needs `bash` and authenticated gh; inline reply confirmation also needs `confirm_reply`.
 
-Per-call SDK selections intersect with mode limits and cannot expand them. Settings apply to CLI, HTTP, SDK, hooks, and CI. `,mode` selects a mode without calling the model or adding capabilities. Tool filtering is not a sandbox: shell or delegation tools may expose broader authority.
+Landing ships `landing-issuer`, `landing-fixer`, `landing-gatekeeper`, and `landing-explainer`. Each mode automatically uses its corresponding skill when permitted. Include that name in mode and per-call allow lists to retain its guidance; excluding it or setting `allowed_skills: []` disables the method without changing the mode, checks, or publication requirements. A same-named skill in a higher-priority root replaces the bundled method.
+
+Per-call SDK selections intersect with mode limits and cannot expand them. Settings apply to CLI, HTTP, SDK, hooks, and CI. Allowing a skill grants no tools, and allowing tools does not load a skill; skill metadata cannot expand these limits. `,mode` selects a mode without calling the model or adding capabilities.
+
+These filters control method loading and model tool calls. They do not authorize commands or publishing, isolate the filesystem, disable configured checks, or erase conversation history. An excluded skill can still appear by name in the skill listing, but loading it is denied. Shell and delegation tools may expose broader authority; enforce isolation and publishing permissions in the execution environment.
 
 ## MCP servers
 

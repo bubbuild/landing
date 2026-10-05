@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING
 from bub import hookimpl
 from bub.builtin.hook_impl import BuiltinImpl
 from bub.hooks.interception import LlmCallDecision
+from bub.skills import discover_skills
 from bub.utils import workspace_from_state
 from pydantic import ValidationError
 
 from landing.database import open_database
-from landing.prompts import COMMON, MODES, SYSTEM, render
+from landing.prompts import COMMON, SYSTEM, render
 from landing.settings import ModeSettings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -47,10 +48,20 @@ class LandingHooks(BuiltinImpl):
     def system_prompt(self, prompt, state) -> str:
         workspace = workspace_from_state(state)
         selected = state.get("landing_mode", "explainer")
+        allowed = state.get("allowed_skills")
+        skill = next(
+            (
+                item
+                for item in discover_skills(workspace, skill_dirs=self.runtime.agent.bub.skill_dirs)
+                if item.name == f"landing-{selected}" and (allowed is None or item.name in allowed)
+            ),
+            None,
+        )
         return render(
             SYSTEM,
             common=COMMON,
-            mode=MODES[selected],
+            selected=selected,
+            mode=skill.body() if skill else "",
             instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
             workspace=workspace,
             repository=self._read_agents_file(state),

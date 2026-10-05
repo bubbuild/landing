@@ -6,10 +6,12 @@ import re
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from landing.cli import main
 from landing.models import ActionRequest
 from landing.runtime import Runtime
+from landing.server import create_app
 from tests.conftest import completion
 
 
@@ -117,3 +119,35 @@ def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch
     command[1] = "Identify deployment."
     assert main([*database, "--skill-dir", str(explicit), *command]) == 0
     assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: explicit"
+
+
+@pytest.mark.parametrize("entry", ["cli", "http"])
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {},
+        {"excluded_skills": ["Landing-Explainer"]},
+        {"allowed_skills": []},
+        {"allowed_skills": ["landing-explainer"], "excluded_skills": ["Landing-Explainer"]},
+    ],
+)
+def test_selected_mode_skill_can_be_overridden_or_disabled(tmp_path, monkeypatch, model, capsys, entry, limits):
+    from tests.test_server import wait
+
+    write_skill(tmp_path / ".agents/skills", "landing-explainer", "approved")
+    monkeypatch.setenv("LANDING_MODES", json.dumps({"explainer": limits}))
+    responses, _ = model
+    responses.append(report_reference)
+    database = tmp_path / "landing.sqlite3"
+    if entry == "cli":
+        assert (
+            main(["--db", str(database), "explain", "Identify deployment.", "--workspace", str(tmp_path), "--json"])
+            == 0
+        )
+        action = json.loads(capsys.readouterr().out)
+    else:
+        with TestClient(create_app(database, workspaces={"default": tmp_path})) as client:
+            response = client.post("/v1/actions", json={"mode": "explainer", "instruction": "Identify deployment."})
+            assert response.status_code == 201
+            action = wait(client, response.headers["Location"])
+    assert action["result"] == ("No reference available." if limits else "Deployment reference: approved")

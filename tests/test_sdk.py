@@ -24,11 +24,24 @@ async def output(stream):
 
 
 @pytest.mark.parametrize(
-    ("integration", "command", "mode"), [("sdk", "explain", "explainer"), ("hooks", "fix", "fixer")]
+    ("integration", "command", "mode"),
+    [
+        ("sdk", "explain", "explainer"),
+        ("hooks", "fix", "fixer"),
+        ("sdk", "triage", "issuer"),
+        ("hooks", "review", "gatekeeper"),
+    ],
 )
 def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integration):
+    from tests.test_repository import report_reference, write_skill
+
+    write_skill(tmp_path / ".agents/skills", f"landing-{mode}", "approved")
+    (tmp_path / "evidence.txt").write_text("Deployment evidence.")
     responses, _ = model
-    responses.append(completion("The delegated work is complete."))
+    responses.extend([
+        completion(tool="fs_read", arguments={"path": str(tmp_path / "evidence.txt")}),
+        report_reference,
+    ])
 
     async def run():
         framework = BubFramework()
@@ -43,7 +56,7 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
                 text = result.model_output
             else:
                 text = await output(await landing.agent.run_stream(session_id="pr-42", prompt=prompt))
-            assert text == "The delegated work is complete."
+            assert text == "Deployment reference: approved"
             action = landing.tasks.list()[0]
             assert action.mode == mode
             assert action.status == "completed"
@@ -190,8 +203,16 @@ def test_closing_sdk_stream_cancels_durable_work(tmp_path, model):
     asyncio.run(run())
 
 
-def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch):
-    monkeypatch.setenv("LANDING_MODES", '{"fixer":{"allowed_tools":[]}}')
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"allowed_tools": []},
+        {"excluded_tools": ["fs.write"]},
+        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
+    ],
+)
+def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch, limits):
+    monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
     responses, _ = model
     responses.extend([
         completion(tool="fs_write", arguments={"path": "restricted.txt", "content": "changed"}),
@@ -216,8 +237,16 @@ def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch)
     asyncio.run(run())
 
 
-def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypatch):
-    monkeypatch.setenv("LANDING_MODES", '{"fixer":{"allowed_tools":["fs.read"]}}')
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"allowed_tools": ["fs.read"]},
+        {"excluded_tools": ["fs.write"]},
+        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
+    ],
+)
+def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypatch, limits):
+    monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
     responses, _ = model
     responses.extend([
         completion(tool="fs_write", arguments={"path": "unexpected.txt", "content": "changed"}),
@@ -236,19 +265,25 @@ def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypa
     asyncio.run(run())
 
 
-def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch):
+@pytest.mark.parametrize("selection", ["allow", "exclude", "overlap"])
+def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch, selection):
     from tests.test_repository import report_reference, write_skill
 
     roots = tmp_path / ".agents/skills"
     write_skill(roots, "review-policy", "review")
     write_skill(roots, "repair-policy", "repair")
-    monkeypatch.setenv(
-        "LANDING_MODES",
-        json.dumps({
-            "gatekeeper": {"allowed_skills": ["Review-Policy"]},
-            "fixer": {"allowed_skills": ["repair-policy"]},
-        }),
-    )
+    modes = {}
+    for mode, allowed, excluded in (
+        ("gatekeeper", "Review-Policy", "Repair-Policy"),
+        ("fixer", "repair-policy", "review-policy"),
+    ):
+        limits = {}
+        if selection != "exclude":
+            limits["allowed_skills"] = [allowed, excluded] if selection == "overlap" else [allowed]
+        if selection != "allow":
+            limits["excluded_skills"] = [excluded]
+        modes[mode] = limits
+    monkeypatch.setenv("LANDING_MODES", json.dumps(modes))
     responses, _ = model
     responses.extend([
         completion(tool="skill", arguments={"name": "review-policy"}),
@@ -256,6 +291,8 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
         completion(tool="skill", arguments={"name": "repair-policy"}),
         report_reference,
         completion(tool="skill", arguments={"name": "repair-policy"}),
+        report_reference,
+        completion(tool="skill", arguments={"name": "review-policy"}),
         report_reference,
     ])
 
@@ -274,6 +311,14 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
                 await output(
                     await landing.agent.run_stream(
                         session_id="limited", prompt=',fix "Use repair-policy."', allowed_skills=[]
+                    )
+                )
+                == "No reference available."
+            )
+            assert (
+                await output(
+                    await landing.agent.run_stream(
+                        session_id="excluded", prompt=',fix "Use review-policy."', allowed_skills=["review-policy"]
                     )
                 )
                 == "No reference available."

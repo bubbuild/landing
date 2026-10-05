@@ -17,6 +17,8 @@ class ModeSettings(BaseModel):
     instructions: str = ""
     allowed_tools: list[str] | None = None
     allowed_skills: list[str] | None = None
+    excluded_tools: list[str] = Field(default_factory=list)
+    excluded_skills: list[str] = Field(default_factory=list)
 
 
 class ConfigurationFile(BaseSettings):

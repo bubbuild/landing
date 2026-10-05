@@ -29,7 +29,7 @@ Instructions guide the agent; they do not grant permissions or enforce an operat
 
 ## Prepare skills
 
-Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, and `~/.agents/skills`. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
+Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, `~/.agents/skills`, and its bundled mode skills. Each mode uses its permitted `landing-issuer`, `landing-fixer`, `landing-gatekeeper`, or `landing-explainer` method automatically. To replace a built-in method, prepare a same-named skill in your project or another trusted root. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
 
 ```bash
 landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log
@@ -46,7 +46,7 @@ Configure roots on the executing host. Use `skill_dirs` or `LANDING_SKILL_DIRS` 
 
 ## Select tools and checks
 
-Each mode can independently select its allowed tools and skills through [mode capabilities](reference/configuration.md#mode-capabilities). A Python embedding can register additional native tools. Enforce authorization in those tools and the execution environment; a shell tool can expose more than its name suggests.
+Each mode can independently select its allowed or excluded tools and skills through [mode capabilities](reference/configuration.md#mode-capabilities). A Python embedding can register additional native tools. Enforce authorization in those tools and the execution environment; a shell tool can expose more than its name suggests.
 
 Use your existing checks for the behavior you need to establish:
 

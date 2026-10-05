@@ -44,7 +44,7 @@ async def explain():
             session_id="release-question",
             prompt=',explain "Explain the failed release check."',
             allowed_tools=["fs.read", "bash", "skill"],
-            allowed_skills=["release-investigation"],
+            allowed_skills=["landing-explainer", "release-investigation"],
         )
         async with aclosing(stream):
             async for event in stream:
@@ -52,6 +52,8 @@ async def explain():
                     print(event.data["delta"], end="")
         return stream.error, stream.usage
 ```
+
+Include the corresponding `landing-{mode}` skill in a per-call allow list to retain its default method. Prepare supplementary skills such as `release-investigation` in a discovered root.
 
 Await the stream, consume it fully, and close it when leaving early. Closing unfinished work requests durable cancellation. Events are native `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`; a final event ends a model step, not necessarily the whole task. Errors and usage remain on the stream. Validation and publication errors also persist in the action record. Native error kinds are retained; other execution failures use `unknown`.
 
