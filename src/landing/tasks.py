@@ -7,7 +7,6 @@ import hashlib
 import json
 from uuid import uuid4
 
-from bub import hookimpl
 from bub.tape import utc_now
 from sqlalchemy import Connection, Engine
 
@@ -25,10 +24,6 @@ class Tasks:
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
-
-    @hookimpl
-    def provide_tape_sidecar(self):
-        return self
 
     def get(self, action_id: str) -> Action:
         with self.engine.connect() as connection:

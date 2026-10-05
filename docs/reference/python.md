@@ -73,7 +73,6 @@ from landing.runtime import Runtime
 
 async def handle():
     framework = BubFramework()
-    framework.load_builtin_hooks()
     async with Runtime(Path("landing.sqlite3"), framework=framework).running() as landing:
         return await framework.process_inbound(ChannelMessage(
             session_id="release-question",
@@ -94,7 +93,7 @@ Prepared [MCP servers](../guides/mcp.md) bind tools to this same agent for each 
 
 ## Runtime design
 
-All four modes share one Bub 0.5.0 agent loop. Landing extends Bub's built-in hooks for mode state, prompts, storage, and execution in both standalone and embedded use. Host hooks remain available; Landing replaces the standard built-in provider. Standalone Landing does not discover external plugins or packaged channel skills.
+All four modes share one Bub 0.5.0 agent loop. One hook provider binds native defaults, business state, and storage through Bub's SDK hook runtime in both standalone and embedded use. Host hooks remain available; Landing replaces the standard built-in provider. Standalone Landing does not discover external plugins or packaged channel skills.
 
 Bub's lifespan opens and closes one SQLAlchemy Engine for the SQLite database. The task sidecar owns `actions` and `action_events`; tape storage reuses Bub's query and async adapter. Each storage operation uses a scoped connection, and action transitions record their events in the same transaction. Resetting model history does not remove task records; completed tasks do not replay. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
 

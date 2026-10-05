@@ -10,7 +10,6 @@ from typing import cast
 
 import bub.builtin.tools  # noqa: F401 -- initialize the native tool registry.
 from bub import BubFramework, ensure_config
-from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.errors import BubError, ErrorKind
@@ -20,7 +19,7 @@ from bub.turn import TurnState
 
 from landing.agent import Agent
 from landing.commands import COMMANDS
-from landing.hooks import LandingHooks
+from landing.hooks import install_hooks
 from landing.mcp import MCPChannel, connected_tools
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import MODES as PROMPTS
@@ -78,11 +77,7 @@ class Runtime:
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         self.settings = ensure_config(Settings)
-        builtin = self.framework.plugin_manager.get_plugin("builtin")
-        if type(builtin) is BuiltinImpl:
-            self.framework.plugin_manager.unregister(builtin)
-        self.hooks = LandingHooks(self)
-        self.framework.plugin_manager.register(self.hooks, name="landing")
+        self.hooks = install_hooks(self)
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self,
