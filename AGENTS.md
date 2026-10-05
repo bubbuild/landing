@@ -27,7 +27,7 @@ Tests verify supported user behavior or demonstrated mistakes likely to recur; t
 
 Use English in repository files and GitHub contributions. Write direct, present-tense prose; keep paragraphs and commands on one line unless their format requires newlines. Comments explain non-obvious intent. Public documentation describes user-visible behavior; implementation details belong in development and dogfood documentation.
 
-Use friendly-python and piglet for Python; documentation-writer and humanizer for documentation. Default prompts own shared investigation principles and each mode's delivery responsibilities. Adapters own platform presentation and publication rules. Keep project development rules here and Landing-specific review contracts in [.agents/skills/landing-review/SKILL.md](.agents/skills/landing-review/SKILL.md). Keep reusable system prompt prefixes stable and task evidence in task inputs. Avoid duplicating instructions.
+Use friendly-python and piglet for Python; documentation-writer and humanizer for documentation. The shared prompt owns investigation principles; bundled mode skills own working methods and delivery responsibilities. Adapters own platform presentation and publication rules. Keep project development rules here and Landing-specific review contracts in [.agents/skills/landing-review/SKILL.md](.agents/skills/landing-review/SKILL.md). Keep reusable system prompt prefixes stable and task evidence in task inputs. Avoid duplicating instructions.
 
 ## Contributions
 
