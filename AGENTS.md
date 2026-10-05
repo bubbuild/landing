@@ -4,14 +4,14 @@ Landing delegates development work through CLI, HTTP, Python, and a GitHub Actio
 
 ## Development
 
-Use Python 3.12 or later and the repository's uv environment. Install with `uv sync --frozen` from the repository root. For implementation changes, run:
+Use Python 3.12 or later and the repository's uv environment. Install with `uv sync --frozen` from the repository root. For implementation changes you make, run:
 
 ```bash
 uv run ty check
 uv run pre-commit run --all-files
 ```
 
-Run affected behavior tests, for example `uv run python -m pytest tests/test_cli.py`. Run `make docs-test` for documentation changes and `uv build` for packaging changes. [Develop and dogfood](docs/development.md) covers the CI matrix, container recovery, and workflow preparation. Correct environment and probe mistakes before treating a failure as a product defect.
+Run affected behavior tests, for example `uv run python -m pytest tests/test_cli.py`. Run `make docs-test` for documentation changes and `uv build` for packaging changes. These checks apply to changes you author; reviews reuse applicable recorded results and run focused probes for unresolved behavior. [Develop and dogfood](docs/development.md) covers the CI matrix, container recovery, and workflow preparation.
 
 ## Design
 
@@ -27,8 +27,8 @@ Tests verify supported user behavior or demonstrated mistakes likely to recur; t
 
 Use English in repository files and GitHub contributions. Write direct, present-tense prose; keep paragraphs and commands on one line unless their format requires newlines. Comments explain non-obvious intent. Public documentation describes user-visible behavior; implementation details belong in development and dogfood documentation.
 
-Use friendly-python and piglet for Python; documentation-writer and humanizer for documentation. Keep shared agent behavior in default prompts, project rules here, and review methods in [.agents/skills/landing-review/SKILL.md](.agents/skills/landing-review/SKILL.md). Keep reusable system prompt prefixes stable and task evidence in task inputs. Avoid duplicating instructions.
+Use friendly-python and piglet for Python; documentation-writer and humanizer for documentation. Default prompts own shared investigation principles and each mode's delivery responsibilities. Adapters own platform presentation and publication rules. Keep project development rules here and Landing-specific review contracts in [.agents/skills/landing-review/SKILL.md](.agents/skills/landing-review/SKILL.md). Keep reusable system prompt prefixes stable and task evidence in task inputs. Avoid duplicating instructions.
 
 ## Contributions
 
-Use task-named branches, Conventional Commit titles, and the applicable contribution template. Verify before publishing and report actual results. With a workflow token, start candidate CI explicitly: `gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA`. For review, load the Landing review skill and reply in the original discussion. Do not merge or change credentials without explicit delegation. Keep feedback short and useful; maintainers own contributor relationships and decisions.
+Use task-named branches, Conventional Commit titles, and the applicable contribution template. Verify changes you author before publishing and record relevant validation in the PR description. With a workflow token, start candidate CI explicitly: `gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA`. For review, load the Landing review skill; its project contracts complement the mode and adapter guidance. Do not merge or change credentials without explicit delegation. Maintainers own contributor relationships and decisions.

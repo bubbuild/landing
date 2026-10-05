@@ -3,7 +3,7 @@ name: landing-review
 description: Review Landing changes against supported CLI, HTTP, SDK, and GitHub behavior using candidate evidence.
 ---
 
-Review the affected user workflow on the current candidate. Use the gatekeeper's default guidance for evidence and publication, and root `AGENTS.md` for development rules. Read the relevant contract in `docs/reference/`; select the concerns below that the diff actually reaches.
+Read the affected Landing contract in `docs/reference/` and trace the supported user workflow on the current candidate. Apply the concerns below where the diff reaches them. Default mode guidance owns investigation and delivery; root `AGENTS.md` owns project development rules.
 
 ## Follow the affected entry point
 
@@ -13,7 +13,7 @@ Trace the actual caller through admission, execution, and the result the person 
 
 - Lifecycle changes preserve cancellation, shutdown interruption, queued recovery, idempotency, and one worker per database. Exercise released SQLite data when assessing upgrades; fresh databases do not establish history preservation. Resetting model history must not erase action records. Container recovery uses the actual Litestream replica or volume backup being claimed.
 - Configuration changes preserve Landing-first settings with Bub fallback, selected workspace guidance, prepared skills and MCP tools, and per-call limits that narrow mode capabilities. Instructions and tool filters are not a sandbox. Local fixtures isolate ambient settings and do not prove real-provider compatibility.
-- GitHub changes preserve native caller authorization, prepared publishing identities, the original destination, delivery verification, and stale-candidate cancellation. Unchanged automatic issuer work stays quiet; explicit questions and delegations still require replies. Existing findings are updated for changed evidence or outcomes, not another run ID.
+- GitHub changes preserve native caller authorization, prepared publishing identities, the original destination, delivery verification, and stale-candidate cancellation. Automatic issuer work can complete quietly; explicit questions and delegations require a confirmed reply. Verify delivery and replay behavior through the original conversation or review thread.
 
 ## Browser evidence
 
