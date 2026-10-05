@@ -6,10 +6,10 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import closing
 
 import pytest
 
+from landing.database import open_database
 from landing.tasks import Tasks
 from tests.conftest import completion
 from tests.provider import provider
@@ -75,7 +75,8 @@ def test_action_retains_failed_fix_and_validation(tmp_path):
     action = json.loads(result.stdout)
     assert action["status"] == "failed"
     assert (tmp_path / "answer with spaces.txt").read_text() == "42\n"
-    with closing(Tasks(tmp_path / "landing.sqlite3")) as tasks:
+    with open_database(tmp_path / "landing.sqlite3") as engine:
+        tasks = Tasks(engine)
         saved = tasks.get(action["id"])
         assert saved.result == "Wrote the candidate; independent validation follows."
         assert saved.error is not None
@@ -145,7 +146,8 @@ def test_runner_termination_cancels_work_and_stops_its_shell(tmp_path):
     with provider([response]) as (api_base, _):
         result = delegate(tmp_path, api_base, "fix", "", cancel_when=child)
     assert result.returncode != 0
-    with closing(Tasks(tmp_path / "landing.sqlite3")) as tasks:
+    with open_database(tmp_path / "landing.sqlite3") as engine:
+        tasks = Tasks(engine)
         actions = tasks.list()
         assert len(actions) == 1
         assert actions[0].status == "cancelled"

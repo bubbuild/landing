@@ -6,47 +6,66 @@ from typing import TYPE_CHECKING
 from bub import hookimpl
 from bub.builtin.hook_impl import BuiltinImpl
 from bub.hooks.interception import LlmCallDecision
-from bub.utils import workspace_from_state
+from bub.utils import maybe_context_manager, workspace_from_state
 from pydantic import ValidationError
 
+from landing.database import open_database
 from landing.prompts import COMMON, MODES
+from landing.store import SQLiteTapeStore
+from landing.tasks import Tasks
 
 if TYPE_CHECKING:
     from landing.runtime import Runtime
 
 
-class SDKDefaults(BuiltinImpl):
-    """Keep native repository guidance without packaged channel instructions."""
+class LandingHooks(BuiltinImpl):
+    """Native Bub defaults with Landing's state, prompts, storage, and executor."""
 
-    @hookimpl
-    def system_prompt(self, prompt, state) -> str:
-        return self._read_agents_file(state)
+    def __init__(self, runtime: "Runtime") -> None:
+        super().__init__(runtime.framework)
+        self.runtime = runtime
+
+    def _get_agent(self, state=None):
+        return self.runtime.agent.bub
 
     @hookimpl
     def provide_environment(self, session_id, workspace):
-        # Native tools derive their local environment from the selected task workspace.
+        # Native tools resolve the task workspace unless a host supplies an environment.
         return None
 
+    @hookimpl
+    async def provide_lifespan(self):
+        from contextlib import AsyncExitStack
 
-class LandingHooks:
-    """Use the same modes, task sidecar, and executor in hook and SDK integrations."""
-
-    def __init__(self, runtime: "Runtime") -> None:
-        self.runtime = runtime
+        async with AsyncExitStack() as stack:
+            await maybe_context_manager(super().provide_lifespan(), stack)
+            engine = stack.enter_context(open_database(self.runtime.path))
+            self.runtime.tasks = Tasks(engine)
+            self.runtime.store = SQLiteTapeStore(engine)
+            self.framework.plugin_manager.register(self.runtime.tasks, name="landing-tasks")
+            stack.callback(self.framework.plugin_manager.unregister, self.runtime.tasks)
+            yield
 
     @hookimpl
     async def load_state(self, message, session_id):
+        state = await super().load_state(message, session_id)
         tape = self.runtime.agent.tape.session_tape(session_id, self.runtime.framework.workspace)
         selected = "explainer"
         for entry in await tape.store.fetch_all(tape.query().kinds("event")):
             if entry.payload.get("name") == "landing_mode_switch":
                 selected = entry.payload["data"]["landing_mode"]
-        return {"landing_mode": selected}
+        state["landing_mode"] = selected
+        return state
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
         workspace = workspace_from_state(state)
-        return COMMON + MODES[state.get("landing_mode", "explainer")] + f"\nTask workspace: {workspace}\n"
+        return (
+            COMMON
+            + MODES[state.get("landing_mode", "explainer")]
+            + f"\nTask workspace: {workspace}\n"
+            + self._read_agents_file(state)
+        )
 
     @hookimpl
     def before_llm_call(self, request, state):
@@ -55,10 +74,11 @@ class LandingHooks:
         if reason := state.get("landing_no_update"):
             return LlmCallDecision.finish(reason)
 
-    @hookimpl
-    def after_tool_call(self, call, result, state) -> None:
+    @hookimpl(trylast=True)
+    async def after_tool_call(self, call, result, state) -> None:
         if result.error is not None:
             state["landing_tool_failed"] = True
+        await super().after_tool_call(call, result, state)
 
     @hookimpl
     def after_llm_call(self, request, result, state) -> None:
@@ -96,10 +116,6 @@ class LandingHooks:
     @hookimpl
     def provide_tape_store(self):
         return self.runtime.store
-
-    @hookimpl
-    def provide_tape_sidecar(self):
-        return self.runtime.tasks
 
     @hookimpl
     async def run_model_stream(self, prompt, session_id, state):

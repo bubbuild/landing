@@ -238,19 +238,14 @@ class Publication:
             return
         receipt = self.find()
         if receipt is None and self.thread:
-            saved = tasks.connection.execute(
-                "SELECT data FROM action_events WHERE action_id = ? AND type = 'github.reply_confirmed' ORDER BY id DESC LIMIT 1",
-                (action.id,),
-            ).fetchone()
+            saved = tasks.event_data(action.id, "github.reply_confirmed")
             if saved:
-                receipt = self.read_reply(json.loads(saved["data"])["id"])
+                receipt = self.read_reply(saved["id"])
         if (
             receipt is None
             and action.mode == "issuer"
             and not self.reply_required
-            and tasks.connection.execute(
-                "SELECT 1 FROM action_events WHERE action_id = ? AND type = 'issue.unchanged'", (action.id,)
-            ).fetchone()
+            and tasks.event_data(action.id, "issue.unchanged") is not None
         ):
             return
         if receipt is None or (self.review and self.head and receipt.get("commit_id") != self.head):
@@ -456,11 +451,9 @@ async def run(
     async with landing.running():
         existing = publication.find()
         if existing:
-            row = landing.tasks.connection.execute(
-                "SELECT id FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (repository, key)
-            ).fetchone()
+            recorded = landing.tasks.find(repository, key)
             # The receipt identifies this delivery; retain its original evidence snapshot on replay.
-            snapshot = landing.tasks.request(row["id"]).input if row else request.input
+            snapshot = landing.tasks.request(recorded.id).input if recorded else request.input
             action, _ = landing.tasks.create(request.model_copy(update={"input": snapshot}), scope=repository, key=key)
             publication.verify(action, landing.tasks)
             return landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")

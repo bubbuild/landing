@@ -187,10 +187,14 @@ def verify(engine, image):
             )
             assert action["status"] == "interrupted"
             history_query = (
-                "import asyncio; from pathlib import Path; from landing.runtime import Runtime; "
-                "runtime=Runtime(Path('/storage/landing.sqlite3')); "
-                f"tape=runtime.agent.tape.session_tape({explained.json()['id']!r}, Path('/storage/workspace')); "
-                "print(bool(asyncio.run(tape.store.fetch_all(tape.query().query('Explain the test failure.')))))"
+                "import asyncio\nfrom pathlib import Path\nfrom bub.builtin.context import default_tape_context\n"
+                "from bub.store import AsyncTapeStoreAdapter\nfrom bub.tape import Tape\n"
+                "from landing.database import open_database\n"
+                "from landing.store import SQLiteTapeStore\n"
+                "with open_database(Path('/storage/landing.sqlite3')) as database:\n"
+                "    reader = Tape(Path('/storage/tapes'), AsyncTapeStoreAdapter(SQLiteTapeStore(database)), default_tape_context())\n"
+                f"    tape = reader.session_tape({explained.json()['id']!r}, Path('/storage/workspace'))\n"
+                "    print(bool(asyncio.run(tape.store.fetch_all(tape.query().query('Explain the test failure.')))))"
             )
             assert (
                 run(

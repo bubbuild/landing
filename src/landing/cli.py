@@ -7,7 +7,6 @@ import json
 import mimetypes
 import sys
 from collections.abc import Callable, Coroutine
-from contextlib import closing
 from functools import partial
 from importlib.metadata import version
 from pathlib import Path
@@ -21,6 +20,7 @@ from pydantic_settings import SettingsConfigDict
 
 from landing.adapters.github import app as github_app
 from landing.commands import COMMANDS
+from landing.database import open_database
 from landing.models import TERMINAL, Action, ActionRequest, FileInput
 from landing.settings import FileSettings
 from landing.tasks import Tasks
@@ -271,7 +271,8 @@ async def local(args) -> int:
     from landing.runtime import Runtime
 
     if args.command == "action" and args.operation != "retry":
-        with closing(Tasks(database(args))) as tasks:
+        with open_database(database(args)) as engine:
+            tasks = Tasks(engine)
             if args.operation == "list":
                 display(tasks.list(args.limit, args.cursor), args)
             elif args.operation == "logs":

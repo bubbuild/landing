@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
-import sqlite3
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -16,6 +15,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from scalar_fastapi import AgentScalarConfig, add_scalar_reference
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import URL
 
 from landing.adapters.github import repository_context
@@ -91,7 +91,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     async def invalid(request, exc):
         return await http_exception_handler(request, HTTPException(422, str(exc)))
 
-    @app.exception_handler(sqlite3.Error)
+    @app.exception_handler(SQLAlchemyError)
     async def storage_error(request, exc):
         return await http_exception_handler(request, HTTPException(503, "The database is unavailable."))
 
@@ -178,7 +178,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     async def ready():
         if app.state.worker.done():
             raise HTTPException(503, "The worker is unavailable.")
-        app.state.runtime.tasks.connection.execute("SELECT id FROM actions LIMIT 1").fetchone()
+        app.state.runtime.tasks.list(limit=1)
         return {"status": "ok"}
 
     return app

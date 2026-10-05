@@ -1,8 +1,8 @@
 import asyncio
-from contextlib import closing
 
 import pytest
 
+from landing.database import open_database
 from landing.models import ActionRequest
 from landing.runtime import Runtime
 from landing.tasks import Tasks
@@ -38,7 +38,8 @@ def test_external_cancellation_stops_active_sdk_turn(tmp_path, model):
             task = asyncio.create_task(runtime.run(ActionRequest(mode="explainer", instruction="Explain the failure.")))
             await asyncio.wait_for(started.wait(), 5)
             action_id = runtime.tasks.list()[0].id
-            with closing(Tasks(path)) as other_process:
+            with open_database(path) as engine:
+                other_process = Tasks(engine)
                 other_process.cancel(action_id)
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(task, 5)
@@ -82,7 +83,8 @@ def test_blank_completion_keeps_partial_changes_and_failed_history(tmp_path, mod
 
     action = asyncio.run(run())
     assert (tmp_path / "answer.txt").read_text() == "42\n"
-    with closing(Tasks(path)) as tasks:
+    with open_database(path) as engine:
+        tasks = Tasks(engine)
         assert tasks.get(action.id) == action
 
 

@@ -10,6 +10,7 @@ from typing import cast
 
 import bub.builtin.tools  # noqa: F401 -- initialize the native tool registry.
 from bub import BubFramework, ensure_config
+from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.errors import BubError, ErrorKind
@@ -19,7 +20,7 @@ from bub.turn import TurnState
 
 from landing.agent import Agent
 from landing.commands import COMMANDS
-from landing.hooks import LandingHooks, SDKDefaults
+from landing.hooks import LandingHooks
 from landing.mcp import MCPChannel, connected_tools
 from landing.models import Action, ActionRequest, Decision
 from landing.prompts import MODES as PROMPTS
@@ -59,6 +60,9 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
 
 
 class Runtime:
+    tasks: Tasks
+    store: SQLiteTapeStore
+
     def __init__(
         self,
         path: Path,
@@ -69,21 +73,20 @@ class Runtime:
         framework: BubFramework | None = None,
         verify: Callable[[Action], None] | None = None,
     ) -> None:
-        self.tasks = Tasks(path)
-        self.store = SQLiteTapeStore(self.tasks.path)
+        self.path = path.expanduser().resolve()
         self.workspaces = workspaces
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         self.settings = ensure_config(Settings)
-        if framework is None:
-            self.framework.plugin_manager.register(SDKDefaults(self.framework), name="builtin")
+        builtin = self.framework.plugin_manager.get_plugin("builtin")
+        if type(builtin) is BuiltinImpl:
+            self.framework.plugin_manager.unregister(builtin)
         self.hooks = LandingHooks(self)
         self.framework.plugin_manager.register(self.hooks, name="landing")
         self.skill_dirs = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.agent = Agent(
             self,
             tools=[*REGISTRY.values(), *tools],
-            tape_store=self.store,
             skill_dirs=(),
         )
         self.active: dict[str, asyncio.Task[Action]] = {}
@@ -106,17 +109,16 @@ class Runtime:
     @contextlib.asynccontextmanager
     async def running(self) -> AsyncIterator["Runtime"]:
         # A process-wide worker owns this database. Read-only CLI queries need no lock.
-        with self.tasks.path.open("rb") as owner:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a+b") as owner:
             try:
                 fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 message = "Another worker owns this database. Use --server or a different --db."
-                self.store.close()
-                self.tasks.close()
                 raise ValueError(message) from exc
             try:
-                self.tasks.recover()
                 async with self.framework.running():
+                    self.tasks.recover()
                     monitor = asyncio.create_task(self.watch_cancellations())
                     try:
                         yield self
@@ -126,8 +128,6 @@ class Runtime:
                             await monitor
                         await self.stop()
             finally:
-                self.store.close()
-                self.tasks.close()
                 fcntl.flock(owner, fcntl.LOCK_UN)
 
     async def run(self, request: ActionRequest, *, retry_of: str | None = None) -> Action:
@@ -206,10 +206,7 @@ class Runtime:
         events: asyncio.Queue | None = None,
         stream_state: StreamState | None = None,
     ) -> tuple[str, Decision | None]:
-        row = self.tasks.connection.execute(
-            "SELECT data FROM action_events WHERE action_id=? AND type='sdk.invocation' LIMIT 1", (action_id,)
-        ).fetchone()
-        invocation = json.loads(row[0]) if row else {}
+        invocation = self.tasks.event_data(action_id, "sdk.invocation") or {}
         session_id = invocation.pop("session_id", action_id)
         supplied_prompt = invocation.pop("prompt", None)
         self.capabilities(request.mode, invocation)

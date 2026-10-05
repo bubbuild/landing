@@ -61,7 +61,7 @@ The four commands and `mode` are native agent tools. `,mode` reads selection; `,
 
 ## Hook integration
 
-Pass an existing Bub framework to register Landing's business hooks alongside host hooks:
+Pass an existing Bub framework to use the same Landing hooks and agent alongside host hooks:
 
 ```python
 from pathlib import Path
@@ -94,9 +94,9 @@ Prepared [MCP servers](../guides/mcp.md) bind tools to this same agent for each 
 
 ## Runtime design
 
-All four modes share one Bub 0.5.0 agent loop. Landing registers hooks explicitly for mode state, prompts, a task sidecar, and execution. Standalone Landing does not discover external plugins or packaged channel skills.
+All four modes share one Bub 0.5.0 agent loop. Landing extends Bub's built-in hooks for mode state, prompts, storage, and execution in both standalone and embedded use. Host hooks remain available; Landing replaces the standard built-in provider. Standalone Landing does not discover external plugins or packaged channel skills.
 
-The sidecar owns `actions` and `action_events`. SQLite tape storage in the same database reuses Bub's query and async adapter. Resetting model history does not remove task records; completed tasks do not replay. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
+Bub's lifespan opens and closes one SQLAlchemy Engine for the SQLite database. The task sidecar owns `actions` and `action_events`; tape storage reuses Bub's query and async adapter. Each storage operation uses a scoped connection, and action transitions record their events in the same transaction. Resetting model history does not remove task records; completed tasks do not replay. See [Action records](http.md#action-records) and [Recovery](../guides/recovery.md).
 
 ## Public objects
 
