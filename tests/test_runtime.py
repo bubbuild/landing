@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from bub import BubFramework
 
 from landing.cli import main
 from landing.database import open_database
@@ -126,7 +127,8 @@ def test_blank_completion_keeps_partial_changes_and_failed_history(tmp_path, mod
         assert tasks.get(action.id) == action
 
 
-def test_second_worker_cannot_interrupt_live_work(tmp_path, model):
+@pytest.mark.parametrize("native_host", [False, True])
+def test_second_worker_cannot_interrupt_live_work(tmp_path, model, native_host):
     responses, _ = model
     path = tmp_path / "landing.sqlite3"
 
@@ -138,7 +140,8 @@ def test_second_worker_cannot_interrupt_live_work(tmp_path, model):
             await asyncio.Event().wait()
 
         responses.append(blocked)
-        async with Runtime(path).running() as owner:
+        owner = Runtime(path, framework=BubFramework())
+        async with owner.framework.running() if native_host else owner.running():
             task = asyncio.create_task(owner.run(ActionRequest(mode="explainer", instruction="Explain the failure.")))
             await asyncio.wait_for(started.wait(), 5)
             action = owner.tasks.list()[0]

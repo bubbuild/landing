@@ -47,7 +47,8 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
         framework = BubFramework()
         framework.workspace = tmp_path
         framework.load_builtin_hooks()
-        async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
+        landing = Runtime(tmp_path / "landing.sqlite3", framework=framework)
+        async with framework.running() if integration == "hooks" else landing.running():
             prompt = f',{command} "Inspect retry behavior."'
             if integration == "hooks":
                 result = await framework.process_inbound(

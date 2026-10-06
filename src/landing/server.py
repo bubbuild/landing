@@ -45,13 +45,12 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-
         runtime = Runtime(
             path,
             workspaces=workspaces or {"default": Path.cwd()},
             skill_dirs=skill_dirs,
         )
-        async with runtime.running(background=True):
+        async with runtime.lifespan(app):
             app.state.runtime = runtime
             yield
 

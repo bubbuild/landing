@@ -27,7 +27,7 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. The host enters `Runtime.running()` and owns resources and execution until it leaves. CLI and GitHub Action execute delegated work directly. HTTP uses `Runtime.running(background=True)` and `submit()` to persist work, return a receipt, and notify the worker. SDK hosts choose the same lifecycle. Only explicit CLI `action watch` polls for completion.
+CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. The execution host enters `Runtime.running()` or Bub's native message lifecycle and owns execution until it leaves. CLI and GitHub Action execute delegated work directly. HTTP enters `Runtime.lifespan`, which uses `Runtime.running(background=True)`, and calls `submit()` to persist work, return a receipt, and notify the worker. SDK hosts choose the same lifecycle. Only explicit CLI `action watch` polls for completion.
 
 ```text
 CLI / GitHub / direct SDK          HTTP / background SDK
@@ -47,23 +47,29 @@ CLI / GitHub / direct SDK          HTTP / background SDK
                   Final Action
 ```
 
-Runtime owns its worker and active executions; FastAPI's lifespan only enters and exits it. SQLite persists accepted work; an in-process event wakes the serial worker after submission, and startup consumes the recovered queue. Submission and cancellation go through the executing host. Another process can inspect records, but it cannot cancel live work by editing SQLite. CLI cancellation of queued work requires exclusive database ownership.
+The ASGI `Runtime.lifespan` adapts the application protocol to `Runtime.running()`. Runtime owns its worker and active executions; Bub aggregates resources through `provide_lifespan`. The existing storage hook acquires database ownership, opens the shared engine, and recovers records. Native Bub message hosts use the same resource hook and own their message tasks. SQLite persists accepted work; an in-process event wakes the serial worker after submission, and startup consumes the recovered queue. Submission and cancellation go through the executing host. Another process can inspect records, but it cannot cancel live work by editing SQLite. CLI cancellation of queued work requires exclusive database ownership.
 
 ```text
-Host starts
-    |
-Acquire ownership -> Open Bub + shared SQLite -> Recover records
-    |
-Execute direct work or consume submitted work
-    |
-Host stops
-    |
-Stop admission -> Stop execution -> Record interruption
-    |
-Close Bub + SQLite -> Release ownership
+ASGI -> Runtime.lifespan --+
+CLI / Action / SDK -------+-> Runtime.running -> framework.running
+Native Bub message host -----------------------> framework.running
+                                                      |
+                                              provide_lifespan
+                                                      |
+                                          Lock + SQLite + recovery
+                                                      |
+                                               Resources ready
+                                                      |
+                                           Host starts execution
+                                                      |
+                                      Host stops and awaits execution
+                                                      |
+                                         Bub closes environments
+                                                      |
+                                          Close SQLite + unlock
 ```
 
-Explicit cancellation stops the delegated task and owned shell processes. Closing an unfinished direct SDK stream cancels its work; disconnecting an HTTP caller does not. Shutdown leaves active work interrupted and queued work available after restart. Interrupted actions need inspection and explicit retry because execution may already have external effects.
+Explicit cancellation stops the delegated task and owned shell processes. Closing an unfinished direct SDK stream cancels its work; disconnecting an HTTP caller does not. Runtime shutdown leaves active work interrupted and queued work available after restart. A native Bub message host cancels its message tasks and closes their streams; that path requests durable cancellation. Interrupted actions need inspection and explicit retry because execution may already have external effects. The worker starts only after Bub resources are ready and stops before the framework closes environments. Action shell and MCP scopes finish before an action ends; the model's inner shell scope finishes before post-fix checks.
 
 `LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Its system prompt supplies common behavior, the selected mode's permitted skill through Bub's public discovery and reading APIs, configured additions and root `AGENTS.md`, followed by the workspace path so temporary checkout paths preserve the preceding prefix. Bub appends native tool and skill guidance; cache reuse also depends on those capabilities and the provider. Task inputs contain instructions and evidence. GitHub adaptation owns destination and platform templates. One renderer substitutes named values in owned templates once; inserted instructions and evidence stay literal. Bundled mode methods live in `src/landing/skills` and ship with the package. The hook loads the resolved method on each model call; native task hints and the skill tool load supplementary methods. Manage additions and capability exclusions through existing mode settings.
 

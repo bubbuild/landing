@@ -10,7 +10,7 @@ from bub.skills import discover_skills
 from bub.utils import workspace_from_state
 from pydantic import ValidationError
 
-from landing.database import open_database
+from landing.database import open_database, own_database
 from landing.prompts import COMMON, SYSTEM, render
 from landing.settings import ModeSettings
 from landing.store import SQLiteTapeStore
@@ -118,9 +118,10 @@ class LandingHooks(BuiltinImpl):
 
     @hookimpl(specname="provide_lifespan")
     async def storage_lifespan(self):
-        with open_database(self.runtime.path) as engine:
+        with own_database(self.runtime.path), open_database(self.runtime.path) as engine:
             self.runtime.tasks = Tasks(engine)
             self.runtime.store = SQLiteTapeStore(engine)
+            self.runtime.tasks.recover()
             yield
 
     @hookimpl

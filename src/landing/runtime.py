@@ -19,7 +19,6 @@ from bub.turn import TurnState
 
 from landing.agent import Agent
 from landing.commands import COMMANDS
-from landing.database import own_database
 from landing.hooks import install_hooks
 from landing.mcp import MCPChannel, connected_tools
 from landing.models import Action, ActionRequest, Decision
@@ -111,15 +110,19 @@ class Runtime:
 
     @contextlib.asynccontextmanager
     async def running(self, *, background: bool = False) -> AsyncIterator["Runtime"]:
-        """Own resources and execution; background hosts also consume accepted work."""
-        with own_database(self.path):
-            async with self.framework.running():
-                self.tasks.recover()
-                self.worker_task = asyncio.create_task(self.worker()) if background else None
-                try:
-                    yield self
-                finally:
-                    await self.stop()
+        """Run work within Bub's resources, stopping execution before they close."""
+        async with self.framework.running():
+            self.worker_task = asyncio.create_task(self.worker()) if background else None
+            try:
+                yield self
+            finally:
+                await self.stop()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(self, app: object) -> AsyncIterator[None]:
+        """ASGI lifespan callback that owns background execution."""
+        async with self.running(background=True):
+            yield
 
     def submit(
         self, request: ActionRequest, *, scope: str = "sdk", key: str | None = None, retry_of: str | None = None

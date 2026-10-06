@@ -29,23 +29,21 @@ Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered nam
 
 ## Host background work
 
-Enter `Runtime.running(background=True)` for a host that accepts work and returns receipts. The host keeps the context open while work executes; callers do not wait for completion.
+Use `Runtime.lifespan` with an ASGI application to accept work and return receipts. Landing starts and stops background execution with the application.
 
 ```python
-from contextlib import asynccontextmanager
 from pathlib import Path
 
+from fastapi import FastAPI
 from landing.runtime import Runtime
 
-
-@asynccontextmanager
-async def lifespan(app):
-    async with Runtime(Path("landing.sqlite3")).running(background=True) as landing:
-        app.state.landing = landing
-        yield
+landing = Runtime(Path("landing.sqlite3"))
+app = FastAPI(lifespan=landing.lifespan)
 ```
 
-Within that host, `action, created = landing.submit(request)` persists an `ActionRequest` and schedules execution. Optional `scope` and `key` deduplicate deliveries; `retry_of` requires terminal work. Read `landing.tasks.get(action.id)` when needed and use `landing.cancel(action.id)` to stop work. Submission requires a live background host. Leaving the context interrupts active work and preserves the queue for restart.
+Within that application, `action, created = landing.submit(request)` persists an `ActionRequest` and schedules execution. Optional `scope` and `key` deduplicate deliveries; `retry_of` requires terminal work. Read `landing.tasks.get(action.id)` when needed and use `landing.cancel(action.id)` to stop work. The HTTP caller can disconnect without cancelling accepted work. Application shutdown interrupts active work and preserves the queue for restart.
+
+For another host, enter `landing.running(background=True)`. Ordinary `running()` executes only delegated calls and leaves existing queued work untouched. Submission requires a live background host.
 
 ## Streaming SDK
 
@@ -95,7 +93,8 @@ from landing.runtime import Runtime
 
 async def handle():
     framework = BubFramework()
-    async with Runtime(Path("landing.sqlite3"), framework=framework).running() as landing:
+    landing = Runtime(Path("landing.sqlite3"), framework=framework)
+    async with framework.running():
         return await framework.process_inbound(ChannelMessage(
             session_id="release-question",
             channel="cli",
@@ -103,7 +102,7 @@ async def handle():
         ))
 ```
 
-Your application's hooks continue to handle state, prompts, rendering, and delivery. Direct SDK calls return events for your application to display. Both paths save action records and use the selected task workspace unless the host provides its own execution environment.
+Landing registers its resource lifecycle with the framework. The native message host owns message execution and stops it before leaving the framework context. Your application's hooks continue to handle state, prompts, rendering, and delivery. Direct SDK calls return events for your application to display. Both paths save action records and use the selected task workspace unless the host provides its own execution environment.
 
 ## Skills and additional tools
 
@@ -125,6 +124,6 @@ Action records survive restarts. Resetting model history does not remove them; c
 
 ::: landing.runtime.Runtime
     options:
-      members: [running, run, command, submit, cancel]
+      members: [running, lifespan, run, command, submit, cancel]
 
 ::: landing.server.create_app
