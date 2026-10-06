@@ -79,7 +79,7 @@ class Runtime(BubAgent):
         self.workspaces = workspaces
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-        ensure_config(Settings)
+        settings = ensure_config(Settings)
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
         manager = self.framework.plugin_manager
@@ -90,7 +90,13 @@ class Runtime(BubAgent):
             manager.register(hooks, name="builtin")
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
-        super().__init__(self.framework, tape_store=SQLiteTapeStore(self.engine), skill_dirs=())
+        super().__init__(
+            self.framework,
+            tape_store=SQLiteTapeStore(self.engine),
+            skill_dirs=(),
+            command_prefix=settings.command_prefix,
+        )
+        self.settings = self.model_runner.settings = settings
         self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.tools.update({item.name: item for item in tools})
         hooks.runtime = self

@@ -6,6 +6,7 @@ from contextlib import aclosing
 
 import pytest
 from bub import BubFramework
+from bub.builtin.settings import load_settings
 from bub.channels.message import ChannelMessage
 
 from landing.models import ActionRequest
@@ -44,6 +45,7 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
 
     async def run():
         framework = BubFramework()
+        load_settings()
         framework.workspace = tmp_path
         framework.load_builtin_hooks()
         landing = Runtime(tmp_path / "landing.sqlite3", framework=framework)
