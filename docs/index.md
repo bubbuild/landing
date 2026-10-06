@@ -1,4 +1,11 @@
-# Landing
+---
+title: Landing
+---
+
+<h1 id="landing">
+  <img src="assets/images/landing-wordmark-light.png#only-light" alt="Landing" width="420">
+  <img src="assets/images/landing-wordmark-dark.png#only-dark" alt="Landing" width="420">
+</h1>
 
 Landing helps your team act on engineering problems: explain a failure, make it actionable, delegate a fix, or review a candidate. It works with the tools and checks you already use.
 

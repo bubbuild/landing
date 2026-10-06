@@ -1,4 +1,9 @@
-# Landing
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/images/landing-wordmark-dark.png">
+    <img src="docs/assets/images/landing-wordmark-light.png" alt="Landing" width="420">
+  </picture>
+</h1>
 
 Landing explains CI failures, fixes delegated problems, triages issues, and publishes review feedback where your team works. It uses your existing tools and checks.
 

@@ -40,6 +40,8 @@ paths = ["src/landing"]
 
 [project.theme]
 language = "en"
+logo = "assets/images/landing.png"
+favicon = "assets/images/favicon.png"
 features = [
     "announce.dismiss",
     "content.code.annotate",
@@ -67,25 +69,25 @@ previous = "fontawesome/solid/angle-left"
 next = "fontawesome/solid/angle-right"
 repo = "fontawesome/brands/github"
 
-#[project.theme.font]
-#text = "Inter"
-#code = "Jetbrains Mono"
+[project.theme.font]
+text = "Lora"
+code = "JetBrains Mono"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"
 scheme = "default"
-primary = "white"
-accent = "deep orange"
+primary = "brown"
+accent = "teal"
 toggle.icon =  "material/brightness-7"
 toggle.name = "Switch to dark mode"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: dark)"
 scheme = "slate"
-primary = "black"
-accent = "deep orange"
+primary = "brown"
+accent = "amber"
 toggle.icon =  "material/brightness-4"
-toggle.name = "Switch to system preference"
+toggle.name = "Switch to light mode"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
