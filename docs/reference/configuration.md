@@ -108,12 +108,13 @@ Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `
 | --- | --- |
 | `LANDING_DB` | SQLite path, default `~/.local/share/landing/landing.sqlite3`; image default `/storage/landing.sqlite3`. |
 | `LANDING_TOKEN` | Server bearer token; required to listen beyond localhost. |
+| `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. Available in the source checkout. |
 | `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
 | `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. `BASE_URL` remains an alias. |
 
-CLI and service settings read their own fields from environment, Landing YAML and existing Bub YAML. YAML keys are `db`, `token`, `github_repository` and `base_url`. CLI options override corresponding settings. SDK calls do not validate CLI settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
+CLI and service settings read their own fields from environment, Landing YAML and existing Bub YAML. YAML keys are `db`, `token`, `replicate`, `github_repository` and `base_url`. CLI options override corresponding settings. SDK calls do not validate CLI settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
 
-Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`.
+Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`. Set `LANDING_REPLICATE=false` when an SDK host supplies the Runtime, and supervise that application externally.
 
 ## GitHub workflows and runner
 

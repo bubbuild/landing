@@ -210,7 +210,7 @@ class Publication:
     @hookimpl(specname="provide_lifespan")
     async def publication_lifespan(self):
         tools = self.runtime.tools
-        previous = tools.get(confirm_reply.name)
+        previous = tools[confirm_reply.name]
         tools[confirm_reply.name] = replace(confirm_reply, agent_use=True)
         loop = asyncio.get_running_loop()
         task = cast("asyncio.Task", asyncio.current_task())
@@ -219,10 +219,7 @@ class Publication:
             yield
         finally:
             loop.remove_signal_handler(signal.SIGTERM)
-            if previous is None:
-                tools.pop(confirm_reply.name, None)
-            else:
-                tools[confirm_reply.name] = previous
+            tools[confirm_reply.name] = previous
 
     def __post_init__(self) -> None:
         if self.number:

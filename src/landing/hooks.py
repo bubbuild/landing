@@ -1,6 +1,7 @@
 """Bub hooks adapt Landing's business state and execution to the message pipeline."""
 
 import asyncio
+from importlib.metadata import distribution
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,13 +26,24 @@ class LandingHooks(BuiltinImpl):
 
     runtime: "Runtime"
 
+    def __init__(self, framework) -> None:
+        super().__init__(framework)
+        for entry in distribution("landing").entry_points.select(group="landing.adapters"):
+            framework.plugin_manager.register(entry.load(), name=entry.name)
+
     @hookimpl
     def register_cli_commands(self, app):
         from landing import cli
-        from landing.adapters import github
 
-        cli.register_cli_commands(app)
-        github.register_cli_commands(app)
+        for name, help_text in {
+            "triage": "Identify a problem and its acceptance criteria.",
+            "fix": "Repair the delegated problem and validate changes.",
+            "review": "Evaluate a candidate against independent evidence.",
+            "explain": "Explain the supplied question or evidence.",
+        }.items():
+            app.command(name=name, cls=cli.Command, help=help_text)(cli.delegate)
+        app.add_typer(cli.actions, name="action")
+        app.command(cls=cli.Command)(cli.serve)
 
     @hookimpl(trylast=True)
     def provide_environment(self, session_id, workspace):

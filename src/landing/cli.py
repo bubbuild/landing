@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import os
+import shlex
 import sys
 import time
 from contextlib import nullcontext
@@ -13,7 +15,7 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import typer
-from bub import BubFramework, hookimpl
+from bub import BubFramework
 from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
@@ -39,6 +41,7 @@ class ExecutionSettings(FileSettings):
     token: str | None = Field(default=None, repr=False)
     github_repository: str | None = None
     base_url: str | None = Field(default=None, validation_alias=AliasChoices("LANDING_BASE_URL", "BASE_URL"))
+    replicate: bool = False
 
 
 JsonOutput = Annotated[bool, typer.Option("--json", help="Print records as JSON.")]
@@ -274,7 +277,11 @@ def serve(
     from landing.server import create_app
 
     settings = execution_settings(ctx)
-    runtime = execution_runtime(ctx, settings)
+    if host not in {"127.0.0.1", "localhost", "::1"} and not settings.token:
+        message = "Set LANDING_TOKEN before listening beyond localhost."
+        raise ValueError(message)
+    embedded = host_runtime(ctx)
+    runtime = embedded or execution_runtime(ctx, settings)
     workspaces = dict(runtime.workspaces or {"default": runtime.framework.workspace})
     for value in workspace or []:
         name, separator, path = value.partition("=")
@@ -283,32 +290,31 @@ def serve(
             raise ValueError(message)
         workspaces[name] = Path(path).expanduser().resolve()
     runtime.workspaces = workspaces
-    if host not in {"127.0.0.1", "localhost", "::1"} and not settings.token:
-        message = "Set LANDING_TOKEN before listening beyond localhost."
-        raise ValueError(message)
-    uvicorn.run(
-        create_app(
-            runtime,
-            token=settings.token,
-            base_url=settings.base_url,
-            github_repository=settings.github_repository,
-        ),
-        host=host,
-        port=port,
+    app = create_app(
+        runtime,
+        token=settings.token,
+        base_url=settings.base_url,
+        github_repository=settings.github_repository,
     )
-
-
-@hookimpl
-def register_cli_commands(app: typer.Typer) -> None:
-    for name, help_text in {
-        "triage": "Identify a problem and its acceptance criteria.",
-        "fix": "Repair the delegated problem and validate changes.",
-        "review": "Evaluate a candidate against independent evidence.",
-        "explain": "Explain the supplied question or evidence.",
-    }.items():
-        app.command(name=name, cls=Command, help=help_text)(delegate)
-    app.add_typer(actions, name="action")
-    app.command(cls=Command)(serve)
+    if settings.replicate:
+        if embedded:
+            message = "Use an external supervisor for an existing SDK host."
+            raise ValueError(message)
+        command = [sys.executable, "-m", "landing", "--github-repository", settings.github_repository or ""]
+        command.extend(["serve", "--host", host, "--port", str(port)])
+        for name, path in workspaces.items():
+            command.extend(["--workspace", f"{name}={path}"])
+        os.execvpe(  # noqa: S606 -- replace the CLI with its native process supervisor.
+            "litestream",  # noqa: S607 -- use Litestream from the prepared host's PATH.
+            ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)],
+            {
+                **os.environ,
+                "LANDING_REPLICATE": "false",
+                "LANDING_DB": str(runtime.path),
+                "LANDING_SKILL_DIRS": json.dumps([str(root) for root in runtime.skill_roots]),
+            },
+        )
+    uvicorn.run(app, host=host, port=port)
 
 
 def main(argv: list[str] | None = None) -> int:

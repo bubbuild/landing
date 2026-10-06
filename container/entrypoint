@@ -1,25 +1,5 @@
-#!/usr/bin/env python
-"""Use Litestream's supervisor for the server and the ordinary CLI otherwise."""
-
-import os
-import shlex
-import sys
-from functools import wraps
-from pathlib import Path
-
-from landing.cli import Command, action_database, create_cli_app, serve
-
-Path("/storage/workspace").mkdir(parents=True, exist_ok=True)
-os.chdir("/storage/workspace")
-
-
-@wraps(serve)
-def start_server(ctx, **kwargs):
-    os.environ["LANDING_DB"] = str(action_database(ctx).resolve())
-    command = ["landing", *sys.argv[1:]]
-    os.execvp("litestream", ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)])
-
-
-app = create_cli_app()
-app.command("serve", cls=Command)(start_server)
-app(args=sys.argv[1:], prog_name="landing")
+#!/bin/sh
+set -eu
+mkdir -p /storage/workspace
+cd /storage/workspace
+exec landing "$@"

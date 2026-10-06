@@ -31,6 +31,9 @@ classifiers = [
 [project.scripts]
 landing = "landing.cli:main"
 
+[project.entry-points."landing.adapters"]
+landing-github = "landing.adapters.github"
+
 [project.urls]
 Homepage = "https://getlanding.dev/"
 Repository = "https://github.com/bubbuild/landing"

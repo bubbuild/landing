@@ -15,7 +15,6 @@ from scalar_fastapi import AgentScalarConfig, add_scalar_reference
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import URL
 
-from landing.adapters.github import repository_context
 from landing.models import MAX_REQUEST_BYTES, TERMINAL, Action, ActionRequest, Event
 from landing.runtime import Runtime
 from landing.tasks import ConflictError
@@ -80,6 +79,8 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     def accept(body: ActionRequest, response: Response, key: str | None, retry_of: str | None = None) -> Action:
         if github_repository:
+            from landing.adapters.github import repository_context
+
             context = repository_context(github_repository)
             if context not in body.input:
                 body = body.model_copy(update={"input": [*body.input, context]})

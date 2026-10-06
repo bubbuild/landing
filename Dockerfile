@@ -27,6 +27,7 @@ COPY --chmod=755 container/entrypoint /usr/local/bin/landing-entrypoint
 
 ENV PATH="/opt/landing/.venv/bin:$PATH" \
     LANDING_DB="/storage/landing.sqlite3" \
+    LANDING_REPLICATE="true" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 USER 1000:1000
