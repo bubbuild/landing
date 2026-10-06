@@ -79,7 +79,7 @@ Use `,triage`, `,fix`, `,review`, or `,explain` to delegate work. `,mode` reads 
 
 ## Hook integration
 
-Pass an existing Bub framework to handle Landing commands through your application's message pipeline:
+Use Landing's `Runtime` as your Bub framework's agent, with Landing-owned model configuration and execution. Create it at application startup, then add host hooks for the message pipeline:
 
 ```python
 from pathlib import Path
