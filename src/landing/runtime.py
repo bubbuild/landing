@@ -99,11 +99,6 @@ class Runtime(BubAgent):
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
-    @property
-    def agent(self) -> "Runtime":
-        """Return the native SDK agent owned by this runtime."""
-        return self
-
     async def run_stream(
         self,
         *,

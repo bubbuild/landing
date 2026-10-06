@@ -124,9 +124,9 @@ def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, mode
                 if integration == "hooks":
                     await framework.process_inbound(ChannelMessage(session_id=command, channel="cli", content=prompt))
                 else:
-                    await output(await landing.agent.run_stream(session_id=command, prompt=prompt))
+                    await output(await landing.run_stream(session_id=command, prompt=prompt))
             await output(
-                await landing.agent.run_stream(session_id="limited", prompt=',fix "Record evidence."', allowed_tools=[])
+                await landing.run_stream(session_id="limited", prompt=',fix "Record evidence."', allowed_tools=[])
             )
         assert [json.loads(line)["text"] for line in receipt.read_text().splitlines()] == ["allowed"]
 
@@ -169,7 +169,7 @@ def test_cancellation_closes_mcp_subprocess(tmp_path, mcp_server, model):
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             landing.framework.workspace = tmp_path
             consumer = asyncio.create_task(
-                output(await landing.agent.run_stream(session_id="pending", prompt="Record evidence."))
+                output(await landing.run_stream(session_id="pending", prompt="Record evidence."))
             )
             async with asyncio.timeout(15):
                 while not receipt.exists():

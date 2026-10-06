@@ -32,7 +32,7 @@ CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which extends B
 ```text
 CLI triage / fix / review / explain ----> command ----+
 Bub work commands / messages ----------> run_stream -+
-Python run / agent.run_stream ----------------------+--> SQLite -> execute
+Python run / run_stream ----------------------------+--> SQLite -> execute
 HTTP POST / Python submit --> receipt --> worker ----+               |
 GitHub event --> admission --> command --------------+       Bub Agent + checks
                                                                     |

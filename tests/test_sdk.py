@@ -57,7 +57,7 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
                 )
                 text = result.model_output
             else:
-                text = await output(await landing.agent.run_stream(session_id="pr-42", prompt=prompt))
+                text = await output(await landing.run_stream(session_id="pr-42", prompt=prompt))
             assert text == "Deployment reference: approved"
             action = landing.tasks.list()[0]
             assert action.mode == mode
@@ -90,7 +90,7 @@ def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integr
                 assert result.model_output == "Wrote the answer."
             else:
                 assert (
-                    await output(await landing.agent.run_stream(session_id="writer", prompt=',fix "Write the answer."'))
+                    await output(await landing.run_stream(session_id="writer", prompt=',fix "Write the answer."'))
                     == "Wrote the answer."
                 )
             assert (project / "answer.txt").read_text() == "42"
@@ -135,9 +135,9 @@ def test_content_parts_remain_evidence_and_explicit_state_skips_recovery(tmp_pat
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             landing.framework.workspace = tmp_path
-            await output(await landing.agent.run_stream(session_id="thread", prompt=",mode gatekeeper"))
+            await output(await landing.run_stream(session_id="thread", prompt=",mode gatekeeper"))
             state = {"landing_mode": "explainer", "_runtime_workspace": str(tmp_path)}
-            stream = await landing.agent.run_stream(
+            stream = await landing.run_stream(
                 session_id="thread", prompt=[{"type": "text", "text": ',fix "Overwrite the candidate."'}], state=state
             )
             assert await output(stream) == "Explained the quoted command."
@@ -158,7 +158,7 @@ def test_closing_sdk_stream_cancels_durable_work(tmp_path, model):
 
         responses.append(blocked)
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
-            stream = await landing.agent.run_stream(session_id="thread", prompt=',explain "Inspect the failure."')
+            stream = await landing.run_stream(session_id="thread", prompt=',explain "Inspect the failure."')
             consumer = asyncio.create_task(output(stream))
             await asyncio.wait_for(started.wait(), 5)
             consumer.cancel()
@@ -198,16 +198,16 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             landing.framework.workspace = tmp_path
             assert (
-                await output(await landing.agent.run_stream(session_id="thread", prompt=',review "Use review-policy."'))
+                await output(await landing.run_stream(session_id="thread", prompt=',review "Use review-policy."'))
                 == "Deployment reference: review"
             )
             assert (
-                await output(await landing.agent.run_stream(session_id="thread", prompt=',fix "Use repair-policy."'))
+                await output(await landing.run_stream(session_id="thread", prompt=',fix "Use repair-policy."'))
                 == "Deployment reference: repair"
             )
             assert (
                 await output(
-                    await landing.agent.run_stream(
+                    await landing.run_stream(
                         session_id="limited", prompt=',fix "Use repair-policy."', allowed_skills=[]
                     )
                 )
@@ -215,7 +215,7 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
             )
             assert (
                 await output(
-                    await landing.agent.run_stream(
+                    await landing.run_stream(
                         session_id="excluded", prompt=',fix "Use review-policy."', allowed_skills=["review-policy"]
                     )
                 )
