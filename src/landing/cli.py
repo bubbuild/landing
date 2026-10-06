@@ -20,7 +20,7 @@ from typer.core import TyperCommand
 
 from landing.commands import COMMANDS
 from landing.database import open_database, own_database
-from landing.hooks import LandingHooks, register_command_hooks
+from landing.hooks import LandingHooks
 from landing.models import TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
 from landing.settings import ConfigurationFile, FileSettings
@@ -70,8 +70,10 @@ def execution_settings(ctx: typer.Context) -> ExecutionSettings:
 
 
 def host_runtime(ctx: typer.Context) -> Runtime | None:
-    if (framework := ctx.find_object(BubFramework)) and (hooks := framework.plugin_manager.get_plugin("landing")):
-        return cast(LandingHooks, hooks).runtime
+    if (framework := ctx.find_object(BubFramework)) and isinstance(
+        hooks := framework.plugin_manager.get_plugin("builtin"), LandingHooks
+    ):
+        return cast(Runtime | None, hooks._agent)
     return None
 
 
@@ -103,7 +105,7 @@ def configure(
 
 def create_cli_app() -> typer.Typer:
     framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-    register_command_hooks(framework.plugin_manager)
+    framework.plugin_manager.register(LandingHooks(framework), name="builtin")
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",

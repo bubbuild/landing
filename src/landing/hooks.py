@@ -23,12 +23,15 @@ if TYPE_CHECKING:
 class LandingHooks(BuiltinImpl):
     """Native defaults and business hooks shared by hook and SDK calls."""
 
-    def __init__(self, runtime: "Runtime") -> None:
-        super().__init__(runtime.framework)
-        self.runtime = runtime
+    runtime: "Runtime"
 
-    def _get_agent(self, state=None):
-        return self.runtime
+    @hookimpl
+    def register_cli_commands(self, app):
+        from landing import cli
+        from landing.adapters import github
+
+        cli.register_cli_commands(app)
+        github.register_cli_commands(app)
 
     @hookimpl(trylast=True)
     def provide_environment(self, session_id, workspace):
@@ -122,24 +125,3 @@ class LandingHooks(BuiltinImpl):
     @hookimpl(specname="provide_tape_sidecar")
     def task_sidecar(self):
         return self.runtime.tasks
-
-
-def register_command_hooks(manager) -> None:
-    """Use the same command declarations for CLI bootstrap and an existing Bub host."""
-    from landing import cli
-    from landing.adapters import github
-
-    for name, plugin in (("landing-commands", cli), ("landing-github", github)):
-        if not manager.is_registered(plugin):
-            manager.register(plugin, name=name)
-
-
-def install_hooks(runtime: "Runtime") -> None:
-    """Compose native defaults, business hooks, and storage through Bub's SDK."""
-    manager = runtime.framework.plugin_manager
-    builtin = manager.get_plugin("builtin")
-    if type(builtin) is BuiltinImpl:
-        manager.unregister(builtin)
-    hooks = LandingHooks(runtime)
-    manager.register(hooks, name="landing")
-    register_command_hooks(manager)

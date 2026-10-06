@@ -17,13 +17,13 @@ from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
 from bub.skills import discover_skills
 from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
-from bub.tools import REGISTRY, Tool, ToolContext, tool
+from bub.tools import Tool, ToolContext, tool
 from bub.turn import TurnState
 from pydantic import ValidationError
 
 from landing.commands import COMMANDS, admit
 from landing.database import database_engine
-from landing.hooks import install_hooks
+from landing.hooks import LandingHooks
 from landing.mcp import connected_tools
 from landing.models import Action, ActionRequest, Decision
 from landing.settings import ConfigurationFile, ModeSettings, Settings
@@ -81,15 +81,21 @@ class Runtime(BubAgent):
         self.configuration = ensure_config(Settings)
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
-        install_hooks(self)
+        manager = self.framework.plugin_manager
+        hooks = manager.get_plugin("builtin")
+        if not isinstance(hooks, LandingHooks):
+            manager.unregister(name="builtin")
+            hooks = LandingHooks(self.framework)
+            manager.register(hooks, name="builtin")
         self.skill_roots = tuple(
             Path(root).expanduser().resolve() for root in (*skill_dirs, *self.configuration.skill_dirs)
         )
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
-        super().__init__(
-            self.framework, tape_store=SQLiteTapeStore(self.engine), tools=[*REGISTRY.values(), *tools], skill_dirs=()
-        )
+        super().__init__(self.framework, tape_store=SQLiteTapeStore(self.engine), skill_dirs=())
+        self.tools.update({item.name: item for item in tools})
+        hooks.runtime = self
+        hooks._agent = self
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
