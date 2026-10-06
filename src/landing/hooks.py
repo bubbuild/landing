@@ -10,6 +10,7 @@ from bub.builtin.hook_impl import BuiltinImpl
 from bub.builtin.settings import load_session_settings
 from bub.envelope import field_of
 from bub.hooks.interception import LlmCallDecision
+from bub.skills import discover_skills
 from bub.utils import workspace_from_state
 
 from landing.database import open_database, own_database
@@ -78,13 +79,18 @@ class LandingHooks:
         )
 
     @hookimpl
-    def continue_prompt(self, tape):
-        return f"$landing-{tape.context.state['landing_mode']}"
-
-    @hookimpl
     def system_prompt(self, prompt, state) -> str:
         workspace = workspace_from_state(state)
         selected = state.get("landing_mode", "explainer")
+        allowed = state.get("allowed_skills")
+        skill = next(
+            (
+                item
+                for item in discover_skills(workspace, skill_dirs=state["_runtime_agent"].skill_dirs)
+                if item.name == f"landing-{selected}" and (allowed is None or item.name in allowed)
+            ),
+            None,
+        )
         repository = workspace / "AGENTS.md"
         try:
             instructions = repository.read_text(encoding="utf-8").strip()
@@ -94,6 +100,7 @@ class LandingHooks:
             SYSTEM,
             common=COMMON,
             selected=selected,
+            mode=skill.body() if skill else "",
             instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
             workspace=workspace,
             repository=instructions,

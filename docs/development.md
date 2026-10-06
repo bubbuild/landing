@@ -61,7 +61,7 @@ GitHub enables reply confirmation through a native hook and verifies publication
 
 ## Instructions and skills
 
-`LandingHooks` supplies task guidance, state, and storage alongside host hooks. Each task constructs a native SDK Agent with its tools, skill roots, and shared SQLite store; tape context and tool interception reuse Bub defaults. The system prompt places common behavior, the selected mode, configured additions, and root `AGENTS.md` before the workspace path. Initial and continuation prompts select the mode method with a native `$landing-{mode}` hint; Bub discovers and expands permitted skills alongside its tool guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
+`LandingHooks` supplies task guidance, state, and storage alongside host hooks. Each task constructs a native SDK Agent with its tools, skill roots, and shared SQLite store; tape context and tool interception reuse Bub defaults. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path. Bub appends native tool and skill guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
 
 Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in the native `src/skills` namespace; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 

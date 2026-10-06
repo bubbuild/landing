@@ -245,8 +245,7 @@ def test_explainer_confirms_only_its_own_conversation_reply(platform, invoke, mo
     responses, _ = model
 
     async def report_confirmed_body(**kwargs):
-        receipt = next(message for message in reversed(kwargs["messages"]) if message["role"] == "tool")
-        return completion(answer if answer in str(receipt) else "Reply confirmation failed.")
+        return completion(answer if answer in str(kwargs["messages"][-1]) else "Reply confirmation failed.")
 
     responses.extend([
         completion(

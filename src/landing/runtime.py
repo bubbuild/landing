@@ -300,10 +300,7 @@ class Runtime:
                         self.capabilities(request.mode, invocation, workspace, agent)
                         stream = await agent.run_stream(
                             session_id=session_id,
-                            prompt=[
-                                {"type": "text", "text": f"$landing-{request.mode}"},
-                                *(prompt if prompt is not None else task_prompt(request, checks)),
-                            ],
+                            prompt=prompt if prompt is not None else task_prompt(request, checks),
                             state=state,
                             **invocation,
                         )
