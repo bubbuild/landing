@@ -61,7 +61,7 @@ Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"
 | `created_at`, `updated_at` | Record timestamps. |
 | `started_at`, `completed_at`, `cancel_requested_at` | Lifecycle timestamps or null. |
 
-Poll until `completed`, `failed`, `cancelled`, or `interrupted`. Events contain `id`, `type`, `created_at`, and `data`. Validation events record command, output, exit code, and timeout status.
+Read the record when needed; terminal states are `completed`, `failed`, `cancelled`, and `interrupted`. Admission does not wait for completion, and caller disconnection does not cancel accepted work. Events contain `id`, `type`, `created_at`, and `data`. Validation events record command, output, exit code, and timeout status.
 
 Cancellation returns `202` while active work stops, otherwise `200` for terminal work. Retry requires a terminal action and preserves workspace edits. After worker restart, active work becomes `interrupted`, queued work resumes, and completed work does not replay.
 

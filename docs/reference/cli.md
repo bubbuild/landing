@@ -1,7 +1,7 @@
 # CLI reference
 
 ```text
-landing [--db PATH | --server URL] [--github-repository OWNER/REPO] [--skill-dir PATH] COMMAND
+landing [--db PATH] [--github-repository OWNER/REPO] [--skill-dir PATH] COMMAND
 ```
 
 Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. Install the CLI with `uv tool install "landing==0.2.0"`; from a Landing source checkout, use `uv run landing`. See [Local use](../guides/local.md) for a task example.
@@ -12,10 +12,9 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 
 | Option | Contract |
 | --- | --- |
-| `--db PATH` | Local SQLite path, overriding `LANDING_DB`; cannot combine with `--server`. |
-| `--server URL` | Remote service, default `LANDING_SERVER`. |
+| `--db PATH` | SQLite path, overriding `LANDING_DB`. |
 | `--github-repository OWNER/REPO` | Prepared gh context, default `LANDING_GITHUB_REPOSITORY`; configured on the executing host. |
-| `--skill-dir PATH` | Repeatable trusted skill root for local execution or `serve`; remote clients cannot set it. |
+| `--skill-dir PATH` | Repeatable trusted skill root for execution or `serve`. |
 
 [Configuration](configuration.md) defines environment defaults and skill precedence.
 
@@ -25,16 +24,15 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 landing {triage,fix,review,explain} [INSTRUCTION] [OPTIONS]
 ```
 
-A nonblank instruction or at least one input is required. Results are text by default. Commands wait for completion unless remote admission uses `--detach`.
+A nonblank instruction or at least one input is required. Results are text by default. Commands execute the task and return its result. Use the [HTTP API](http.md) to submit work to a running service and receive a receipt immediately.
 
 | Option | Contract |
 | --- | --- |
 | `--input FILE` | Repeatable UTF-8 snapshot; `-` reads stdin once. Paths refer to the caller's filesystem. |
-| `--workspace VALUE` | Local directory, default current directory; remote registered name, default `default`. |
+| `--workspace VALUE` | Execution directory, default current directory. |
 | `--check COMMAND` | Repeatable required command for fix or review, with a five-minute timeout per check. |
 | `--json` | Print an action record. |
 | `--output PATH` | Also save the displayed result; the parent directory must exist. |
-| `--detach` | Return on remote admission; requires a server. |
 
 Commands select modes: `triage` selects issuer, `fix` selects fixer, `review` selects gatekeeper, and `explain` selects explainer. [Mode capabilities](configuration.md#mode-capabilities) filter tools and skills; they are not a sandbox. Review guidance asks the agent to leave the candidate unchanged.
 
@@ -48,10 +46,10 @@ Review checks run before evaluation; failure forces `block`. Fix checks run afte
 | `action view ID` | Read status, result, decision, and error. |
 | `action logs ID` | JSON events; `--after N` defaults to 0, with the same limit bounds. |
 | `action watch ID` | Wait; `--exit-status` applies completion and gate exit semantics. |
-| `action cancel ID` | Cancel queued work or request active cancellation. |
-| `action retry ID` | Create a new action from a terminal task's request; remote `--detach` is supported. |
+| `action cancel ID` | Cancel queued work while its executing host is stopped. |
+| `action retry ID` | Execute a new action from a terminal task's request. |
 
-All accept `--json`. Retry does not revert workspace changes. Read and cancellation commands can access SQLite while its worker runs; execution has a single owner.
+All accept `--json`. Retry does not revert workspace changes. Inspection can read SQLite while its worker runs; only explicit `watch` polls for completion. Use Ctrl-C to cancel local execution, or the HTTP cancellation endpoint for a running service. Each database has one execution owner.
 
 ## Serve
 
@@ -59,20 +57,20 @@ All accept `--json`. Retry does not revert workspace changes. Read and cancellat
 landing [GLOBAL OPTIONS] serve [--host HOST] [--port PORT] [--workspace NAME=PATH]
 ```
 
-Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. `serve` and `github` cannot combine with `--server`. Listening beyond localhost requires `LANDING_TOKEN`. See [Run the server](../guides/server.md).
+Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. Listening beyond localhost requires `LANDING_TOKEN`. See [Run the server](../guides/server.md).
 
 ## Exit codes and interruption
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Completed, with `allow` for review; successful inspection or detached admission. `watch` applies action semantics only with `--exit-status`. |
-| `1` | Failed, cancelled, interrupted, review `block` or `inconclusive`, or remote request failure. |
+| `0` | Completed, with `allow` for review; successful inspection. `watch` applies action semantics only with `--exit-status`. |
+| `1` | Failed, cancelled, interrupted, review `block` or `inconclusive`. |
 | `2` | Invalid arguments, input, local configuration, or missing local action. |
-| `130` | Waiting interrupted with Ctrl-C. |
+| `130` | Execution or observation interrupted with Ctrl-C. |
 
-Local creation cancels on Ctrl-C and closes owned shell processes. Remote waiting stops without cancelling the task. [GitHub event delivery](../guides/github.md#publish-native-results) uses advisory decision semantics.
+Local creation cancels on Ctrl-C and closes owned shell processes. Stopping `action watch` leaves the executing task running. [GitHub event delivery](../guides/github.md#publish-native-results) uses advisory decision semantics.
 
-Help and syntax diagnostics remain plain in captured output. Syntax errors use stderr and exit 2. Valid commands encountering invalid task input or local configuration also return 2 and, with `--json`, emit an `error` object on stdout. Remote connection and timeout failures report on stderr with exit 1; HTTP status errors report the server's detail.
+Help and syntax diagnostics remain plain in captured output. Syntax errors use stderr and exit 2. Valid commands encountering invalid task input or local configuration also return 2 and, with `--json`, emit an `error` object on stdout.
 
 ## GitHub events
 

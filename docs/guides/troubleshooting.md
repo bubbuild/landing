@@ -16,7 +16,7 @@ Replace the ID with the affected action. Start with the observed failure, then c
 | Model failure or empty completion | Inspect the action error and saved model diagnostics; verify provider settings before retrying. |
 | Fix validation failed | Read validation events and inspect the workspace diff to distinguish repair and environment failures. |
 | Review returned nonzero | Read status and decision separately: completed `block` or `inconclusive` is a recommendation. |
-| Another worker owns the database | Use `--server` for that worker or select a separate database. |
+| Another worker owns the database | Use the executing service's HTTP API or select a separate database. |
 | Work continues after Ctrl-C | Remote waiting stops independently; use `action cancel` to stop the task. |
 | GitHub task skipped | Check caller permission, trust policy, explicit command prefix, and upstream workflow source. |
 | Review cancelled | Inspect the current PR head and `github.review_stopped`; an unverifiable head also stops tools. |

@@ -51,8 +51,6 @@ def test_ci_exit_status(tmp_path, model, capsys, decision):
 def test_usage_errors_have_exit_two_and_json(tmp_path, capsys):
     assert main(["--db", str(tmp_path / "landing.sqlite3"), "triage", "--json"]) == 2
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_request"
-    assert main(["explain", "Explain the failure.", "--detach"]) == 2
-    assert "--detach requires --server" in capsys.readouterr().err
     assert main(["action", "list", "--limit", "0", "--json"]) == 2
     diagnostic = capsys.readouterr()
     assert not diagnostic.out

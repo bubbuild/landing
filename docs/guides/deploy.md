@@ -15,12 +15,13 @@ curl --fail http://127.0.0.1:8080/up
 
 The image serves port 80 as UID 1000. SQLite lives at `/storage/landing.sqlite3`; the default workspace is `/storage/workspace`. It starts empty, so prepare your checkout there before delegating. Git, gh, uv, and Python are included; add other project toolchains through your normal provisioning process. Register additional workspaces with `serve --workspace NAME=PATH`.
 
-Install the CLI with `uv tool install "landing==0.2.0"` and use the same token to submit a task with a saved failure log:
+Submit through the HTTP API with the same token:
 
 ```bash
-export LANDING_SERVER="http://127.0.0.1:8080"
-landing explain "Explain this validation failure." --workspace default --input check.log
+curl -i http://127.0.0.1:8080/v1/actions -H "Authorization: Bearer $LANDING_TOKEN" -H "Content-Type: application/json" -d '{"mode":"explainer","instruction":"Explain the validation failure in this workspace."}'
 ```
+
+The response contains a task receipt; [Run the server](server.md) explains result inspection and cancellation.
 
 Use `compose.yaml` from the Landing repository. `LANDING_IMAGE` selects another image or digest. For a local build, set `LANDING_IMAGE=landing:local` and run `docker compose up --build -d`. Compose forwards only the listed variables; use an override for additional settings or mounts. See [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.
 

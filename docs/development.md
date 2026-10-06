@@ -27,21 +27,43 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. Synchronous calls, streams and the HTTP worker share execution tracking and cancellation. User cancellation stops delegated work; worker shutdown leaves active work interrupted for inspection and queued work available after restart.
+CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. The host enters `Runtime.running()` and owns resources and execution until it leaves. CLI and GitHub Action execute delegated work directly. HTTP uses `Runtime.running(background=True)` and `submit()` to persist work, return a receipt, and notify the worker. SDK hosts choose the same lifecycle. Only explicit CLI `action watch` polls for completion.
 
 ```text
-CLI / GitHub / SDK commands --> Native command tool --+
-HTTP / typed requests -------------------------------+--> Tasks sidecar
-SDK text / message hooks ----------------------------+         |
-                                                               v
-                                                   Shared task execution
-                                                               |
-                                                    Bub Agent + checks
-                                                               |
-                                                   Publication verification
-                                                               |
-                                                         Final Action
+CLI / GitHub / direct SDK          HTTP / background SDK
+            |                              |
+      Admit and execute               Persist + notify ----> Receipt
+            |                              |
+            |                         Worker executes
+            |                              |
+            +----------+-------------------+
+                       |
+               Shared task execution
+                       |
+                Bub Agent + checks
+                       |
+             Publication verification
+                       |
+                  Final Action
 ```
+
+Runtime owns its worker and active executions; FastAPI's lifespan only enters and exits it. SQLite persists accepted work; an in-process event wakes the serial worker after submission, and startup consumes the recovered queue. Submission and cancellation go through the executing host. Another process can inspect records, but it cannot cancel live work by editing SQLite. CLI cancellation of queued work requires exclusive database ownership.
+
+```text
+Host starts
+    |
+Acquire ownership -> Open Bub + shared SQLite -> Recover records
+    |
+Execute direct work or consume submitted work
+    |
+Host stops
+    |
+Stop admission -> Stop execution -> Record interruption
+    |
+Close Bub + SQLite -> Release ownership
+```
+
+Explicit cancellation stops the delegated task and owned shell processes. Closing an unfinished direct SDK stream cancels its work; disconnecting an HTTP caller does not. Shutdown leaves active work interrupted and queued work available after restart. Interrupted actions need inspection and explicit retry because execution may already have external effects.
 
 `LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Its system prompt supplies common behavior, the selected mode's permitted skill through Bub's public discovery and reading APIs, configured additions and root `AGENTS.md`, followed by the workspace path so temporary checkout paths preserve the preceding prefix. Bub appends native tool and skill guidance; cache reuse also depends on those capabilities and the provider. Task inputs contain instructions and evidence. GitHub adaptation owns destination and platform templates. One renderer substitutes named values in owned templates once; inserted instructions and evidence stay literal. Bundled mode methods live in `src/landing/skills` and ship with the package. The hook loads the resolved method on each model call; native task hints and the skill tool load supplementary methods. Manage additions and capability exclusions through existing mode settings.
 

@@ -27,6 +27,26 @@ Commands select persisted modes: `triage` selects issuer, `fix` selects fixer, `
 
 Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered names. `create_app()` accepts the same mapping, token, public origin, skills, and GitHub context for the [HTTP service](http.md).
 
+## Host background work
+
+Enter `Runtime.running(background=True)` for a host that accepts work and returns receipts. The host keeps the context open while work executes; callers do not wait for completion.
+
+```python
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from landing.runtime import Runtime
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async with Runtime(Path("landing.sqlite3")).running(background=True) as landing:
+        app.state.landing = landing
+        yield
+```
+
+Within that host, `action, created = landing.submit(request)` persists an `ActionRequest` and schedules execution. Optional `scope` and `key` deduplicate deliveries; `retry_of` requires terminal work. Read `landing.tasks.get(action.id)` when needed and use `landing.cancel(action.id)` to stop work. Submission requires a live background host. Leaving the context interrupts active work and preserves the queue for restart.
+
 ## Streaming SDK
 
 `landing.agent.run_stream()` accepts `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
@@ -105,6 +125,6 @@ Action records survive restarts. Resetting model history does not remove them; c
 
 ::: landing.runtime.Runtime
     options:
-      members: [running, run, command]
+      members: [running, run, command, submit, cancel]
 
 ::: landing.server.create_app

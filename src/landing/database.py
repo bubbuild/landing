@@ -1,5 +1,6 @@
 """Shared SQLite lifecycle for task records and Bub tape storage."""
 
+import fcntl
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -47,6 +48,19 @@ CREATE TABLE IF NOT EXISTS tape_entries (
 );
 CREATE INDEX IF NOT EXISTS tape_entries_history ON tape_entries(tape, id);
 """
+
+
+@contextmanager
+def own_database(path: Path) -> Iterator[None]:
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as owner:
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            message = "Another worker owns this database. Use its HTTP API or a different --db."
+            raise ValueError(message) from exc
+        yield
 
 
 @contextmanager

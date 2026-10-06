@@ -552,10 +552,6 @@ def route_event(args, event: dict | None) -> dict | None:
 
 
 async def delivery(args) -> int:
-    if args.server:
-        message = "--server cannot be combined with github."
-        raise ValueError(message)
-
     options = GitHubSettings(**{name: value for name, value in vars(args).items() if value is not None})
     context = GitHubEnvironment()
     event = json.loads(options.event.read_text()) if options.event else None

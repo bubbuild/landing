@@ -121,7 +121,7 @@ def test_once_health_checks_worker_and_database_without_auth(tmp_path):
         assert client.get("/up").json() == {"status": "ok"}
         assert client.get("/v1/actions").status_code == 401
         assert client.portal is not None
-        client.portal.call(app.state.worker.cancel)
+        client.portal.call(app.state.runtime.stop)
         deadline = time.monotonic() + 5
         while client.get("/up").status_code == 200 and time.monotonic() < deadline:
             time.sleep(0.01)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import hmac
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
@@ -53,16 +51,9 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
             workspaces=workspaces or {"default": Path.cwd()},
             skill_dirs=skill_dirs,
         )
-        async with runtime.running():
+        async with runtime.running(background=True):
             app.state.runtime = runtime
-            worker = asyncio.create_task(runtime.worker())
-            app.state.worker = worker
-            try:
-                yield
-            finally:
-                worker.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await worker
+            yield
 
     app = FastAPI(title="Landing", version=version("landing"), lifespan=lifespan, docs_url=None, redoc_url=None)
     add_scalar_reference(app, route="/docs", telemetry=False, agent=AgentScalarConfig(disabled=True))
@@ -98,14 +89,14 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     def accept(
         runtime: Runtime, body: ActionRequest, response: Response, key: str | None, retry_of: str | None = None
     ) -> Action:
-        if app.state.worker.done():
-            raise HTTPException(503, "The worker is unavailable.")
-        runtime.workspace(body)
         if github_repository:
             context = repository_context(github_repository)
             if context not in body.input:
                 body = body.model_copy(update={"input": [*body.input, context]})
-        action, created = runtime.tasks.create(body, key=key, scope="server", retry_of=retry_of)
+        try:
+            action, created = runtime.submit(body, key=key, scope="server", retry_of=retry_of)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
         response.status_code = 201 if created else 200
         response.headers["Location"] = f"/v1/actions/{action.id}"
         return action
@@ -176,7 +167,8 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     @app.get("/up", include_in_schema=False)
     async def ready():
-        if app.state.worker.done():
+        worker = app.state.runtime.worker_task
+        if worker is None or worker.done() or worker.cancelling():
             raise HTTPException(503, "The worker is unavailable.")
         app.state.runtime.tasks.list(limit=1)
         return {"status": "ok"}
