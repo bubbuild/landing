@@ -147,6 +147,7 @@ async def delegate_action(ctx: typer.Context, request: ActionRequest | str) -> A
         if isinstance(request, str):
             retry_of = request
             request = runtime.tasks.request(request)
+        request = request.model_copy(update={"workspace": runtime.workspace_name(runtime.workspace(request.workspace))})
         if repository := settings.github_repository:
             from landing.adapters.github import repository_context
 

@@ -129,6 +129,36 @@ def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkey
     assert not (caller / "answer.txt").exists()
 
 
+@pytest.mark.parametrize("workspace", [None, "../candidate"])
+def test_retry_keeps_original_workspace_after_changing_directory(tmp_path, model, monkeypatch, capsys, workspace):
+    candidate = tmp_path / "candidate"
+    caller = tmp_path / "caller"
+    candidate.mkdir()
+    caller.mkdir()
+    monkeypatch.chdir(candidate if workspace is None else caller)
+    responses, _ = model
+    responses.extend([
+        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "initial"}),
+        completion("Saved the answer."),
+        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "retried"}),
+        completion("Saved the retry."),
+    ])
+    options = ["--db", str(tmp_path / "landing.sqlite3")]
+    selection = ["--workspace", workspace] if workspace is not None else []
+    assert main([*options, "fix", "Write the answer.", *selection, "--json"]) == 0
+    action = json.loads(capsys.readouterr().out)
+    assert (candidate / "answer.txt").read_text() == "initial"
+    elsewhere = tmp_path / "other" / "caller"
+    elsewhere.mkdir(parents=True)
+    alternate = elsewhere.parent / "candidate"
+    alternate.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert main([*options, "action", "retry", action["id"], "--json"]) == 0
+    assert (candidate / "answer.txt").read_text() == "retried"
+    assert not (elsewhere / "answer.txt").exists()
+    assert not (alternate / "answer.txt").exists()
+
+
 def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tmp_path, model, capsys):
     responses, _ = model
     response = completion(tool="bash", arguments={"command": "unused"})

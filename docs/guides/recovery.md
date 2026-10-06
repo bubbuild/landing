@@ -22,7 +22,7 @@ The bundled config keeps snapshots for seven days and exposes a local control so
 docker compose exec landing litestream sync -wait -socket /run/landing/litestream.sock /storage/landing.sqlite3
 ```
 
-For other provider settings, mount a standard Litestream config and set `LITESTREAM_CONFIG`. It must replicate the same `LANDING_DB`. A bare server container requires a replica URL or explicit config. CLI commands do not start replication automatically; a single-use CI container can snapshot a closed database with `litestream replicate -once -force-snapshot DB_PATH REPLICA_URL`. See the upstream [container guide](https://litestream.io/guides/docker/) and [replication reference](https://litestream.io/reference/replicate/).
+For other provider settings, mount a standard Litestream config and set `LITESTREAM_CONFIG`. It must replicate the same `LANDING_DB`. A bare server container requires a replica URL or explicit config. `serve` starts replication when `LANDING_REPLICATE` is enabled; other CLI commands bypass replication. A single-use CI container can snapshot a closed database with `litestream replicate -once -force-snapshot DB_PATH REPLICA_URL`. See the upstream [container guide](https://litestream.io/guides/docker/) and [replication reference](https://litestream.io/reference/replicate/).
 
 ## Restore and verify
 
