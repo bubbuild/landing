@@ -27,7 +27,8 @@ def wait(client, location):
 def test_webhook_admission_history_and_retry(tmp_path, model):
     responses, _ = model
     responses.extend([completion("Explained the failing check.")] * 3)
-    app = create_app(tmp_path / "landing.sqlite3", workspaces={"candidate": tmp_path})
+    path = tmp_path / "landing.sqlite3"
+    app = create_app(Runtime(path, workspaces={"candidate": tmp_path}))
     body = {"mode": "explainer", "instruction": "Explain the failing check.", "workspace": "candidate"}
     with TestClient(app) as client:
         assert client.get("/healthz").json() == {"status": "ok"}
@@ -158,12 +159,13 @@ def test_cancellation_and_restart_preserve_work_outcomes(tmp_path, model):
 
 
 def test_once_health_checks_worker_and_database_without_auth(tmp_path):
-    app = create_app(tmp_path / "landing.sqlite3", token="test-secret")  # noqa: S106 -- test-only credential.
+    runtime = Runtime(tmp_path / "landing.sqlite3")
+    app = create_app(runtime, token="test-secret")  # noqa: S106 -- test-only credential.
     with TestClient(app) as client:
         assert client.get("/up").json() == {"status": "ok"}
         assert client.get("/v1/actions").status_code == 401
         assert client.portal is not None
-        client.portal.call(app.state.runtime.stop)
+        client.portal.call(runtime.stop)
         deadline = time.monotonic() + 5
         while client.get("/up").status_code == 200 and time.monotonic() < deadline:
             time.sleep(0.01)

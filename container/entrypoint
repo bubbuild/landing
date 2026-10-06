@@ -6,16 +6,22 @@ import shlex
 import sys
 from pathlib import Path
 
-from landing.cli import app, database
+from typer.core import TyperCommand
+
+from landing.cli import action_database, create_cli_app, present_errors, serve
 
 Path("/storage/workspace").mkdir(parents=True, exist_ok=True)
 os.chdir("/storage/workspace")
-command = ["landing", *sys.argv[1:]]
 
 
-def start_server(args):
-    os.environ["LANDING_DB"] = str(database(args).resolve())
-    os.execvp("litestream", ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)])
+class ContainerCommand(TyperCommand):
+    @present_errors
+    def invoke(self, ctx):
+        os.environ["LANDING_DB"] = str(action_database(ctx).resolve())
+        command = ["landing", *sys.argv[1:]]
+        os.execvp("litestream", ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)])
 
 
-app(args=sys.argv[1:], prog_name="landing", obj={"start_server": start_server})
+app = create_cli_app()
+app.command("serve", cls=ContainerCommand)(serve)
+app(args=sys.argv[1:], prog_name="landing")

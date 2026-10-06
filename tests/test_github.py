@@ -5,11 +5,13 @@ import json
 import os
 
 import pytest
+from bub import BubFramework
 from typer.testing import CliRunner
 
 from landing.adapters import github
-from landing.cli import app
+from landing.cli import create_cli_app
 from landing.models import Action
+from landing.runtime import Runtime
 from landing.tasks import ConflictError
 from tests.conftest import completion
 
@@ -71,8 +73,7 @@ elif "/comments/" in endpoint:
     print(json.dumps(record))
 elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     kind = endpoint.rsplit("/", 1)[-1]
-    for record in state[kind]:
-        print(json.dumps(record))
+    print(json.dumps([state[kind]] if "--slurp" in args else state[kind]))
 else:
     print(json.dumps({**state.get("target", {}), "head": {"sha": state.get("head", "candidate-head")}}))
 """)
@@ -117,7 +118,7 @@ def invoke(tmp_path, platform, monkeypatch):
             "INPUT_UPSTREAM_WORKFLOW": "release-main",
         }.items():
             monkeypatch.setenv(name, value)
-        result = CliRunner().invoke(app, ["github", "event"])
+        result = CliRunner().invoke(create_cli_app(), ["github", "event"])
         if error:
             assert result.exit_code != 0
             assert error in result.stderr
@@ -133,7 +134,12 @@ def invoke(tmp_path, platform, monkeypatch):
     return call
 
 
-def test_comment_actions_require_maintainer_and_use_configurable_identity(platform, invoke, model):
+def test_comment_actions_require_maintainer_and_use_configurable_identity(
+    tmp_path, platform, invoke, model, monkeypatch
+):
+    config = tmp_path / "landing.yml"
+    config.write_text("model: [invalid]")
+    monkeypatch.setenv("LANDING_CONFIG", str(config))
     event = {
         "repository": {"full_name": "example/landing"},
         "issue": {"number": 42},
@@ -142,6 +148,7 @@ def test_comment_actions_require_maintainer_and_use_configurable_identity(platfo
     event["comment"]["body"] = "Handled the task."
     assert invoke(event) is None
     assert not model[1]
+    config.unlink()
     event["comment"]["body"] = "/landing fix Repair retry behavior."
     event["comment"]["user"] = {"type": "User", "login": "contributor"}
     state = json.loads(platform.read_text())
@@ -203,13 +210,14 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(tmp_
         completion("Published the retry finding on the candidate."),
     ])
 
+    runtime = Runtime(tmp_path / "landing.sqlite3", framework=BubFramework(), workspaces={"default": tmp_path})
+
     async def run(instruction="Review retry behavior."):
         return await github.run(
+            runtime,
             "example/landing",
             "review",
             instruction,
-            tmp_path / "landing.sqlite3",
-            tmp_path,
             number=42,
             head="candidate-head",
             key="review:42",
@@ -382,11 +390,10 @@ def test_text_without_required_publication_is_failed_work(tmp_path, platform, mo
     responses.append(completion("The review is ready."))
     action = asyncio.run(
         github.run(
+            Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}),
             "example/landing",
             "review",
             "Review the candidate.",
-            tmp_path / "landing.sqlite3",
-            tmp_path,
             number=42,
             head="candidate-head",
             key="missing-review",
@@ -433,11 +440,10 @@ def test_review_stops_queued_tools_for_superseded_or_unverifiable_head(tmp_path,
 
     async def run():
         return await github.run(
+            Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}),
             "example/landing",
             "review",
             "Review the candidate.",
-            tmp_path / "landing.sqlite3",
-            tmp_path,
             number=42,
             head="candidate-head",
             key="superseded",

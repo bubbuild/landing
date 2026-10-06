@@ -7,7 +7,6 @@ import os
 import shutil
 import signal
 import subprocess
-from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -24,7 +23,6 @@ from landing.commands import COMMANDS
 from landing.models import Action, ActionRequest, FileInput, Mode
 from landing.prompts import render
 from landing.runtime import Runtime
-from landing.tasks import Tasks
 
 REPOSITORY_GUIDANCE = "GitHub repository: $repository. Use the prepared gh CLI. In GitHub conversations use #number or owner/repo#number outside code spans; elsewhere use explicit links. Read contribution templates from the checkout's standard GitHub locations when needed."
 
@@ -178,8 +176,7 @@ def admitted(
 
 
 def rows(endpoint: str, repository: str) -> list[dict]:
-    output = gh(["api", endpoint, "--paginate", "--jq", ".[] | @json"], repository)
-    return [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [item for page in json.loads(gh(["api", endpoint, "--paginate", "--slurp"], repository)) for item in page]
 
 
 def marker(mode: Mode, key: str) -> str:
@@ -189,8 +186,9 @@ def marker(mode: Mode, key: str) -> str:
 
 @dataclass
 class Publication:
-    """Native receipts for one delegated GitHub destination."""
+    """Bind publication receipts and candidate checks to one GitHub delegation."""
 
+    runtime: Runtime
     repository: str
     number: int
     stamp: str
@@ -200,10 +198,28 @@ class Publication:
     reply_required: bool
     publisher: int = field(default=0, init=False)
     previous_replies: set[int] = field(default_factory=set, init=False)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    batch: str | None = field(default=None, init=False)
+    reason: str = field(default="", init=False)
+    action_id: str | None = field(default=None, init=False)
 
     @hookimpl
     def load_state(self):
         return {"_runtime_github_publication": self}
+
+    @hookimpl(specname="provide_lifespan")
+    async def publication_lifespan(self):
+        tools = self.runtime.tools
+        previous = tools[confirm_reply.name]
+        tools[confirm_reply.name] = replace(confirm_reply, agent_use=True)
+        loop = asyncio.get_running_loop()
+        task = cast("asyncio.Task", asyncio.current_task())
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+        try:
+            yield
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)
+            tools[confirm_reply.name] = previous
 
     def __post_init__(self) -> None:
         if self.number:
@@ -246,7 +262,8 @@ class Publication:
             raise ValueError(message)
         return receipt
 
-    def verify(self, action: Action, tasks: Tasks) -> None:
+    def verify(self, action: Action) -> None:
+        tasks = self.runtime.tasks
         if not self.number:
             return
         receipt = self.find()
@@ -271,34 +288,9 @@ class Publication:
                 raise RuntimeError(message)
         tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
 
-
-@tool(context=True, agent_use=False)
-def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
-    """Read back a published reply at the delegated conversation or inline review thread."""
-    publication = cast("Publication", context.state["_runtime_github_publication"])
-    if comment_id in publication.previous_replies:
-        message = "The reply predates this delegation."
-        raise ValueError(message)
-    receipt = publication.read_reply(comment_id)
-    cast("Tasks", context.tape.get_sidecar("tasks")).event(
-        context.state["landing_action_id"], "github.reply_confirmed", {"id": comment_id}
-    )
-    return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
-
-
-class CandidateGuard:
-    """Stop a bound PR review before starting tools against a replaced head."""
-
-    def __init__(self, runtime: Runtime, repository: str, number: int, head: str) -> None:
-        self.runtime, self.repository, self.number, self.head = runtime, repository, number, head
-        self.lock = asyncio.Lock()
-        self.batch = None
-        self.reason = ""
-        self.action_id: str | None = None
-
     @hookimpl
     async def before_tool_call(self, call, state):
-        if "landing_action_id" not in state:
+        if not self.review or "landing_action_id" not in state:
             return None
         async with self.lock:
             if call.run_id != self.batch:
@@ -324,15 +316,16 @@ class CandidateGuard:
                 return ToolCallDecision.deny(self.reason)
 
 
-async def interruptible(awaitable):
-    """Use normal stream cancellation and shell cleanup when the runner stops us."""
-    loop = asyncio.get_running_loop()
-    task = asyncio.create_task(awaitable)
-    loop.add_signal_handler(signal.SIGTERM, task.cancel)
-    try:
-        return await task
-    finally:
-        loop.remove_signal_handler(signal.SIGTERM)
+@tool(context=True, agent_use=False)
+def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
+    """Read back a published reply at the delegated conversation or inline review thread."""
+    publication = cast("Publication", context.state["_runtime_github_publication"])
+    if comment_id in publication.previous_replies:
+        message = "The reply predates this delegation."
+        raise ValueError(message)
+    receipt = publication.read_reply(comment_id)
+    publication.runtime.tasks.event(context.state["landing_action_id"], "github.reply_confirmed", {"id": comment_id})
+    return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
 
 
 def repository_context(repository: str) -> FileInput:
@@ -375,11 +368,10 @@ def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool
 
 
 async def run(
+    landing: Runtime,
     repository: str,
     command: str,
     instruction: str,
-    db: Path,
-    workspace: Path,
     *,
     number: int = 0,
     head: str = "",
@@ -389,8 +381,9 @@ async def run(
     checks: list[str],
     event: dict | None = None,
     reply_required: bool = True,
-    skill_dirs: Iterable[Path] = (),
 ) -> Action:
+    selected_workspace = landing.workspace_name(landing.framework.workspace)
+    workspace = landing.framework.workspace
     mode = COMMANDS[command]
     stamp = marker(mode, key)
     is_pr, thread, head = pull_target(repository, number, head, event, review=mode == "gatekeeper")
@@ -441,40 +434,42 @@ async def run(
     request = ActionRequest(
         mode=mode,
         instruction=instruction or "Carry out the delegated work.",
-        workspace=str(workspace),
+        workspace=selected_workspace,
         input=[repository_context(repository), source_input, FileInput(name="github-guidance.txt", content=guidance)],
         checks=checks if mode in {"fixer", "gatekeeper"} else [],
     )
 
-    publication = Publication(repository, number, stamp, expected_review, thread, head, reply_required)
-    landing = Runtime(
-        db,
-        verify=lambda action: publication.verify(action, landing.tasks),
-        skill_dirs=skill_dirs,
-        tools=[replace(confirm_reply, agent_use=True)],
-    )
-    landing.framework.plugin_manager.register(publication, name="github-publication")
-    guard = CandidateGuard(landing, repository, number, head) if expected_review else None
-    if guard:
-        landing.framework.plugin_manager.register(guard, name="github-candidate")
-    async with landing.running():
-        existing = publication.find()
-        if existing:
-            recorded = landing.tasks.find(repository, key)
-            # The receipt identifies this delivery; retain its original evidence snapshot on replay.
-            snapshot = landing.tasks.request(recorded.id).input if recorded else request.input
-            action, _ = landing.tasks.create(request.model_copy(update={"input": snapshot}), scope=repository, key=key)
-            publication.verify(action, landing.tasks)
-            return landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
-        try:
-            action = await landing.command(
-                command, request, session_id=f"github:{number or key}", scope=repository, key=key
-            )
-        except asyncio.CancelledError:
-            if not guard or not guard.action_id:
-                raise
-            action = landing.tasks.get(guard.action_id)
-        return action
+    publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
+    manager = landing.framework.plugin_manager
+    manager.register(publication, name="github-publication")
+    try:
+        async with landing.running():
+            existing = publication.find()
+            if existing:
+                recorded = landing.tasks.find(repository, key)
+                # The receipt identifies this delivery; retain its original evidence snapshot on replay.
+                snapshot = landing.tasks.request(recorded.id).input if recorded else request.input
+                action, _ = landing.tasks.create(
+                    request.model_copy(update={"input": snapshot}), scope=repository, key=key
+                )
+                publication.verify(action)
+                return landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
+            try:
+                action = await landing.command(
+                    command,
+                    request,
+                    session_id=f"github:{number or key}",
+                    scope=repository,
+                    key=key,
+                    verify=publication.verify,
+                )
+            except asyncio.CancelledError:
+                if not publication.action_id:
+                    raise
+                action = landing.tasks.get(publication.action_id)
+            return action
+    finally:
+        manager.unregister(publication)
 
 
 def write_outputs(action: Action | None) -> None:
@@ -496,10 +491,15 @@ def write_outputs(action: Action | None) -> None:
             output.write(outputs["result"] + "\n")
 
 
-app = typer.Typer(name="github", help="Handle native GitHub events with prepared credentials.", no_args_is_help=True)
+@hookimpl
+def register_cli_commands(app: typer.Typer) -> None:
+    from landing.cli import present_errors
+
+    commands = typer.Typer(help="Handle native GitHub events with prepared credentials.", no_args_is_help=True)
+    commands.command("event")(present_errors(github_event))
+    app.add_typer(commands, name="github")
 
 
-@app.command("event")
 def github_event(
     ctx: typer.Context,
     repository: Annotated[str | None, typer.Option(help="Workflow repository.")] = None,
@@ -523,10 +523,14 @@ def github_event(
     check: Annotated[list[str] | None, typer.Option(help="Required validation (repeatable).")] = None,
 ) -> None:
     """Admit and route an event, then confirm native publication."""
-    ctx.obj["execute"](**locals(), database=ctx.obj["db"], handler=delivery)
+    parameters = {**locals(), "database": ctx.find_root().params.get("db")}
+    options = GitHubSettings(**{
+        name: value for name, value in parameters.items() if name != "ctx" and value is not None
+    })
+    raise typer.Exit(asyncio.run(delivery(ctx, options)))
 
 
-def route_event(args, event: dict | None) -> dict | None:
+def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
     if event and "comment" in event:
         lines = event["comment"]["body"].strip().splitlines()
         parts = lines[0].split(maxsplit=2)
@@ -551,8 +555,7 @@ def route_event(args, event: dict | None) -> dict | None:
     return event
 
 
-async def delivery(args) -> int:
-    options = GitHubSettings(**{name: value for name, value in vars(args).items() if value is not None})
+async def delivery(ctx: typer.Context, options: GitHubSettings) -> int:
     context = GitHubEnvironment()
     event = json.loads(options.event.read_text()) if options.event else None
     if not admitted(
@@ -564,6 +567,9 @@ async def delivery(args) -> int:
     ):
         write_outputs(None)
         return 0
+    from landing.cli import execution_runtime, execution_settings
+
+    settings = execution_settings(ctx)
     event = route_event(options, event)
 
     key = options.delivery_key
@@ -572,25 +578,22 @@ async def delivery(args) -> int:
             message = "Supply --delivery-key outside a GitHub workflow."
             raise ValueError(message)
         key = f"action:{context.run_id}:{context.run_attempt}"
-    action = await interruptible(
-        run(
-            options.repository,
-            options.delegated_command,
-            options.instruction,
-            (options.database or args.db or context.runner_temp / "landing/landing.sqlite3").expanduser(),
-            Path.cwd(),
-            key=key,
-            checks=options.check,
-            event=event,
-            reply_required=not bool(event and "workflow_run" in event),
-            number=options.number,
-            head=options.head,
-            run_id=options.run_id,
-            checked_revision=options.checked_revision
-            if options.checked_revision is not None
-            else context.checked_revision,
-            skill_dirs=args.skill_dir,
-        )
+    runtime = execution_runtime(
+        ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
+    )
+    action = await run(
+        runtime,
+        options.repository,
+        options.delegated_command,
+        options.instruction,
+        key=key,
+        checks=options.check,
+        event=event,
+        reply_required=not bool(event and "workflow_run" in event),
+        number=options.number,
+        head=options.head,
+        run_id=options.run_id,
+        checked_revision=options.checked_revision if options.checked_revision is not None else context.checked_revision,
     )
     typer.echo(action.model_dump_json(indent=2))
     write_outputs(action)

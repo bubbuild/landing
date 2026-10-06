@@ -26,7 +26,8 @@ Avoid tests for helper structure, internal event positions, database rows, or up
 The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
 
 ## Runtime architecture
-CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which extends Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Command admission records the selected mode; the executor restores full session state and prepares the environment. The CLI registers Typer commands and calls Runtime. The Runtime shares native state loading and storage hooks across SDK and message calls. Help and history inspection start no agent. Native session commands such as `,mode` update or report session state without creating an action.
+
+CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which extends Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Command admission records the selected mode; the executor restores full session state and prepares the environment. BubFramework collects Typer commands through its native `register_cli_commands` hook and supplies the CLI context. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Native session commands such as `,mode` update or report session state without creating an action.
 
 ```text
 CLI triage / fix / review / explain ----> command ----+
@@ -56,7 +57,7 @@ Host exits -> stop and await work -> close environments -> unlock SQLite
 
 Cancellation goes through the executing host. Closing an unfinished SDK stream cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
 
-GitHub verifies reply publication, identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. The container delegates service supervision and backup recovery to Litestream, then runs the same CLI. Help, invalid arguments, and non-service commands bypass replication.
+GitHub enables reply confirmation through a native hook and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. The container delegates service supervision and backup recovery to Litestream, then runs the same CLI. Help, invalid arguments, and non-service commands bypass replication.
 
 ## Instructions and skills
 

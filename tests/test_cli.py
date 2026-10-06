@@ -4,9 +4,11 @@ import subprocess
 import sys
 
 import pytest
+from bub import BubFramework
 from typer.testing import CliRunner
 
-from landing.cli import app, main
+from landing.cli import create_cli_app, main
+from landing.runtime import Runtime
 from tests.conftest import completion
 
 
@@ -64,7 +66,7 @@ def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):
     responses.append(report_reference)
     destination = tmp_path / "result.json"
     result = CliRunner().invoke(
-        app,
+        create_cli_app(),
         ["--db", str(tmp_path / "landing.sqlite3"), "explain", "--input", "-", "--output", str(destination), "--json"],
         input="reference=approved",
     )
@@ -86,6 +88,16 @@ def test_captured_help_and_diagnostics_remain_plain_in_ci():
             assert "--limit" in result.stderr
         else:
             assert "--help" in result.stdout
+
+
+def test_cli_prints_shell_completion():
+    result = subprocess.run(  # noqa: S603 -- invoke the public CLI from a supported shell without installing anything.
+        ["/bin/bash", "-c", '"$0" -m landing --show-completion || exit', sys.executable],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "_LANDING_COMPLETE" in result.stdout
 
 
 def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, capsys):
@@ -132,3 +144,26 @@ def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tm
     assert "json_invalid" in diagnostic
     assert "bash" in diagnostic
     assert "sensitive-task-value" not in diagnostic
+
+
+def test_native_cli_uses_host_workspace_and_history(tmp_path, model):
+    responses, _ = model
+    responses.extend([
+        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42"}),
+        completion("Wrote the answer."),
+    ])
+    project = tmp_path / "project"
+    project.mkdir()
+    framework = BubFramework()
+    framework.load_builtin_hooks()
+    Runtime(tmp_path / "landing.sqlite3", framework=framework)
+    app = framework.create_cli_app()
+    runner = CliRunner()
+    result = runner.invoke(app, ["--workspace", str(project), "fix", "Write the answer.", "--json"])
+    assert result.exit_code == 0, result.output
+    action = json.loads(result.stdout)
+    assert (project / "answer.txt").read_text() == "42"
+    assert action["status"] == "completed"
+    result = runner.invoke(app, ["action", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [action]

@@ -1165,7 +1165,6 @@ dependencies = [
     { name = "bub" },
     { name = "bub-mcp" },
     { name = "fastapi" },
-    { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "scalar-fastapi" },
@@ -1176,6 +1175,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx" },
     { name = "mkdocstrings-python" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1190,7 +1190,6 @@ requires-dist = [
     { name = "bub", specifier = "==0.5.0" },
     { name = "bub-mcp", specifier = "==0.3.0" },
     { name = "fastapi", specifier = ">=0.132" },
-    { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-settings", specifier = ">=2.12" },
     { name = "scalar-fastapi", specifier = ">=1.9.1" },
@@ -1201,6 +1200,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx", specifier = ">=0.28" },
     { name = "mkdocstrings-python", specifier = ">=1.0.3" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0.2" },

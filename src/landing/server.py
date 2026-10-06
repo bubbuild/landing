@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hmac
 from collections.abc import Iterable, Mapping
-from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
@@ -23,7 +22,7 @@ from landing.tasks import ConflictError
 
 
 def create_app(  # noqa: C901 -- route definitions share an application lifespan.
-    path: Path,
+    path: Path | Runtime,
     *,
     workspaces: Mapping[str, Path] | None = None,
     token: str | None = None,
@@ -43,18 +42,12 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
         message = "BASE_URL must be an HTTP(S) origin without credentials, a path, query, or fragment."
         raise ValueError(message)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        runtime = Runtime(
-            path,
-            workspaces=workspaces or {"default": Path.cwd()},
-            skill_dirs=skill_dirs,
-        )
-        async with runtime.lifespan(app):
-            app.state.runtime = runtime
-            yield
-
-    app = FastAPI(title="Landing", version=version("landing"), lifespan=lifespan, docs_url=None, redoc_url=None)
+    runtime = (
+        path
+        if isinstance(path, Runtime)
+        else Runtime(path, workspaces=workspaces or {"default": Path.cwd()}, skill_dirs=skill_dirs)
+    )
+    app = FastAPI(title="Landing", version=version("landing"), lifespan=runtime.lifespan, docs_url=None, redoc_url=None)
     add_scalar_reference(app, route="/docs", telemetry=False, agent=AgentScalarConfig(disabled=True))
 
     async def authenticate(credentials: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())]):
@@ -85,9 +78,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     async def storage_error(request, exc):
         return await http_exception_handler(request, HTTPException(503, "The database is unavailable."))
 
-    def accept(
-        runtime: Runtime, body: ActionRequest, response: Response, key: str | None, retry_of: str | None = None
-    ) -> Action:
+    def accept(body: ActionRequest, response: Response, key: str | None, retry_of: str | None = None) -> Action:
         if github_repository:
             context = repository_context(github_repository)
             if context not in body.input:
@@ -109,25 +100,24 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
     @api.post("/v1/actions", response_model=Action, status_code=201)
     async def create(
         body: ActionRequest,
-        request: Request,
         response: Response,
         idempotency_key: Annotated[str | None, Header(min_length=1, max_length=256)] = None,
     ):
-        return accept(request.app.state.runtime, body, response, idempotency_key)
+        return accept(body, response, idempotency_key)
 
     @api.get("/v1/actions", response_model=list[Action])
     async def list_actions(
         request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
     ):
-        tasks = request.app.state.runtime.tasks
+        tasks = runtime.tasks
         items = tasks.list(limit + 1, cursor)
         if len(items) > limit:
             response.headers["Link"] = next_link(request, cursor=items[limit - 1].id, limit=limit)
         return items[:limit]
 
     @api.get("/v1/actions/{action_id}", response_model=Action)
-    async def view(action_id: str, request: Request):
-        return request.app.state.runtime.tasks.get(action_id)
+    async def view(action_id: str):
+        return runtime.tasks.get(action_id)
 
     @api.get("/v1/actions/{action_id}/events", response_model=list[Event])
     async def events(
@@ -137,26 +127,24 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
         after: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ):
-        items = request.app.state.runtime.tasks.events(action_id, after, limit + 1)
+        items = runtime.tasks.events(action_id, after, limit + 1)
         if len(items) > limit:
             response.headers["Link"] = next_link(request, after=items[limit - 1].id, limit=limit)
         return items[:limit]
 
     @api.post("/v1/actions/{action_id}/cancellation", response_model=Action, status_code=202)
-    async def cancel(action_id: str, request: Request, response: Response):
-        action = request.app.state.runtime.cancel(action_id)
+    async def cancel(action_id: str, response: Response):
+        action = runtime.cancel(action_id)
         response.status_code = 200 if action.status in TERMINAL else 202
         return action
 
     @api.post("/v1/actions/{action_id}/retries", response_model=Action, status_code=201)
     async def retry(
         action_id: str,
-        request: Request,
         response: Response,
         idempotency_key: Annotated[str | None, Header(min_length=1, max_length=256)] = None,
     ):
-        runtime = request.app.state.runtime
-        return accept(runtime, runtime.tasks.request(action_id), response, idempotency_key, action_id)
+        return accept(runtime.tasks.request(action_id), response, idempotency_key, action_id)
 
     app.include_router(api)
 
@@ -166,10 +154,10 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     @app.get("/up", include_in_schema=False)
     async def ready():
-        worker = app.state.runtime.worker_task
+        worker = runtime.worker_task
         if worker is None or worker.done() or worker.cancelling():
             raise HTTPException(503, "The worker is unavailable.")
-        app.state.runtime.tasks.list(limit=1)
+        runtime.tasks.list(limit=1)
         return {"status": "ok"}
 
     return app

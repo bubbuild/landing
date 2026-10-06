@@ -124,6 +124,16 @@ class LandingHooks(BuiltinImpl):
         return self.runtime.tasks
 
 
+def register_command_hooks(manager) -> None:
+    """Use the same command declarations for CLI bootstrap and an existing Bub host."""
+    from landing import cli
+    from landing.adapters import github
+
+    for name, plugin in (("landing-commands", cli), ("landing-github", github)):
+        if not manager.is_registered(plugin):
+            manager.register(plugin, name=name)
+
+
 def install_hooks(runtime: "Runtime") -> None:
     """Compose native defaults, business hooks, and storage through Bub's SDK."""
     manager = runtime.framework.plugin_manager
@@ -132,3 +142,4 @@ def install_hooks(runtime: "Runtime") -> None:
         manager.unregister(builtin)
     hooks = LandingHooks(runtime)
     manager.register(hooks, name="landing")
+    register_command_hooks(manager)

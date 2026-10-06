@@ -41,7 +41,7 @@ landing = Runtime(Path("landing.sqlite3"))
 app = FastAPI(lifespan=landing.lifespan)
 ```
 
-Call `action, created = landing.submit(request)` from your handlers to persist work and return a receipt. Optional `scope` and `key` deduplicate deliveries; `retry_of` retries terminal work. Read `landing.tasks.get(action.id)` when needed and call `landing.cancel(action.id)` to cancel. Caller disconnection leaves accepted work running; application shutdown interrupts active work and preserves the queue.
+Use `create_app(landing)` to serve Landing's complete HTTP API with that same Runtime and its configured workspaces and skills. Call `action, created = landing.submit(request)` from your handlers to persist work and return a receipt. Optional `scope` and `key` deduplicate deliveries; `retry_of` retries terminal work. Read `landing.tasks.get(action.id)` when needed and call `landing.cancel(action.id)` to cancel. Caller disconnection leaves accepted work running; application shutdown interrupts active work and preserves the queue.
 
 For another host, enter `landing.running(background=True)`. Ordinary `running()` executes only delegated calls and leaves existing queued work untouched. Submission requires a live background host.
 
@@ -100,7 +100,7 @@ async def handle():
         ))
 ```
 
-Landing registers resources and task execution with the framework. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Mode and history remain isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
+Landing registers resources, task execution, and CLI commands with the framework. `framework.create_cli_app()` retains the host's Runtime, database, workspace, and hooks when running Landing commands. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Mode and history remain isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
 
 ## Skills and additional tools
 
