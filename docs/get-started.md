@@ -31,7 +31,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +40,7 @@ jobs:
       - name: Run native checks
         run: uv sync --locked && uv run pytest
       - uses: bubbuild/landing@0.2.0
+        if: github.event.pull_request.head.repo.full_name == github.repository
         id: landing
         timeout-minutes: 20
         continue-on-error: true
@@ -64,7 +64,7 @@ Put the workflow on your trusted branch, then open a same-repository PR with a s
 
 Check the workflow and PR together. `status: completed` means the task finished and its required publication was verified; `decision` records `allow`, `block`, or `inconclusive`. Your team reviews the findings and independent checks to decide what to accept. Review guidance asks the agent to leave the candidate unchanged.
 
-Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs skip this workflow's agent jobs. Execution or required publication failure still gives the Action a failed outcome; this workflow reports it as a warning and continues. A successful workflow does not prove that Landing delivered a review. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
+Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs run the native checks and skip the Landing step. Execution or required publication failure still gives the Action a failed outcome; this workflow reports it as a warning and continues. A successful workflow does not prove that Landing delivered a review. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
 
 Continue with [CI integration](guides/ci.md) for scope and concurrency, or [GitHub integration](guides/github.md#wire-commands-and-follow-ups) to delegate `/landing fix` and `/landing explain` from comments.
 

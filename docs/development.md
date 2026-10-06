@@ -27,53 +27,50 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, and message hooks share one Bub 0.5.0 agent. Native command tools select modes; typed requests carry their explicit mode. The execution host enters `Runtime.running()` or Bub's native message lifecycle and owns execution until it leaves. CLI and GitHub Action execute delegated work directly. HTTP enters `Runtime.lifespan`, which uses `Runtime.running(background=True)`, and calls `submit()` to persist work, return a receipt, and notify the worker. SDK hosts choose the same lifecycle. Only explicit CLI `action watch` polls for completion.
+One Bub 0.5.0 agent handles all four modes. CLI and GitHub Action execute work and return the outcome. Python callers use the same runtime to execute work, consume a stream, or submit work to a background host. HTTP returns a receipt after submission. Only explicit CLI `action watch` polls for completion.
 
 ```text
-CLI / GitHub / direct SDK          HTTP / background SDK
-            |                              |
-      Admit and execute               Persist + notify ----> Receipt
-            |                              |
-            |                         Worker executes
-            |                              |
-            +----------+-------------------+
-                       |
-               Shared task execution
-                       |
-                Bub Agent + checks
-                       |
-             Publication verification
-                       |
-                  Final Action
+                    One Runtime
+                         |
+           +-------------+--------------+
+           |                            |
+   run / command / stream            submit
+           |                            |
+     Execute work                Persist + notify -> Receipt
+           |                            |
+           |                     Worker executes
+           +-------------+--------------+
+                         |
+                 Bub Agent + checks
+                         |
+            Verify delivery when required
+                         |
+                    Final Action
 ```
 
-The ASGI `Runtime.lifespan` adapts the application protocol to `Runtime.running()`. Runtime owns its worker and active executions; Bub aggregates resources through `provide_lifespan`. The existing storage hook acquires database ownership, opens the shared engine, and recovers records. Native Bub message hosts use the same resource hook and own their message tasks. SQLite persists accepted work; an in-process event wakes the serial worker after submission, and startup consumes the recovered queue. Submission and cancellation go through the executing host. Another process can inspect records, but it cannot cancel live work by editing SQLite. CLI cancellation of queued work requires exclusive database ownership.
+`Runtime.lifespan` adapts ASGI startup and shutdown to `Runtime.running(background=True)`. Runtime owns execution; Bub's `provide_lifespan` hook owns database exclusivity, the shared SQLite engine, and recovery. A native Bub message host uses that resource hook and owns its message tasks.
 
 ```text
-ASGI -> Runtime.lifespan --+
-CLI / Action / SDK -------+-> Runtime.running -> framework.running
-Native Bub message host -----------------------> framework.running
-                                                      |
-                                              provide_lifespan
-                                                      |
-                                          Lock + SQLite + recovery
-                                                      |
-                                               Resources ready
-                                                      |
-                                           Host starts execution
-                                                      |
-                                      Host stops and awaits execution
-                                                      |
-                                         Bub closes environments
-                                                      |
-                                          Close SQLite + unlock
+Application starts
+        |
+Bub opens resources: lock -> SQLite -> recovery
+        |
+Host executes work
+        |
+Host stops and awaits execution
+        |
+Bub closes environments -> SQLite -> unlock
 ```
 
-Explicit cancellation stops the delegated task and owned shell processes. Closing an unfinished direct SDK stream cancels its work; disconnecting an HTTP caller does not. Runtime shutdown leaves active work interrupted and queued work available after restart. A native Bub message host cancels its message tasks and closes their streams; that path requests durable cancellation. Interrupted actions need inspection and explicit retry because execution may already have external effects. The worker starts only after Bub resources are ready and stops before the framework closes environments. Action shell and MCP scopes finish before an action ends; the model's inner shell scope finishes before post-fix checks.
+The worker executes serially and wakes on submission. Startup resumes queued work; Runtime shutdown interrupts active work. Native message-host shutdown closes unfinished streams and requests cancellation. Interrupted work requires inspection before retry because it may already have external effects. Other processes can inspect SQLite, but cancellation goes through the executing host. Offline CLI cancellation requires exclusive ownership.
 
-`LandingHooks` composes native defaults, business state, and storage through Bub's SDK hooks while preserving host hooks. Its system prompt supplies common behavior, the selected mode's permitted skill through Bub's public discovery and reading APIs, configured additions and root `AGENTS.md`, followed by the workspace path so temporary checkout paths preserve the preceding prefix. Bub appends native tool and skill guidance; cache reuse also depends on those capabilities and the provider. Task inputs contain instructions and evidence. GitHub adaptation owns destination and platform templates. One renderer substitutes named values in owned templates once; inserted instructions and evidence stay literal. Bundled mode methods live in `src/landing/skills` and ship with the package. The hook loads the resolved method on each model call; native task hints and the skill tool load supplementary methods. Manage additions and capability exclusions through existing mode settings.
+Action shell and MCP scopes close before an action ends. The model's inner shell scope closes before post-fix checks, preventing background commands from changing the workspace during validation. The task sidecar and tape adapter share one SQLAlchemy Core engine with scoped connections; action transitions and events commit together. Action records survive model-history resets.
 
-Bub's lifespan owns one SQLAlchemy Core Engine shared by the task sidecar and tape adapter. Both use scoped connections; action transitions record their events in the same transaction. Task records remain independent of model history.
+## Instructions and skills
+
+`LandingHooks` composes native defaults, business state, and storage with host hooks. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path. Bub appends native tool and skill guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
+
+Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in `src/landing/skills`; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 
 ## Run the feedback loop
 

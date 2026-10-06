@@ -4,7 +4,7 @@
 landing [--db PATH] [--github-repository OWNER/REPO] [--skill-dir PATH] COMMAND
 ```
 
-Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. Install the CLI with `uv tool install "landing==0.2.0"`; from a Landing source checkout, use `uv run landing`. See [Local use](../guides/local.md) for a task example.
+This reference describes the source checkout; run it with `uv run landing`. Put global options before the subcommand. Local execution requires Python 3.12 or later and a POSIX host. [Local use](../guides/local.md) covers installation and a task with the latest release.
 
 `--help` and `-h` show options; `--version` prints the installed version. Use `--install-completion` to install shell completion or `--show-completion` to print it. Commands are noninteractive, write results to stdout, and diagnostics to stderr. `--json` returns structured records.
 

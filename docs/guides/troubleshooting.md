@@ -1,23 +1,23 @@
 # Troubleshooting
 
-Read the task's result and events using the same database or server as the original request:
+For local work, read the result and events from the same database:
 
 ```bash
 landing action view act_example --json
 landing action logs act_example
 ```
 
-Replace the ID with the affected action. Start with the observed failure, then check its owning layer:
+Replace the ID with the affected action. For service work, use its [HTTP endpoints](../reference/http.md#resources). Start with the observed failure:
 
 | Symptom | Next step |
 | --- | --- |
 | Exit code 2 | Check arguments, inputs, workspace, and [configuration](../reference/configuration.md). |
-| Remote connection failure or timeout | Read stderr; check the server URL, availability, and proxy. |
+| HTTP connection failure or timeout | Check the server URL, availability, and proxy. |
 | Model failure or empty completion | Inspect the action error and saved model diagnostics; verify provider settings before retrying. |
 | Fix validation failed | Read validation events and inspect the workspace diff to distinguish repair and environment failures. |
 | Review returned nonzero | Read status and decision separately: completed `block` or `inconclusive` is a recommendation. |
 | Another worker owns the database | Use the executing service's HTTP API or select a separate database. |
-| Work continues after Ctrl-C | Remote waiting stops independently; use `action cancel` to stop the task. |
+| Work continues after you stop watching | Stopping `action watch` leaves work running. Cancel through its HTTP/SDK host, or use Ctrl-C on the executing CLI. |
 | GitHub task skipped | Check caller permission, trust policy, explicit command prefix, and upstream workflow source. |
 | Review cancelled | Inspect the current PR head and `github.review_stopped`; an unverifiable head also stops tools. |
 | Required publication failed | Inspect gh authorization and the requested destination; reuse the same database and delivery key when retrying delivery. |
