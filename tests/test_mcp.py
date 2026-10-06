@@ -117,16 +117,19 @@ def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, mode
         settings.write_text(json.dumps({"mcp_config": str(selected)}))
         framework = BubFramework(config_file=settings) if source == "framework" else BubFramework()
         framework.workspace = tmp_path
-        framework.load_builtin_hooks()
         async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
-            for command in ("explain", "fix"):
-                prompt = f',{command} "Record evidence."'
+            for command, mode in (("explain", "explainer"), ("fix", "fixer")):
+                prompt = "Record evidence."
                 if integration == "hooks":
-                    await framework.process_inbound(ChannelMessage(session_id=command, channel="cli", content=prompt))
+                    await framework.process_inbound(
+                        ChannelMessage(session_id=command, channel="cli", content=prompt, context={"mode": mode})
+                    )
                 else:
-                    await output(await landing.run_stream(session_id=command, prompt=prompt))
+                    await output(await landing.run_stream(session_id=command, prompt=prompt, mode=mode))
             await output(
-                await landing.run_stream(session_id="limited", prompt=',fix "Record evidence."', allowed_tools=[])
+                await landing.run_stream(
+                    session_id="limited", prompt="Record evidence.", mode="fixer", allowed_tools=[]
+                )
             )
         assert [json.loads(line)["text"] for line in receipt.read_text().splitlines()] == ["allowed"]
 

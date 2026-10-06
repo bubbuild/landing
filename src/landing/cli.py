@@ -20,10 +20,9 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
-from landing.commands import COMMANDS
 from landing.database import open_database, own_database
 from landing.hooks import LandingHooks
-from landing.models import TERMINAL, Action, ActionRequest, FileInput, Input
+from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
 from landing.settings import ConfigurationFile, FileSettings
 from landing.tasks import Tasks
@@ -74,9 +73,9 @@ def execution_settings(ctx: typer.Context) -> ExecutionSettings:
 
 def host_runtime(ctx: typer.Context) -> Runtime | None:
     if (framework := ctx.find_object(BubFramework)) and isinstance(
-        hooks := framework.plugin_manager.get_plugin("builtin"), LandingHooks
+        hooks := framework.plugin_manager.get_plugin("landing"), LandingHooks
     ):
-        return cast(Runtime | None, hooks._agent)
+        return getattr(hooks, "runtime", None)
     return None
 
 
@@ -108,7 +107,7 @@ def configure(
 
 def create_cli_app() -> typer.Typer:
     framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-    framework.plugin_manager.register(LandingHooks(framework), name="builtin")
+    framework.plugin_manager.register(LandingHooks(framework), name="landing")
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",
@@ -156,7 +155,7 @@ async def delegate_action(ctx: typer.Context, request: ActionRequest | str) -> A
                 request = request.model_copy(update={"input": [*request.input, context]})
         if retry_of:
             return await runtime.run(request, retry_of=retry_of)
-        return await runtime.command(cast(str, ctx.info_name), request)
+        return await runtime.run(request, session_id="cli", scope="cli")
 
 
 def delegate(

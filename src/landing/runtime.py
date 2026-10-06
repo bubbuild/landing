@@ -9,7 +9,6 @@ from typing import cast
 
 from bub import BubFramework, ensure_config
 from bub.builtin import Agent as BubAgent
-from bub.builtin.commands import strip_command_prefix
 from bub.builtin.environment import environment_from_state
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
@@ -17,15 +16,14 @@ from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
 from bub.skills import discover_skills
 from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
-from bub.tools import Tool, ToolContext, tool
+from bub.tools import REGISTRY, Tool, ToolContext, tool
 from bub.turn import TurnState
 from pydantic import ValidationError
 
-from landing.commands import COMMANDS, admit
 from landing.database import database_engine
 from landing.hooks import LandingHooks
 from landing.mcp import connected_tools
-from landing.models import Action, ActionRequest, Decision
+from landing.models import Action, ActionRequest, Decision, Mode
 from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -60,7 +58,7 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
     return [{"type": "text", "text": "\n\n".join(parts)}]
 
 
-class Runtime(BubAgent):
+class Runtime:
     settings: Settings
     execution: asyncio.Lock
     pending: asyncio.Event
@@ -83,77 +81,74 @@ class Runtime(BubAgent):
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
         manager = self.framework.plugin_manager
-        hooks = manager.get_plugin("builtin")
-        if not isinstance(hooks, LandingHooks):
-            manager.unregister(name="builtin")
+        hooks = manager.get_plugin("landing")
+        if hooks is None:
             hooks = LandingHooks(self.framework)
-            manager.register(hooks, name="builtin")
+            manager.register(hooks, name="landing")
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
-        super().__init__(
-            self.framework,
-            tape_store=SQLiteTapeStore(self.engine),
-            skill_dirs=(),
-            command_prefix=settings.command_prefix,
-        )
-        self.settings = self.model_runner.settings = settings
-        self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
-        self.tools.update({item.name: item for item in tools})
+        self.settings = settings
+        self.tools = {**REGISTRY, **{item.name: item for item in tools}}
+        self.tape_store = SQLiteTapeStore(self.engine)
+        self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *settings.skill_dirs))
         hooks.runtime = self
-        hooks._agent = self
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
+
+    def create_agent(self, workspace: Path) -> BubAgent:
+        agent = BubAgent(
+            self.framework,
+            tools=list(self.tools.values()),
+            tape_store=self.tape_store,
+            skill_dirs=(
+                workspace / ".agents/skills",
+                *self.skill_roots,
+                Path.home() / ".agents/skills",
+                Path(__file__).with_name("skills"),
+            ),
+            command_prefix=self.settings.command_prefix,
+        )
+        # Keep the Runtime configuration when another host loads process-wide settings.
+        agent.settings = agent.model_runner.settings = self.settings
+        return agent
 
     async def run_stream(
         self,
         *,
         session_id: str,
         prompt: str | list[dict],
+        mode: Mode = "explainer",
         state: TurnState | None = None,
         model: str | None = None,
         allowed_skills: "Collection[str] | None" = None,
         allowed_tools: "Collection[str] | None" = None,
         reasoning_effort: str | None = None,
     ) -> AsyncStreamEvents:
-        if not prompt:
-            return await super().run_stream(session_id=session_id, prompt=prompt, state=state)
-        request_workspace = (
+        workspace = (
             self.workspace_name(state["_runtime_workspace"]) if state and "_runtime_workspace" in state else None
         )
-        workspace = self.workspace(request_workspace)
-        if state is None:
-            state = await self.framework.build_state(
-                {"_runtime_agent": self, "_runtime_workspace": str(workspace)}, session_id
-            )
-        state["_runtime_workspace"] = str(workspace)
-        state["_runtime_agent"] = self
-        invocation = {
-            "session_id": session_id,
-            "model": model,
-            "allowed_skills": list(allowed_skills) if allowed_skills is not None else None,
-            "allowed_tools": list(allowed_tools) if allowed_tools is not None else None,
-            "reasoning_effort": reasoning_effort,
-        }
-        state["landing_invocation"] = invocation
-        state.pop("landing_action_id", None)
-        state["landing_workspace"] = request_workspace
-        if isinstance(prompt, str) and strip_command_prefix(prompt, self.command_prefix) is not None:
-            async with self.execution:
-                stream = await super().run_stream(prompt=prompt, state=state, **invocation)
-                pending = state.get("landing_action_id")
-                if pending is None:
-                    return stream
-                async for _ in stream:
-                    pass
-            return self.stream(pending, state=state)
-
+        self.workspace(workspace)
         request = ActionRequest(
-            mode=state.get("landing_mode", "explainer"),
-            instruction=prompt if isinstance(prompt, str) else "Continue the delegated task.",
-            workspace=request_workspace,
+            mode=mode,
+            instruction=prompt
+            if isinstance(prompt, str)
+            else "Carry out the delegated work using the supplied evidence.",
+            workspace=workspace,
         )
-        state["landing_invocation"] = {**invocation, "prompt": prompt}
-        action = admit(request, context=ToolContext(tape=self.tape, state=state))
+        action, _ = self.tasks.create(
+            request,
+            event=(
+                "sdk.invocation",
+                {
+                    "session_id": session_id,
+                    "prompt": [{"type": "text", "text": prompt}] if isinstance(prompt, str) else prompt,
+                    "model": model,
+                    "allowed_skills": list(allowed_skills) if allowed_skills is not None else None,
+                    "allowed_tools": list(allowed_tools) if allowed_tools is not None else None,
+                    "reasoning_effort": reasoning_effort,
+                },
+            ),
+        )
         return self.stream(action.id, state=state)
 
     def workspace(self, selected: str | None = None) -> Path:
@@ -208,41 +203,31 @@ class Runtime(BubAgent):
         self.pending.set()
         return action, created
 
-    async def run(self, request: ActionRequest, *, retry_of: str | None = None) -> Action:
+    async def run(
+        self,
+        request: ActionRequest,
+        *,
+        retry_of: str | None = None,
+        session_id: str | None = None,
+        scope: str = "sdk",
+        key: str | None = None,
+        verify: Callable[[Action], None] | None = None,
+    ) -> Action:
         self.workspace(request.workspace)
-        action, _ = self.tasks.create(request, retry_of=retry_of)
-        return await self._wait(action.id)
+        action, _ = self.tasks.create(
+            request,
+            scope=scope,
+            key=key,
+            retry_of=retry_of,
+            event=("sdk.invocation", {"session_id": session_id}) if session_id is not None else None,
+        )
+        return await self._wait(action.id, verify=verify)
 
     async def _wait(self, action_id: str, **kwargs) -> Action:
         async with contextlib.aclosing(self.stream(action_id, **kwargs)) as stream:
             async for _ in stream:
                 pass
         return self.tasks.get(action_id)
-
-    async def command(
-        self,
-        name: str,
-        request: ActionRequest,
-        *,
-        session_id: str = "cli",
-        scope: str = "cli",
-        key: str | None = None,
-        verify: Callable[[Action], None] | None = None,
-    ) -> Action:
-        """Delegate a typed request through its native command tool."""
-        if name not in COMMANDS:
-            message = f"Unknown command {name!r}. Choose triage, fix, review, or explain."
-            raise ValueError(message)
-        workspace = self.workspace(request.workspace)
-        state = {
-            "_runtime_agent": self,
-            "landing_scope": scope,
-            "landing_delivery_key": key,
-            "landing_invocation": {"session_id": session_id},
-        }
-        tape = self.tape.session_tape(session_id, workspace)
-        action = await self.tools[name].run(request, context=ToolContext(tape=tape, state=state))
-        return await self._wait(action.id, verify=verify)
 
     async def checks(self, action_id: str, request: ActionRequest, environment: Environment) -> list[dict]:
         results = []
@@ -260,16 +245,16 @@ class Runtime(BubAgent):
             results.append(item)
         return results
 
-    def capabilities(self, mode, invocation, workspace: Path) -> None:
+    def capabilities(self, mode, invocation, workspace: Path, agent: BubAgent) -> None:
         """Intersect mode and call selections, then exclude unavailable capabilities."""
         limits = self.settings.modes.get(mode, ModeSettings())
         if limits.allowed_tools is not None or limits.excluded_tools:
-            available = self.tools
+            available = agent.tools
             configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)
             requested = resolve_tool_names(invocation.get("allowed_tools"), all_names=available)
             invocation["allowed_tools"] = sorted(configured & requested)
         if limits.allowed_skills is not None or limits.excluded_skills:
-            skills = {item.name.casefold() for item in discover_skills(workspace, skill_dirs=self.skill_dirs)}
+            skills = {item.name.casefold() for item in discover_skills(workspace, skill_dirs=agent.skill_dirs)}
             for allowed in (limits.allowed_skills, invocation.get("allowed_skills")):
                 if allowed is not None:
                     skills &= {name.casefold() for name in allowed}
@@ -293,9 +278,10 @@ class Runtime(BubAgent):
                 invocation = self.tasks.event_data(action_id, "sdk.invocation") or {}
                 session_id = invocation.pop("session_id", action_id)
                 prompt = invocation.pop("prompt", None)
+                agent = self.create_agent(workspace)
                 if state is None:
                     state = await self.framework.build_state(
-                        {"_runtime_agent": self, "_runtime_workspace": str(workspace)}, session_id
+                        {"_runtime_agent": agent, "_runtime_workspace": str(workspace)}, session_id
                     )
                 state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
                 for key in (
@@ -307,21 +293,13 @@ class Runtime(BubAgent):
                 ):
                     state.pop(key, None)
                 environment = environment_from_state(state)
-                # Actions are serialized; native discovery and the skill tool use the same roots.
-                self.skill_dirs = (
-                    workspace / ".agents/skills",
-                    *self.skill_roots,
-                    Path.home() / ".agents/skills",
-                    Path(__file__).with_name("skills"),
-                )
                 async with shell_manager.lifespan():
                     checks = await self.checks(action_id, request, environment) if request.mode == "gatekeeper" else []
                     # Close model-owned processes and MCP connections before post-fix validation.
-                    async with shell_manager.lifespan(), connected_tools(self, workspace) as channel:
+                    async with shell_manager.lifespan(), connected_tools(agent, workspace) as channel:
                         state["mcp"] = channel
-                        self.capabilities(request.mode, invocation, workspace)
-                        stream = await BubAgent.run_stream(
-                            self,
+                        self.capabilities(request.mode, invocation, workspace, agent)
+                        stream = await agent.run_stream(
                             session_id=session_id,
                             prompt=prompt if prompt is not None else task_prompt(request, checks),
                             state=state,

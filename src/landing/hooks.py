@@ -1,4 +1,4 @@
-"""Bub hooks adapt Landing's business state and execution to the message pipeline."""
+"""Bub hooks supply Landing task guidance, state, and storage."""
 
 import asyncio
 from importlib.metadata import distribution
@@ -21,13 +21,19 @@ if TYPE_CHECKING:
     from landing.runtime import Runtime
 
 
-class LandingHooks(BuiltinImpl):
-    """Native defaults and business hooks shared by hook and SDK calls."""
+class LandingHooks:
+    """Compose selected native hooks with Landing business hooks."""
 
     runtime: "Runtime"
 
     def __init__(self, framework) -> None:
-        super().__init__(framework)
+        self.framework = framework
+        defaults = BuiltinImpl(framework)
+        # Reuse native tape context and tool interception without a message host.
+        self.provide_tape_sidecar = defaults.provide_tape_sidecar
+        self.build_tape_context = defaults.build_tape_context
+        self.before_tool_call = defaults.before_tool_call
+        self.after_tool_call = defaults.after_tool_call
         for entry in distribution("landing").entry_points.select(group="landing.adapters"):
             framework.plugin_manager.register(entry.load(), name=entry.name)
 
@@ -45,36 +51,32 @@ class LandingHooks(BuiltinImpl):
         app.add_typer(cli.actions, name="action")
         app.command(cls=cli.Command)(cli.serve)
 
-    @hookimpl(trylast=True)
-    def provide_environment(self, session_id, workspace):
-        # Native tools resolve the state workspace unless a host supplies a session environment.
-        return None
-
     @hookimpl
     async def load_state(self, message, session_id):
-        if lifespan := field_of(message, "lifespan"):
-            await lifespan.__aenter__()
-        agent = field_of(message, "_runtime_agent") or self.runtime
         workspace = Path(field_of(message, "_runtime_workspace", self.framework.workspace)).expanduser().resolve()
+        agent = field_of(message, "_runtime_agent") or self.runtime.create_agent(workspace)
         tape = agent.tape.session_tape(session_id, workspace)
         state = {
             "session_id": session_id,
             "_runtime_agent": agent,
             "_runtime_workspace": str(workspace),
-            "landing_mode": "explainer",
             **await load_session_settings(tape),
         }
-        for entry in await tape.store.fetch_all(tape.query().kinds("event")):
-            if entry.payload.get("name") == "landing_mode_switch":
-                state["landing_mode"] = entry.payload["data"]["landing_mode"]
         if context := field_of(message, "context_str"):
             state["context"] = context
         context = field_of(message, "context", {})
+        state["landing_mode"] = context.get("mode", "explainer")
         if model := context.get("model"):
             state["model"] = model
         if thread := context.get("thread_id"):
             state["_runtime_thread_id"] = thread
         return state
+
+    @hookimpl
+    async def run_model_stream(self, prompt, session_id, state):
+        return await self.runtime.run_stream(
+            prompt=prompt, session_id=session_id, mode=state.get("landing_mode", "explainer"), state=state
+        )
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
@@ -84,11 +86,16 @@ class LandingHooks(BuiltinImpl):
         skill = next(
             (
                 item
-                for item in discover_skills(workspace, skill_dirs=self.runtime.skill_dirs)
+                for item in discover_skills(workspace, skill_dirs=state["_runtime_agent"].skill_dirs)
                 if item.name == f"landing-{selected}" and (allowed is None or item.name in allowed)
             ),
             None,
         )
+        repository = workspace / "AGENTS.md"
+        try:
+            instructions = repository.read_text(encoding="utf-8").strip()
+        except OSError:
+            instructions = ""
         return render(
             SYSTEM,
             common=COMMON,
@@ -96,7 +103,7 @@ class LandingHooks(BuiltinImpl):
             mode=skill.body() if skill else "",
             instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
             workspace=workspace,
-            repository=self._read_agents_file(state),
+            repository=instructions,
         )
 
     @hookimpl

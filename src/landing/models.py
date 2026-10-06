@@ -7,6 +7,12 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Mode = Literal["issuer", "fixer", "gatekeeper", "explainer"]
+COMMANDS: dict[str, Mode] = {
+    "triage": "issuer",
+    "fix": "fixer",
+    "review": "gatekeeper",
+    "explain": "explainer",
+}
 Status = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
 Decision = Literal["allow", "block", "inconclusive"]
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}

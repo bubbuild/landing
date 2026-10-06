@@ -27,21 +27,21 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which extends Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Command admission records the selected mode; the executor restores full session state and prepares the environment. Package entry points declare bundled adapters; Landing loads only its own declarations into Bub's hook manager, which collects their Typer commands. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Native session commands such as `,mode` update or report session state without creating an action.
+CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which executes tasks through Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Each request records its selected mode; the executor restores full session state and prepares the environment. Package entry points declare bundled adapters; Landing loads only its own declarations into Bub's hook manager, which collects their Typer commands. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Modes apply to individual tasks rather than session state.
 
 ```text
-CLI triage / fix / review / explain ----> command ----+
-Bub work commands / messages ----------> run_stream -+
+CLI triage / fix / review / explain ----> run --------+
+Bub messages --------------------------> run_stream -+
 Python run / run_stream ----------------------------+--> SQLite -> execute
 HTTP POST / Python submit --> receipt --> worker ----+               |
-GitHub event --> admission --> command --------------+       Bub Agent + checks
+GitHub event --> admission --> run ------------------+       Bub Agent + checks
                                                                     |
                                                      result / stream / reply
 ```
 
 HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. Every execution host consumes the same action stream; CLI and worker calls drain it to obtain the final record. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
-Task records and Bub tapes share one SQLite database. Command tools access tasks through Bub's sidecar provider. Resetting a session's tape clears its model history and mode without deleting action records.
+Task records and Bub tapes share one SQLite database. Bub exposes task records through a tape sidecar. Resetting a session's tape clears its model history without deleting action records.
 
 ```text
 Host starts -> Bub lifespan -> lock + SQLite recovery
@@ -61,7 +61,7 @@ GitHub enables reply confirmation through a native hook and verifies publication
 
 ## Instructions and skills
 
-`LandingHooks` composes native defaults, business state, and storage with host hooks. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path. Bub appends native tool and skill guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
+`LandingHooks` supplies task guidance, state, and storage alongside host hooks. Each task constructs a native SDK Agent with its tools, skill roots, and shared SQLite store; tape context and tool interception reuse Bub defaults. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path. Bub appends native tool and skill guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
 
 Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in `src/landing/skills`; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 

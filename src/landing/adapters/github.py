@@ -19,8 +19,7 @@ from bub.tools import ToolContext, tool
 from pydantic import AliasChoices, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from landing.commands import COMMANDS
-from landing.models import Action, ActionRequest, FileInput, Mode
+from landing.models import COMMANDS, Action, ActionRequest, FileInput, Mode
 from landing.prompts import render
 from landing.runtime import Runtime
 
@@ -443,8 +442,7 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
                 publication.verify(action)
                 return landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
             try:
-                action = await landing.command(
-                    command,
+                action = await landing.run(
                     request,
                     session_id=f"github:{number or key}",
                     scope=repository,

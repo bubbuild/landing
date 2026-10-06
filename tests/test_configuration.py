@@ -1,13 +1,18 @@
 """Exercise model configuration through the public CLI and provider protocol."""
 
+import asyncio
 import json
 import os
 import subprocess
 import sys
 
 import pytest
+from bub import BubFramework
+from bub.builtin.settings import load_settings
 
 from landing.cli import main
+from landing.models import ActionRequest
+from landing.runtime import Runtime
 from tests.conftest import completion
 from tests.provider import provider
 
@@ -92,6 +97,38 @@ def test_cli_model_configuration_and_legacy_fallback(tmp_path, source):
         assert "The evidence explains the failed check." in result.stdout
         assert requests[0]["model"] == settings["model"].split(":", 1)[1]
         assert authorization and all(value == "Bearer selected-key" for value in authorization)
+
+
+@pytest.mark.parametrize("host_order", ["reads-settings-first", "creates-framework-later"])
+def test_sdk_uses_landing_provider_when_host_configuration_changes(tmp_path, monkeypatch, host_order):
+    authorization = []
+    with provider([completion("Explained the failure.")], authorization=authorization) as (api_base, requests):
+        for name, value in {
+            "LANDING_CONFIG": str(tmp_path / "landing.yml"),
+            "LANDING_MODEL": "openai:selected-model",
+            "LANDING_API_KEY": "selected-key",
+            "LANDING_API_BASE": api_base,
+            "BUB_MODEL": "openai:other-model",
+            "BUB_API_KEY": "other-key",
+            "BUB_API_BASE": api_base,
+        }.items():
+            monkeypatch.setenv(name, value)
+        framework = BubFramework(config_file=tmp_path / "host.yml")
+        if host_order == "reads-settings-first":
+            load_settings()
+        runtime = Runtime(tmp_path / "landing.sqlite3", framework=framework, workspaces={"default": tmp_path})
+        if host_order == "creates-framework-later":
+            BubFramework(config_file=tmp_path / "other-host.yml")
+
+        async def run():
+            async with runtime.running():
+                return await runtime.run(ActionRequest(mode="explainer", instruction="Explain the failure."))
+
+        action = asyncio.run(run())
+        assert action.status == "completed"
+        assert action.result == "Explained the failure."
+        assert [request["model"] for request in requests] == ["selected-model"]
+        assert authorization == ["Bearer selected-key"]
 
 
 def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch, model, capsys):

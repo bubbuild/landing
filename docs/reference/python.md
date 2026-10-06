@@ -15,7 +15,7 @@ from landing.runtime import Runtime
 
 async def review():
     async with Runtime(Path("landing.sqlite3")).running() as landing:
-        return await landing.command("review", ActionRequest(
+        return await landing.run(ActionRequest(
             mode="gatekeeper",
             instruction="Review the candidate against the acceptance criteria.",
             workspace=str(Path.cwd()),
@@ -23,7 +23,7 @@ async def review():
         ))
 ```
 
-Commands select persisted modes: `triage` selects issuer, `fix` selects fixer, `review` selects gatekeeper, and `explain` selects explainer. `Runtime.run()` admits a request with its explicit mode. Read the returned action's status, decision, result, and error; `exit_code()` applies ordinary CLI semantics.
+`Runtime.run()` admits a request with its explicit mode: issuer, fixer, gatekeeper, or explainer. Read the returned action's status, decision, result, and error; `exit_code()` applies ordinary CLI semantics.
 
 Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered workspace names instead of filesystem paths.
 
@@ -47,7 +47,7 @@ For another host, enter `landing.running(background=True)`. Ordinary `running()`
 
 ## Stream events
 
-`landing.run_stream()` accepts `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
+`landing.run_stream()` accepts `session_id`, text or content-part `prompt`, per-call `mode` (default explainer), optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
 
 ```python
 from contextlib import aclosing
@@ -60,7 +60,8 @@ async def explain():
     async with Runtime(Path("landing.sqlite3")).running() as landing:
         stream = await landing.run_stream(
             session_id="release-question",
-            prompt=',explain "Explain the failed release check."',
+            mode="explainer",
+            prompt="Explain the failed release check.",
             allowed_tools=["fs.read", "bash", "skill"],
             allowed_skills=["landing-explainer", "release-investigation"],
         )
@@ -75,11 +76,11 @@ Include the corresponding `landing-{mode}` skill in a per-call allow list to ret
 
 Consume the stream fully or close it when leaving early. Closing unfinished work requests durable cancellation. Events include `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`; `final` ends a model step, not necessarily the task. Read errors and usage from the stream, and validation or publication failures from the action record.
 
-Use `,triage`, `,fix`, `,review`, or `,explain` to delegate work. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task or calling the model. Selection survives restarts and is isolated by workspace and session. Content parts stay evidence rather than dispatching commands. Explicit `state` bypasses state loading; supply its execution environment to override local execution. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
+Select the mode for each call; history does not retain a mode selection. Instructions and content parts stay evidence, including text that begins with a command prefix. Explicit `state` bypasses state loading; supply its execution environment to override local execution. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
 
 ## Hook integration
 
-Use Landing's `Runtime` as your Bub framework's agent, with Landing-owned model configuration and execution. Create it at application startup, then add host hooks for the message pipeline:
+Register Landing's `Runtime` with a Bub framework without default chat hooks. Create it at application startup, then add the message hooks your host needs:
 
 ```python
 from pathlib import Path
@@ -96,11 +97,12 @@ async def handle():
         return await framework.process_inbound(ChannelMessage(
             session_id="release-question",
             channel="cli",
-            content=',explain "Explain the failed release check."',
+            content="Explain the failed release check.",
+            context={"mode": "explainer"},
         ))
 ```
 
-Landing registers resources, task execution, and CLI commands with the framework. `framework.create_cli_app()` retains the host's Runtime, database, workspace, and hooks when running Landing commands. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Mode and history remain isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
+Landing registers resources, task execution, and CLI commands with the framework. `framework.create_cli_app()` retains the host's Runtime, database, workspace, and hooks when running Landing commands. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Message context selects the mode for that task; history remains isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
 
 ## Skills and additional tools
 
@@ -120,6 +122,6 @@ For stored outcomes and restart behavior, see [Action records](http.md#action-re
 
 ::: landing.runtime.Runtime
     options:
-      members: [running, lifespan, run, run_stream, command, submit, cancel]
+      members: [running, lifespan, run, run_stream, submit, cancel]
 
 ::: landing.server.create_app
