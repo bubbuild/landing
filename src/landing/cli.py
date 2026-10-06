@@ -7,17 +7,16 @@ import json
 import mimetypes
 import sys
 import time
-from collections.abc import Callable
 from contextlib import nullcontext
-from functools import wraps
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, cast
 
 import typer
 from bub import BubFramework, hookimpl
 from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
+from typer.core import TyperCommand
 
 from landing.commands import COMMANDS
 from landing.database import open_database, own_database
@@ -48,24 +47,21 @@ ActionId = Annotated[str, typer.Argument(metavar="ID")]
 actions = typer.Typer(help="Inspect and control recorded actions.", no_args_is_help=True)
 
 
-def present_errors(callback: Callable[..., Any]) -> Callable[..., Any]:
-    """Present execution errors without changing Typer's argument validation."""
+class Command(TyperCommand):
+    """Present execution errors using Typer's parsed command context."""
 
-    @wraps(callback)
-    def invoke(*args, **kwargs):
+    def invoke(self, ctx):
         try:
-            return callback(*args, **kwargs)
+            return super().invoke(ctx)
         except typer.Exit:
             raise
         except (ValueError, OSError, KeyError, RuntimeError) as exc:
             code = 1 if isinstance(exc, RuntimeError) else 2
             message = str(exc)
-            if code == 2 and kwargs.get("json_output", False):
+            if code == 2 and ctx.params.get("json_output", False):
                 typer.echo(json.dumps({"error": {"code": "invalid_request", "message": message}}))
             typer.echo(message, err=True)
             raise typer.Exit(code) from exc
-
-    return invoke
 
 
 def execution_settings(ctx: typer.Context) -> ExecutionSettings:
@@ -157,7 +153,6 @@ async def delegate_action(ctx: typer.Context, request: ActionRequest | str) -> A
         return await runtime.command(cast(str, ctx.info_name), request)
 
 
-@present_errors
 def delegate(
     ctx: typer.Context,
     instruction: Annotated[str | None, typer.Argument(help="Work to delegate; alternatively supply --input.")] = None,
@@ -200,8 +195,7 @@ def action_database(ctx: typer.Context) -> Path:
     return (execution_settings(ctx).db or DEFAULT_DATABASE).expanduser()
 
 
-@actions.command("list")
-@present_errors
+@actions.command("list", cls=Command)
 def list_actions(
     ctx: typer.Context, limit: Limit = 50, cursor: str | None = None, json_output: JsonOutput = False
 ) -> None:
@@ -209,8 +203,7 @@ def list_actions(
         display(Tasks(engine).list(limit, cursor), json_output=json_output)
 
 
-@actions.command()
-@present_errors
+@actions.command(cls=Command)
 def logs(
     ctx: typer.Context,
     action_id: ActionId,
@@ -222,7 +215,6 @@ def logs(
         display(Tasks(engine).events(action_id, after, limit), json_output=True)
 
 
-@present_errors
 def inspect_action(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = False) -> None:
     with (
         own_database(action_database(ctx)) if ctx.info_name == "cancel" else nullcontext(),
@@ -238,12 +230,11 @@ def inspect_action(ctx: typer.Context, action_id: ActionId, json_output: JsonOut
         display(action, json_output=json_output)
 
 
-actions.command("view", help="Read an action's status and result.")(inspect_action)
-actions.command("cancel", help="Cancel queued work while its host is stopped.")(inspect_action)
+actions.command("view", cls=Command, help="Read an action's status and result.")(inspect_action)
+actions.command("cancel", cls=Command, help="Cancel queued work while its host is stopped.")(inspect_action)
 
 
-@actions.command()
-@present_errors
+@actions.command(cls=Command)
 def watch(
     ctx: typer.Context,
     action_id: ActionId,
@@ -259,8 +250,7 @@ def watch(
         raise typer.Exit(action.exit_code() if exit_status else 0)
 
 
-@actions.command()
-@present_errors
+@actions.command(cls=Command)
 def retry(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = False) -> None:
     """Retry a terminal action using its original request."""
     action = asyncio.run(delegate_action(ctx, action_id))
@@ -268,7 +258,6 @@ def retry(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = Fal
     raise typer.Exit(action.exit_code())
 
 
-@present_errors
 def serve(
     ctx: typer.Context,
     host: Annotated[str, typer.Option(help="Listen address.")] = "127.0.0.1",
@@ -315,9 +304,9 @@ def register_cli_commands(app: typer.Typer) -> None:
         "review": "Evaluate a candidate against independent evidence.",
         "explain": "Explain the supplied question or evidence.",
     }.items():
-        app.command(name=name, help=help_text)(delegate)
+        app.command(name=name, cls=Command, help=help_text)(delegate)
     app.add_typer(actions, name="action")
-    app.command()(serve)
+    app.command(cls=Command)(serve)
 
 
 def main(argv: list[str] | None = None) -> int:

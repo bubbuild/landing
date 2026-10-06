@@ -481,10 +481,10 @@ def write_outputs(action: Action | None) -> None:
 
 @hookimpl
 def register_cli_commands(app: typer.Typer) -> None:
-    from landing.cli import present_errors
+    from landing.cli import Command
 
     commands = typer.Typer(help="Handle native GitHub events with prepared credentials.", no_args_is_help=True)
-    commands.command("event")(present_errors(github_event))
+    commands.command("event", cls=Command)(github_event)
     app.add_typer(commands, name="github")
 
 
