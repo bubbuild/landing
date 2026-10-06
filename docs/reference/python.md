@@ -78,37 +78,13 @@ Consume the stream fully or close it when leaving early. Closing unfinished work
 
 Select the mode for each call; history does not retain a mode selection. Instructions and content parts stay evidence, including text that begins with a command prefix. Explicit `state` bypasses state loading; supply its execution environment to override local execution. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
 
-## Hook integration
-
-Register Landing's `Runtime` with a Bub framework without default chat hooks. Create it at application startup, then add the message hooks your host needs:
-
-```python
-from pathlib import Path
-
-from bub import BubFramework
-from bub.channels.message import ChannelMessage
-from landing.runtime import Runtime
-
-
-async def handle():
-    framework = BubFramework()
-    landing = Runtime(Path("landing.sqlite3"), framework=framework)
-    async with framework.running():
-        return await framework.process_inbound(ChannelMessage(
-            session_id="release-question",
-            channel="cli",
-            content="Explain the failed release check.",
-            context={"mode": "explainer"},
-        ))
-```
-
-Landing registers resources, task execution, and CLI commands with the framework. `framework.create_cli_app()` retains the host's Runtime, database, workspace, and hooks when running Landing commands. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Message context selects the mode for that task; history remains isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
-
 ## Skills and additional tools
 
 `Runtime(path, skill_dirs=[...])` and `create_app(path, skill_dirs=[...])` add trusted skill directories. Use `$skill-name` in instructions to select a prepared skill. [Configuration](configuration.md#skills) defines precedence.
 
 Pass Bub `Tool` instances with `Runtime(path, tools=[...])`, then select them per mode. Authorization belongs in each tool and its execution environment.
+
+Pass an application-configured `BubFramework` through `Runtime(path, framework=framework)` to add native hooks without loading Bub's builtin message pipeline. Enter `Runtime.running()` to manage execution and resources. Tools and required checks use a host-provided environment when available.
 
 Configured [MCP servers](../guides/mcp.md) make their tools available during work, subject to mode and per-call limits. Landing opens and closes these connections automatically.
 

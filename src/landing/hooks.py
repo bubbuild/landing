@@ -54,29 +54,14 @@ class LandingHooks:
     @hookimpl
     async def load_state(self, message, session_id):
         workspace = Path(field_of(message, "_runtime_workspace", self.framework.workspace)).expanduser().resolve()
-        agent = field_of(message, "_runtime_agent") or self.runtime.create_agent(workspace)
+        agent = field_of(message, "_runtime_agent")
         tape = agent.tape.session_tape(session_id, workspace)
-        state = {
+        return {
             "session_id": session_id,
             "_runtime_agent": agent,
             "_runtime_workspace": str(workspace),
             **await load_session_settings(tape),
         }
-        if context := field_of(message, "context_str"):
-            state["context"] = context
-        context = field_of(message, "context", {})
-        state["landing_mode"] = context.get("mode", "explainer")
-        if model := context.get("model"):
-            state["model"] = model
-        if thread := context.get("thread_id"):
-            state["_runtime_thread_id"] = thread
-        return state
-
-    @hookimpl
-    async def run_model_stream(self, prompt, session_id, state):
-        return await self.runtime.run_stream(
-            prompt=prompt, session_id=session_id, mode=state.get("landing_mode", "explainer"), state=state
-        )
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:

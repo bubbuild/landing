@@ -1,4 +1,4 @@
-"""Prepared MCP tools through the public CLI, SDK, hooks, and task lifecycle."""
+"""Prepared MCP tools through the public CLI, SDK, and task lifecycle."""
 
 import asyncio
 import json
@@ -8,7 +8,6 @@ import sys
 import bub
 import pytest
 from bub import BubFramework
-from bub.channels.message import ChannelMessage
 
 from landing.cli import main
 from landing.models import ActionRequest
@@ -96,8 +95,8 @@ def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkey
     assert all(not receipt.exists() for name, receipt in receipts.items() if name != expected)
 
 
-@pytest.mark.parametrize(("integration", "source"), [("sdk", "framework"), ("hooks", "project")])
-def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, model, monkeypatch, integration, source):
+@pytest.mark.parametrize("source", ["framework", "project"])
+def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, model, monkeypatch, source):
     _, configure = mcp_server
     receipt = tmp_path / "record.txt"
     selected = tmp_path / ".agents/mcp.json" if source == "project" else tmp_path / "custom.json"
@@ -120,12 +119,7 @@ def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, mode
         async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
             for command, mode in (("explain", "explainer"), ("fix", "fixer")):
                 prompt = "Record evidence."
-                if integration == "hooks":
-                    await framework.process_inbound(
-                        ChannelMessage(session_id=command, channel="cli", content=prompt, context={"mode": mode})
-                    )
-                else:
-                    await output(await landing.run_stream(session_id=command, prompt=prompt, mode=mode))
+                await output(await landing.run_stream(session_id=command, prompt=prompt, mode=mode))
             await output(
                 await landing.run_stream(
                     session_id="limited", prompt="Record evidence.", mode="fixer", allowed_tools=[]

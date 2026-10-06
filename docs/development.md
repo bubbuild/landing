@@ -27,11 +27,10 @@ The suite replaces external model requests with deterministic responses while ru
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which executes tasks through Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Each request records its selected mode; the executor restores full session state and prepares the environment. Package entry points declare bundled adapters; Landing loads only its own declarations into Bub's hook manager, which collects their Typer commands. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Modes apply to individual tasks rather than session state.
+CLI, HTTP, SDK, and GitHub use one Runtime, which executes tasks through Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Each request records its selected mode; the executor restores full session state and prepares the environment. Package entry points declare bundled adapters; Landing loads only its own declarations into Bub's hook manager, which collects their Typer commands. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Modes apply to individual tasks rather than session state.
 
 ```text
 CLI triage / fix / review / explain ----> run --------+
-Bub messages --------------------------> run_stream -+
 Python run / run_stream ----------------------------+--> SQLite -> execute
 HTTP POST / Python submit --> receipt --> worker ----+               |
 GitHub event --> admission --> run ------------------+       Bub Agent + checks
@@ -53,7 +52,7 @@ Host starts -> Bub lifespan -> lock + SQLite recovery
 Host exits -> stop and await work -> close environments -> unlock SQLite
 ```
 
-`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. Native Bub message hosts use the same storage hook and close their unfinished streams before resource teardown. A host-provided environment applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
+`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. A host-provided environment applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
 
 Cancellation goes through the executing host. Closing an unfinished SDK stream cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
 

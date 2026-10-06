@@ -6,8 +6,6 @@ from contextlib import aclosing
 
 import pytest
 from bub import BubFramework
-from bub.builtin.settings import load_settings
-from bub.channels.message import ChannelMessage
 
 from landing.models import ActionRequest, Mode
 from landing.runtime import Runtime
@@ -23,16 +21,8 @@ async def output(stream):
     return text
 
 
-@pytest.mark.parametrize(
-    ("integration", "mode"),
-    [
-        ("sdk", "explainer"),
-        ("hooks", "fixer"),
-        ("sdk", "issuer"),
-        ("hooks", "gatekeeper"),
-    ],
-)
-def test_modes_delegate_the_same_work(tmp_path, model, mode, integration):
+@pytest.mark.parametrize("mode", ["explainer", "fixer", "issuer", "gatekeeper"])
+def test_modes_delegate_the_same_work(tmp_path, model, mode):
     from tests.test_repository import report_reference, write_skill
 
     write_skill(tmp_path / ".agents/skills", f"landing-{mode}", "approved")
@@ -44,19 +34,10 @@ def test_modes_delegate_the_same_work(tmp_path, model, mode, integration):
     ])
 
     async def run():
-        framework = BubFramework()
-        load_settings()
-        framework.workspace = tmp_path
-        landing = Runtime(tmp_path / "landing.sqlite3", framework=framework)
-        async with framework.running() if integration == "hooks" else landing.running():
-            prompt = "Inspect retry behavior."
-            if integration == "hooks":
-                result = await framework.process_inbound(
-                    ChannelMessage(session_id="pr-42", channel="cli", content=prompt, context={"mode": mode})
-                )
-                text = result.model_output
-            else:
-                text = await output(await landing.run_stream(session_id="pr-42", prompt=prompt, mode=mode))
+        async with Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}).running() as landing:
+            text = await output(
+                await landing.run_stream(session_id="pr-42", prompt="Inspect retry behavior.", mode=mode)
+            )
             assert text == "Deployment reference: approved"
             action = landing.tasks.list()[0]
             assert action.mode == mode
@@ -66,8 +47,7 @@ def test_modes_delegate_the_same_work(tmp_path, model, mode, integration):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("integration", ["sdk", "hooks"])
-def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integration):
+def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model):
     project = tmp_path / "project"
     project.mkdir()
     responses, _ = model
@@ -82,20 +62,10 @@ def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integr
         async with Runtime(
             tmp_path / "landing.sqlite3", framework=framework, workspaces={"default": project}
         ).running() as landing:
-            if integration == "hooks":
-                result = await landing.framework.process_inbound(
-                    ChannelMessage(
-                        session_id="writer", channel="cli", content="Write the answer.", context={"mode": "fixer"}
-                    )
-                )
-                assert result.model_output == "Wrote the answer."
-            else:
-                assert (
-                    await output(
-                        await landing.run_stream(session_id="writer", prompt="Write the answer.", mode="fixer")
-                    )
-                    == "Wrote the answer."
-                )
+            assert (
+                await output(await landing.run_stream(session_id="writer", prompt="Write the answer.", mode="fixer"))
+                == "Wrote the answer."
+            )
             assert (project / "answer.txt").read_text() == "42"
             assert not (tmp_path / "answer.txt").exists()
 
