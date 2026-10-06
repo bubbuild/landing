@@ -61,6 +61,7 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
 
 
 class Runtime(BubAgent):
+    settings: Settings
     execution: asyncio.Lock
     pending: asyncio.Event
 
@@ -78,7 +79,7 @@ class Runtime(BubAgent):
         self.workspaces = workspaces
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-        self.configuration = ensure_config(Settings)
+        ensure_config(Settings)
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
         manager = self.framework.plugin_manager
@@ -87,12 +88,10 @@ class Runtime(BubAgent):
             manager.unregister(name="builtin")
             hooks = LandingHooks(self.framework)
             manager.register(hooks, name="builtin")
-        self.skill_roots = tuple(
-            Path(root).expanduser().resolve() for root in (*skill_dirs, *self.configuration.skill_dirs)
-        )
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
         super().__init__(self.framework, tape_store=SQLiteTapeStore(self.engine), skill_dirs=())
+        self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
         self.tools.update({item.name: item for item in tools})
         hooks.runtime = self
         hooks._agent = self
@@ -257,7 +256,7 @@ class Runtime(BubAgent):
 
     def capabilities(self, mode, invocation, workspace: Path) -> None:
         """Intersect mode and call selections, then exclude unavailable capabilities."""
-        limits = self.configuration.modes.get(mode, ModeSettings())
+        limits = self.settings.modes.get(mode, ModeSettings())
         if limits.allowed_tools is not None or limits.excluded_tools:
             available = self.tools
             configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)
