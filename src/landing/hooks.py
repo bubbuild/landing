@@ -1,5 +1,6 @@
 """Bub hooks adapt Landing's business state and execution to the message pipeline."""
 
+import asyncio
 import hashlib
 from typing import TYPE_CHECKING
 
@@ -119,6 +120,8 @@ class LandingHooks(BuiltinImpl):
     @hookimpl(specname="provide_lifespan")
     async def storage_lifespan(self):
         with own_database(self.runtime.path), open_database(self.runtime.path) as engine:
+            self.runtime.execution = asyncio.Lock()
+            self.runtime.pending = asyncio.Event()
             self.runtime.tasks = Tasks(engine)
             self.runtime.store = SQLiteTapeStore(engine)
             self.runtime.tasks.recover()

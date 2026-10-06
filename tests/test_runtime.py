@@ -101,6 +101,27 @@ def test_model_failure_is_durable(tmp_path, model):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("native_host", [False, True])
+def test_restarted_host_completes_concurrent_delegations(tmp_path, model, native_host):
+    responses, _ = model
+
+    async def explain(**kwargs):
+        await asyncio.sleep(0)
+        return completion("Explained the failure.")
+
+    responses.extend([explain] * 4)
+    runtime = Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path})
+
+    async def run():
+        async with runtime.framework.running() if native_host else runtime.running():
+            request = ActionRequest(mode="explainer", instruction="Explain the failure.")
+            actions = await asyncio.gather(runtime.run(request), runtime.run(request))
+            assert all(action.status == "completed" and action.result == "Explained the failure." for action in actions)
+
+    for _ in range(2):
+        asyncio.run(run())
+
+
 def test_blank_completion_keeps_partial_changes_and_failed_history(tmp_path, model):
     responses, _ = model
     responses.extend([

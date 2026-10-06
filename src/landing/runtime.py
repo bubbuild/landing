@@ -66,6 +66,8 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
 class Runtime:
     tasks: Tasks
     store: SQLiteTapeStore
+    execution: asyncio.Lock
+    pending: asyncio.Event
 
     def __init__(
         self,
@@ -90,8 +92,6 @@ class Runtime:
             skill_dirs=(),
         )
         self.active: dict[str, asyncio.Task[Action]] = {}
-        self.execution = asyncio.Lock()
-        self.pending = asyncio.Event()
         self.worker_task: asyncio.Task[None] | None = None
 
     def workspace(self, request: ActionRequest) -> Path:

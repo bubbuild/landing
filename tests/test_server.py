@@ -89,7 +89,7 @@ def test_embedded_application_uses_landing_lifespan(tmp_path, model):
         await asyncio.to_thread(release.wait, 5)
         return completion("Explained for the embedding application.")
 
-    responses.append(blocked)
+    responses.extend([blocked, completion("Explained after restarting the application.")])
     runtime = Runtime(tmp_path / "landing.sqlite3")
     app = FastAPI(lifespan=runtime.lifespan)
 
@@ -112,6 +112,10 @@ def test_embedded_application_uses_landing_lifespan(tmp_path, model):
         assert wait(client, location)["result"] == "Explained for the embedding application."
     with TestClient(app) as client:
         assert client.get(location).json()["status"] == "completed"
+        created = client.post("/delegate", json={"mode": "explainer", "instruction": "Explain the next failure."})
+        assert created.status_code == 200
+        location = "/actions/" + created.json()["id"]
+        assert wait(client, location)["result"] == "Explained after restarting the application."
 
 
 def test_cancellation_and_restart_preserve_work_outcomes(tmp_path, model):
