@@ -2,7 +2,7 @@
 
 Use one `Runtime` to execute actions, stream events, or submit background work. It shares action semantics with CLI and HTTP. Enter its lifecycle before calling it; leaving the context stops owned execution and releases the database. The same Runtime can enter a new lifecycle and resume its stored work.
 
-This reference covers the source checkout, including `submit()` and `lifespan()`, which are unavailable in release `0.2.0`. Install that checkout into your application with `uv add /path/to/landing` and configure the [model](configuration.md#model).
+This reference covers the source checkout, including `submit()`, `lifespan()`, and `Runtime.run_stream()`, which are unavailable in release `0.2.0`. Install that checkout into your application with `uv add /path/to/landing` and configure the [model](configuration.md#model).
 
 ## Delegate an action
 
