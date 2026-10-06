@@ -26,45 +26,37 @@ Avoid tests for helper structure, internal event positions, database rows, or up
 The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
 
 ## Runtime architecture
-
-One Bub 0.5.0 agent handles all four modes. CLI and GitHub Action execute work and return the outcome. Python callers use the same runtime to execute work, consume a stream, or submit work to a background host. HTTP returns a receipt after submission. Only explicit CLI `action watch` polls for completion.
-
-```text
-                    One Runtime
-                         |
-           +-------------+--------------+
-           |                            |
-   run / command / stream            submit
-           |                            |
-     Execute work                Persist + notify -> Receipt
-           |                            |
-           |                     Worker executes
-           +-------------+--------------+
-                         |
-                 Bub Agent + checks
-                         |
-            Verify delivery when required
-                         |
-                    Final Action
-```
-
-`Runtime.lifespan` adapts ASGI startup and shutdown to `Runtime.running(background=True)`. Runtime owns execution; Bub's `provide_lifespan` hook owns database exclusivity, the shared SQLite engine, and recovery. A native Bub message host uses that resource hook and owns its message tasks.
+CLI, HTTP, SDK, native Bub messages, and GitHub use one Runtime, which extends Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Command admission records the selected mode; the executor restores full session state and prepares the environment. The CLI registers Typer commands and calls Runtime. The Runtime shares native state loading and storage hooks across SDK and message calls. Help and history inspection start no agent. Native session commands such as `,mode` update or report session state without creating an action.
 
 ```text
-Application starts
-        |
-Bub opens resources: lock -> SQLite -> recovery
-        |
-Host executes work
-        |
-Host stops and awaits execution
-        |
-Bub closes environments -> SQLite -> unlock
+CLI triage / fix / review / explain ----> command ----+
+Bub work commands / messages ----------> run_stream -+
+Python run / agent.run_stream ----------------------+--> SQLite -> execute
+HTTP POST / Python submit --> receipt --> worker ----+               |
+GitHub event --> admission --> command --------------+       Bub Agent + checks
+                                                                    |
+                                                     result / stream / reply
 ```
 
-The worker executes serially and wakes on submission. Startup resumes queued work; Runtime shutdown interrupts active work. Native message-host shutdown closes unfinished streams and requests cancellation. Interrupted work requires inspection before retry because it may already have external effects. Other processes can inspect SQLite, but cancellation goes through the executing host. Offline CLI cancellation requires exclusive ownership.
+HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. Every execution host consumes the same action stream; CLI and worker calls drain it to obtain the final record. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
-Action shell and MCP scopes close before an action ends. The model's inner shell scope closes before post-fix checks, preventing background commands from changing the workspace during validation. The task sidecar and tape adapter share one SQLAlchemy Core engine with scoped connections; action transitions and events commit together. Action records survive model-history resets.
+Task records and Bub tapes share one SQLite database. Command tools access tasks through the native Agent context. Resetting a session's tape clears its model history and mode without deleting action records.
+
+```text
+Host starts -> Bub lifespan -> lock + SQLite recovery
+      |
+      +--> action scopes: environment + shell + MCP
+      |          |
+      |    model tools close -> post-fix checks -> completion
+      |
+Host exits -> stop and await work -> close environments -> unlock SQLite
+```
+
+`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. Native Bub message hosts use the same storage hook and close their unfinished streams before resource teardown. A host-provided environment applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
+
+Cancellation goes through the executing host. Closing an unfinished SDK stream cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
+
+GitHub verifies reply publication, identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. The container delegates service supervision and backup recovery to Litestream, then runs the same CLI. Help, invalid arguments, and non-service commands bypass replication.
 
 ## Instructions and skills
 

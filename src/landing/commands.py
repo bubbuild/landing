@@ -5,7 +5,6 @@ from typing import cast
 from bub.tools import ToolContext, tool
 
 from landing.models import Action, ActionRequest, Mode
-from landing.tasks import Tasks
 
 COMMANDS: dict[str, Mode] = {
     "triage": "issuer",
@@ -25,7 +24,7 @@ async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
 
 
 def admit(request: ActionRequest, *, context: ToolContext) -> Action:
-    action, _ = cast("Tasks", context.tape.get_sidecar("tasks")).create(
+    action, _ = context.state["_runtime_agent"].tasks.create(
         request,
         scope=context.state.get("landing_scope", "sdk"),
         key=context.state.get("landing_delivery_key"),
@@ -37,16 +36,19 @@ def admit(request: ActionRequest, *, context: ToolContext) -> Action:
 
 def register_command(name: str, selected: Mode) -> None:
     @tool(name=name, context=True, agent_use=False)
-    async def delegate(instruction: str = "", *, context: ToolContext) -> Action:
+    async def delegate(instruction: str | ActionRequest = "", *, context: ToolContext) -> Action:
         """Delegate work in the prepared workspace and return its task receipt."""
-        request = ActionRequest.model_validate({
-            **context.state.get("landing_request", {}),
-            "mode": selected,
-            "instruction": instruction or None,
-        })
+        request = (
+            instruction
+            if isinstance(instruction, ActionRequest)
+            else ActionRequest(
+                mode=selected, instruction=instruction or None, workspace=context.state.get("landing_workspace")
+            )
+        )
+        if request.mode != selected:
+            request = ActionRequest.model_validate(request.model_copy(update={"mode": selected}))
         action = admit(request, context=context)
         await mode.run(selected, context=context)
-        context.state["landing_pending_action"] = action.id
         return action
 
 

@@ -4,6 +4,7 @@ import fcntl
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy import URL, Engine, create_engine, event
 
@@ -63,10 +64,9 @@ def own_database(path: Path) -> Iterator[None]:
         yield
 
 
-@contextmanager
-def open_database(path: Path) -> Iterator[Engine]:
+def database_engine(path: Path) -> Engine:
+    """Configure a SQLite engine without opening connections or creating files."""
     path = path.expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(URL.create("sqlite", database=str(path)), connect_args={"timeout": 5})
 
     @event.listens_for(engine, "connect")
@@ -78,6 +78,13 @@ def open_database(path: Path) -> Iterator[Engine]:
         finally:
             cursor.close()
 
+    return engine
+
+
+@contextmanager
+def open_database(path: Path | Engine) -> Iterator[Engine]:
+    engine = path if isinstance(path, Engine) else database_engine(path)
+    Path(cast(str, engine.url.database)).parent.mkdir(parents=True, exist_ok=True)
     try:
         with engine.begin() as connection:
             for statement in SCHEMA.split(";"):

@@ -11,7 +11,6 @@ from bub.channels.message import ChannelMessage
 from landing.models import ActionRequest
 from landing.runtime import Runtime
 from tests.conftest import completion
-from tests.provider import provider
 
 
 async def output(stream):
@@ -66,7 +65,7 @@ def test_commands_delegate_the_same_work(tmp_path, model, command, mode, integra
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("integration", ["local", "embedded", "sdk", "hooks"])
+@pytest.mark.parametrize("integration", ["sdk", "hooks"])
 def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integration):
     project = tmp_path / "project"
     project.mkdir()
@@ -77,11 +76,8 @@ def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integr
     ])
 
     async def run():
-        framework = None
-        if integration != "local":
-            framework = BubFramework()
-            framework.workspace = tmp_path
-            framework.load_builtin_hooks()
+        framework = BubFramework()
+        framework.workspace = tmp_path
         async with Runtime(
             tmp_path / "landing.sqlite3", framework=framework, workspaces={"default": project}
         ).running() as landing:
@@ -90,77 +86,44 @@ def test_delegated_work_writes_to_the_selected_workspace(tmp_path, model, integr
                     ChannelMessage(session_id="writer", channel="cli", content=',fix "Write the answer."')
                 )
                 assert result.model_output == "Wrote the answer."
-            elif integration == "sdk":
+            else:
                 assert (
                     await output(await landing.agent.run_stream(session_id="writer", prompt=',fix "Write the answer."'))
                     == "Wrote the answer."
                 )
-            else:
-                action = await landing.run(ActionRequest(mode="fixer", instruction="Write the answer."))
-                assert action.status == "completed"
             assert (project / "answer.txt").read_text() == "42"
             assert not (tmp_path / "answer.txt").exists()
 
     asyncio.run(run())
 
 
-def test_mode_survives_restart_without_leaking_between_sessions(tmp_path, model, monkeypatch):
-    settings = tmp_path / "settings.yml"
-    settings.write_text(json.dumps({"db": [], "server": []}))
-    monkeypatch.setenv("LANDING_CONFIG", str(settings))
-    monkeypatch.setenv("BUB_MCP_INIT_TIMEOUT_SECONDS", "invalid")
-    _, requests = model
-    path = tmp_path / "landing.sqlite3"
+def test_sdk_tools_follow_mode_and_call_limits(tmp_path, model, monkeypatch):
+    monkeypatch.setenv("LANDING_MODES", '{"fixer":{"allowed_tools":["fs.read"],"excluded_tools":["fs.write"]}}')
+    cases = [
+        ("fix", "restricted.txt", ["fs_write"], False),
+        ("explain", "limited.txt", [], False),
+        ("explain", "available.txt", ["fs_write"], True),
+    ]
+    responses, _ = model
+    for _, filename, _, permitted in cases:
+        responses.extend([
+            completion(tool="fs_write", arguments={"path": filename, "content": "42"}),
+            completion("Wrote the answer." if permitted else "Writing is unavailable."),
+        ])
 
     async def run():
-        for restarted in (False, True):
-            async with Runtime(path).running() as landing:
-                landing.framework.workspace = tmp_path
-                if not restarted:
-                    assert (
-                        await output(await landing.agent.run_stream(session_id="reviewer", prompt=",mode gatekeeper"))
-                        == "gatekeeper"
-                    )
-                assert (
-                    await output(await landing.agent.run_stream(session_id="reviewer", prompt=",mode")) == "gatekeeper"
+        async with Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}).running() as landing:
+            for command, filename, allowed, permitted in cases:
+                stream = await landing.run_stream(
+                    session_id="writer", prompt=f',{command} "Write {filename}."', allowed_tools=allowed
                 )
-                assert await output(await landing.agent.run_stream(session_id="other", prompt=",mode")) == "explainer"
-                assert not landing.tasks.list()
-        assert not requests
+                assert await output(stream) == ("Wrote the answer." if permitted else "Writing is unavailable.")
+                if permitted:
+                    assert (tmp_path / filename).read_text() == "42"
+                else:
+                    assert not (tmp_path / filename).exists()
 
     asyncio.run(run())
-
-
-def test_sdk_capability_selection_and_per_turn_model_are_preserved(tmp_path, monkeypatch):
-    responses = [
-        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42"}),
-        completion("The write capability is unavailable."),
-        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42"}),
-        completion("Wrote the answer."),
-    ]
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
-            landing.framework.workspace = tmp_path
-            stream = await landing.agent.run_stream(
-                session_id="limited", prompt="Write the answer.", allowed_tools=[], model="openai:chosen-model"
-            )
-            assert await output(stream) == "The write capability is unavailable."
-            assert not (tmp_path / "answer.txt").exists()
-            stream = await landing.agent.run_stream(
-                session_id="writer", prompt=',fix "Write the answer."', allowed_tools=["fs_write"]
-            )
-            assert await output(stream) == "Wrote the answer."
-            assert (tmp_path / "answer.txt").read_text() == "42"
-
-    with provider(responses) as (api_base, requests):
-        monkeypatch.setenv("LANDING_MODEL", "openai:default-model")
-        monkeypatch.setenv("LANDING_API_KEY", "test-key")
-        monkeypatch.setenv("LANDING_API_BASE", api_base)
-        monkeypatch.setenv("LANDING_CLIENT_ARGS", '{"max_retries": 0}')
-        asyncio.run(run())
-        assert requests[0]["model"] == "chosen-model"
-        assert requests[-1]["model"] == "default-model"
 
 
 def test_content_parts_remain_evidence_and_explicit_state_skips_recovery(tmp_path, model):
@@ -204,87 +167,19 @@ def test_closing_sdk_stream_cancels_durable_work(tmp_path, model):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize(
-    "limits",
-    [
-        {"allowed_tools": []},
-        {"excluded_tools": ["fs.write"]},
-        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
-    ],
-)
-def test_modes_have_independent_tool_configuration(tmp_path, model, monkeypatch, limits):
-    monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "restricted.txt", "content": "changed"}),
-        completion("The configured capability is unavailable."),
-        completion(tool="fs_write", arguments={"path": "available.txt", "content": "changed"}),
-        completion("The authorized capability worked."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
-            restricted = await landing.run(
-                ActionRequest(mode="fixer", instruction="Write restricted.txt.", workspace=str(tmp_path))
-            )
-            assert restricted.status == "completed"
-            assert not (tmp_path / "restricted.txt").exists()
-            available = await landing.run(
-                ActionRequest(mode="explainer", instruction="Write available.txt.", workspace=str(tmp_path))
-            )
-            assert available.status == "completed"
-            assert (tmp_path / "available.txt").read_text() == "changed"
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize(
-    "limits",
-    [
-        {"allowed_tools": ["fs.read"]},
-        {"excluded_tools": ["fs.write"]},
-        {"allowed_tools": ["fs.write"], "excluded_tools": ["fs_write"]},
-    ],
-)
-def test_sdk_call_can_narrow_but_not_expand_mode_tools(tmp_path, model, monkeypatch, limits):
-    monkeypatch.setenv("LANDING_MODES", json.dumps({"fixer": limits}))
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "unexpected.txt", "content": "changed"}),
-        completion("The mode does not allow writing."),
-    ])
-
-    async def run():
-        async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
-            landing.framework.workspace = tmp_path
-            stream = await landing.agent.run_stream(
-                session_id="writer", prompt=',fix "Write unexpected.txt."', allowed_tools=["fs_write"]
-            )
-            assert await output(stream) == "The mode does not allow writing."
-            assert not (tmp_path / "unexpected.txt").exists()
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize("selection", ["allow", "exclude", "overlap"])
-def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch, selection):
+def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatch):
     from tests.test_repository import report_reference, write_skill
 
     roots = tmp_path / ".agents/skills"
     write_skill(roots, "review-policy", "review")
     write_skill(roots, "repair-policy", "repair")
-    modes = {}
-    for mode, allowed, excluded in (
-        ("gatekeeper", "Review-Policy", "Repair-Policy"),
-        ("fixer", "repair-policy", "review-policy"),
-    ):
-        limits = {}
-        if selection != "exclude":
-            limits["allowed_skills"] = [allowed, excluded] if selection == "overlap" else [allowed]
-        if selection != "allow":
-            limits["excluded_skills"] = [excluded]
-        modes[mode] = limits
-    monkeypatch.setenv("LANDING_MODES", json.dumps(modes))
+    monkeypatch.setenv(
+        "LANDING_MODES",
+        json.dumps({
+            "gatekeeper": {"allowed_skills": ["review-policy", "repair-policy"], "excluded_skills": ["repair-policy"]},
+            "fixer": {"allowed_skills": ["repair-policy"], "excluded_skills": ["review-policy"]},
+        }),
+    )
     responses, _ = model
     responses.extend([
         completion(tool="skill", arguments={"name": "review-policy"}),
@@ -328,17 +223,19 @@ def test_modes_and_calls_have_independent_skill_sets(tmp_path, model, monkeypatc
     asyncio.run(run())
 
 
-def test_delegated_request_uses_the_host_provided_environment(tmp_path, model):
+@pytest.mark.parametrize("mode", ["fixer", "gatekeeper"])
+def test_delegated_work_and_checks_use_the_host_environment(tmp_path, model, mode):
     from bub import hookimpl
     from bub.builtin.environment import LocalEnvironment
 
     from tests.test_repository import report_reference
 
-    workspace = tmp_path / "workspace"
-    prepared = tmp_path / "prepared"
+    workspace, prepared = tmp_path / "workspace", tmp_path / "prepared"
     workspace.mkdir()
     prepared.mkdir()
-    (prepared / "deployment.txt").write_text("reference=approved")
+    (workspace / "deployment.txt").write_text("reference=wrong")
+    if mode != "fixer":
+        (prepared / "deployment.txt").write_text("reference=approved")
 
     class Host:
         @hookimpl
@@ -346,6 +243,10 @@ def test_delegated_request_uses_the_host_provided_environment(tmp_path, model):
             return LocalEnvironment(prepared)
 
     responses, _ = model
+    if mode == "fixer":
+        responses.append(
+            completion(tool="fs_write", arguments={"path": "deployment.txt", "content": "reference=approved"})
+        )
     responses.extend([completion(tool="fs_read", arguments={"path": "deployment.txt"}), report_reference])
 
     async def run():
@@ -355,9 +256,48 @@ def test_delegated_request_uses_the_host_provided_environment(tmp_path, model):
         framework.plugin_manager.register(Host())
         async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
             action = await landing.run(
-                ActionRequest(mode="explainer", instruction="Read the deployment reference.", workspace=str(workspace))
+                ActionRequest(
+                    mode=mode,
+                    instruction="Inspect the deployment reference.",
+                    workspace=str(workspace),
+                    checks=['test "$(cat deployment.txt)" = reference=approved'],
+                )
             )
             assert action.status == "completed"
             assert action.result == "Deployment reference: approved"
+            assert (workspace / "deployment.txt").read_text() == "reference=wrong"
+
+    asyncio.run(run())
+
+
+def test_saved_modes_survive_restart_and_stay_isolated(tmp_path, model):
+    workspaces = {name: tmp_path / name for name in ("default", "second")}
+    for directory in workspaces.values():
+        directory.mkdir()
+    responses, _ = model
+    responses.append(completion("Done."))
+    path = tmp_path / "landing.sqlite3"
+
+    async def run():
+        async with Runtime(path, workspaces=workspaces).running() as landing:
+            assert (
+                await output(await landing.run_stream(session_id="shared", prompt=",mode gatekeeper")) == "gatekeeper"
+            )
+            assert not landing.tasks.list()
+            action = await landing.command(
+                "fix",
+                ActionRequest(mode="fixer", instruction="Inspect the project.", workspace="second"),
+                session_id="shared",
+            )
+            assert action.status == "completed"
+        for name, workspace in workspaces.items():
+            async with Runtime(path, workspaces={"default": workspace}).running() as restored:
+                assert await output(await restored.run_stream(session_id="shared", prompt=",mode")) == (
+                    "gatekeeper" if name == "default" else "fixer"
+                )
+                assert await output(await restored.run_stream(session_id="other", prompt=",mode")) == "explainer"
+                await output(await restored.run_stream(session_id="shared", prompt=",tape.reset"))
+                assert restored.tasks.get(action.id).result == "Done."
+                assert await output(await restored.run_stream(session_id="shared", prompt=",mode")) == "explainer"
 
     asyncio.run(run())

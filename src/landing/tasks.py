@@ -1,4 +1,4 @@
-"""Bub task sidecar: durable admission and task records in the tape database."""
+"""Durable admission and task records alongside Bub tapes in SQLite."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from bub.tape import utc_now
 from sqlalchemy import Connection, Engine
+from sqlalchemy.engine import RowMapping
 
 from landing.models import TERMINAL, Action, ActionRequest, Decision, Event, Status
 
@@ -17,10 +18,15 @@ class ConflictError(ValueError):
     """An existing request or action conflicts with the operation."""
 
 
-class Tasks:
-    """Sidecar provider owning the relational format, not a second execution engine."""
+def _action(row: RowMapping) -> Action:
+    return Action.model_validate({
+        **{name: row[name] for name in Action.model_fields if name != "error"},
+        "error": {"code": row["error_code"], "message": row["error_message"]} if row["error_code"] else None,
+    })
 
-    name = "tasks"
+
+class Tasks:
+    """SQLite task records independent of tape resets."""
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -30,23 +36,10 @@ class Tasks:
             return self._get(connection, action_id)
 
     def _get(self, connection: Connection, action_id: str) -> Action:
-        row = (
-            connection
-            .exec_driver_sql(
-                """SELECT id, mode, status, instruction, workspace, result, decision, error_code, error_message,
-            retry_of, cancel_requested_at, created_at, updated_at, started_at, completed_at
-            FROM actions WHERE id = ?""",
-                (action_id,),
-            )
-            .mappings()
-            .first()
-        )
+        row = connection.exec_driver_sql("SELECT * FROM actions WHERE id = ?", (action_id,)).mappings().first()
         if row is None:
             raise KeyError(action_id)
-        public = dict(row)
-        error_code, error_message = public.pop("error_code"), public.pop("error_message")
-        public["error"] = {"code": error_code, "message": error_message} if error_code else None
-        return Action.model_validate(public)
+        return _action(row)
 
     def request(self, action_id: str) -> ActionRequest:
         with self.engine.connect() as connection:
@@ -131,14 +124,14 @@ class Tasks:
             rows = (
                 connection
                 .exec_driver_sql(
-                    """SELECT id FROM actions WHERE ? IS NULL OR (created_at, id) <
+                    """SELECT * FROM actions WHERE ? IS NULL OR (created_at, id) <
                 (SELECT created_at, id FROM actions WHERE id = ?) ORDER BY created_at DESC, id DESC LIMIT ?""",
                     (cursor, cursor, limit),
                 )
                 .mappings()
                 .all()
             )
-            return [self._get(connection, row["id"]) for row in rows]
+            return [_action(row) for row in rows]
 
     def claim(self, action_id: str) -> bool:
         now = utc_now()
@@ -153,13 +146,9 @@ class Tasks:
 
     def next(self) -> str | None:
         with self.engine.connect() as connection:
-            row = (
-                connection
-                .exec_driver_sql("SELECT id FROM actions WHERE status = 'queued' ORDER BY created_at, id LIMIT 1")
-                .mappings()
-                .first()
-            )
-            return row["id"] if row else None
+            return connection.exec_driver_sql(
+                "SELECT id FROM actions WHERE status = 'queued' ORDER BY created_at, id LIMIT 1"
+            ).scalar()
 
     def finish(
         self,
@@ -216,10 +205,10 @@ class Tasks:
 
     def recover(self) -> None:
         with self.engine.connect() as connection:
-            rows = connection.exec_driver_sql("SELECT id FROM actions WHERE status = 'running'").mappings().all()
-        for row in rows:
+            action_ids = connection.exec_driver_sql("SELECT id FROM actions WHERE status = 'running'").scalars().all()
+        for action_id in action_ids:
             self.finish(
-                row["id"],
+                action_id,
                 "interrupted",
                 error={
                     "code": "interrupted",
@@ -253,10 +242,15 @@ class Tasks:
 
     def find(self, scope: str, key: str) -> Action | None:
         with self.engine.connect() as connection:
-            action_id = connection.exec_driver_sql(
-                "SELECT id FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (scope, key)
-            ).scalar()
-            return self._get(connection, action_id) if action_id else None
+            row = (
+                connection
+                .exec_driver_sql(
+                    "SELECT * FROM actions WHERE idempotency_scope = ? AND idempotency_key = ?", (scope, key)
+                )
+                .mappings()
+                .first()
+            )
+            return _action(row) if row else None
 
     def event_data(self, action_id: str, kind: str) -> dict | None:
         with self.engine.connect() as connection:

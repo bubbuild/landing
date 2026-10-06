@@ -62,8 +62,9 @@ def test_background_host_returns_receipts_and_preserves_pending_work(tmp_path, m
             started.set()
             await asyncio.Event().wait()
 
+        runtime = Runtime(path)
         responses.extend([blocked, completion("Explained queued work.")])
-        async with Runtime(path).running(background=True) as runtime:
+        async with runtime.running(background=True):
             request = ActionRequest(mode="explainer", instruction="Explain the failure.")
             first, created = runtime.submit(request, key="delivery-1")
             assert created and first.status == "queued"

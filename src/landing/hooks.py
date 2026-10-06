@@ -1,21 +1,20 @@
 """Bub hooks adapt Landing's business state and execution to the message pipeline."""
 
 import asyncio
-import hashlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bub import hookimpl
 from bub.builtin.hook_impl import BuiltinImpl
+from bub.builtin.settings import load_session_settings
+from bub.envelope import field_of
 from bub.hooks.interception import LlmCallDecision
 from bub.skills import discover_skills
 from bub.utils import workspace_from_state
-from pydantic import ValidationError
 
 from landing.database import open_database, own_database
 from landing.prompts import COMMON, SYSTEM, render
 from landing.settings import ModeSettings
-from landing.store import SQLiteTapeStore
-from landing.tasks import Tasks
 
 if TYPE_CHECKING:
     from landing.runtime import Runtime
@@ -29,21 +28,38 @@ class LandingHooks(BuiltinImpl):
         self.runtime = runtime
 
     def _get_agent(self, state=None):
-        return self.runtime.agent.bub
+        return self.runtime
 
-    @hookimpl
+    @hookimpl(trylast=True)
     def provide_environment(self, session_id, workspace):
-        # Native tools resolve the task workspace unless a host supplies an environment.
+        # Native tools resolve the state workspace unless a host supplies a session environment.
         return None
 
-    @hookimpl(specname="load_state")
-    async def load_landing_state(self, message, session_id):
-        tape = self.runtime.agent.tape.session_tape(session_id, self.runtime.framework.workspace)
-        selected = "explainer"
+    @hookimpl
+    async def load_state(self, message, session_id):
+        if lifespan := field_of(message, "lifespan"):
+            await lifespan.__aenter__()
+        agent = field_of(message, "_runtime_agent") or self.runtime
+        workspace = Path(field_of(message, "_runtime_workspace", self.framework.workspace)).expanduser().resolve()
+        tape = agent.tape.session_tape(session_id, workspace)
+        state = {
+            "session_id": session_id,
+            "_runtime_agent": agent,
+            "_runtime_workspace": str(workspace),
+            "landing_mode": "explainer",
+            **await load_session_settings(tape),
+        }
         for entry in await tape.store.fetch_all(tape.query().kinds("event")):
             if entry.payload.get("name") == "landing_mode_switch":
-                selected = entry.payload["data"]["landing_mode"]
-        return {"landing_mode": selected}
+                state["landing_mode"] = entry.payload["data"]["landing_mode"]
+        if context := field_of(message, "context_str"):
+            state["context"] = context
+        context = field_of(message, "context", {})
+        if model := context.get("model"):
+            state["model"] = model
+        if thread := context.get("thread_id"):
+            state["_runtime_thread_id"] = thread
+        return state
 
     @hookimpl
     def system_prompt(self, prompt, state) -> str:
@@ -53,7 +69,7 @@ class LandingHooks(BuiltinImpl):
         skill = next(
             (
                 item
-                for item in discover_skills(workspace, skill_dirs=self.runtime.agent.bub.skill_dirs)
+                for item in discover_skills(workspace, skill_dirs=self.runtime.skill_dirs)
                 if item.name == f"landing-{selected}" and (allowed is None or item.name in allowed)
             ),
             None,
@@ -83,60 +99,28 @@ class LandingHooks(BuiltinImpl):
     @hookimpl
     def after_llm_call(self, request, result, state) -> None:
         # The SDK calls this before parsing tool arguments. Retain metadata, never their contents.
-        calls = []
-        for call in result.tool_calls:
-            function = call.get("function", {})
-            arguments = function.get("arguments", "").encode()
-            name = function.get("name")
-            calls.append({
-                "type": call.get("type"),
-                "tool": name if name in request.tool_names else "unknown",
-                "argument_bytes": len(arguments),
-                "argument_sha256": hashlib.sha256(arguments).hexdigest(),
-            })
         state["landing_llm_call"] = {
             "run_id": result.run_id,
-            "completion_failed": result.error is not None,
-            "tool_calls": calls,
+            "tools": [
+                name if (name := call.get("function", {}).get("name")) in request.tool_names else "unknown"
+                for call in result.tool_calls
+            ],
         }
-
-    def record_failure(self, action_id, state, error) -> None:
-        if last_call := state.pop("landing_llm_call", None):
-            diagnostic = {"last_llm_call": last_call}
-            if isinstance(error.__cause__, ValidationError):
-                diagnostic["validation_errors"] = [item["type"] for item in error.__cause__.errors(include_input=False)]
-            self.runtime.tasks.event(action_id, "model.failure", diagnostic)
-
-    def record_completion(self, state) -> None:
-        if state.get("landing_tool_failed"):
-            return
-        if reason := state.get("landing_no_update"):
-            self.runtime.tasks.event(state["landing_action_id"], "issue.unchanged", {"reason": reason})
-
-    @hookimpl
-    async def run_model_stream(self, prompt, session_id, state):
-        return await self.runtime.agent.run_stream(prompt=prompt, session_id=session_id, state=state)
 
     @hookimpl(specname="provide_lifespan")
     async def storage_lifespan(self):
-        with own_database(self.runtime.path), open_database(self.runtime.path) as engine:
+        with own_database(self.runtime.path), open_database(self.runtime.engine):
             self.runtime.execution = asyncio.Lock()
             self.runtime.pending = asyncio.Event()
-            self.runtime.tasks = Tasks(engine)
-            self.runtime.store = SQLiteTapeStore(engine)
             self.runtime.tasks.recover()
             yield
 
     @hookimpl
     def provide_tape_store(self):
-        return self.runtime.store
-
-    @hookimpl(specname="provide_tape_sidecar")
-    def task_sidecar(self):
-        return self.runtime.tasks
+        return self.runtime.tape_store
 
 
-def install_hooks(runtime: "Runtime") -> LandingHooks:
+def install_hooks(runtime: "Runtime") -> None:
     """Compose native defaults, business hooks, and storage through Bub's SDK."""
     manager = runtime.framework.plugin_manager
     builtin = manager.get_plugin("builtin")
@@ -144,4 +128,3 @@ def install_hooks(runtime: "Runtime") -> LandingHooks:
         manager.unregister(builtin)
     hooks = LandingHooks(runtime)
     manager.register(hooks, name="landing")
-    return hooks

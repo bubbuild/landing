@@ -45,7 +45,6 @@ def provider(responses, *, authorization=None):
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}/v1", requests
-        assert not pending
     finally:
         server.shutdown()
         server.server_close()

@@ -1,6 +1,6 @@
 # Python API
 
-Use one `Runtime` to execute actions, stream events, or submit background work. It shares action semantics with CLI and HTTP. Enter its lifecycle before calling it; leaving the context stops owned execution and releases the database.
+Use one `Runtime` to execute actions, stream events, or submit background work. It shares action semantics with CLI and HTTP. Enter its lifecycle before calling it; leaving the context stops owned execution and releases the database. The same Runtime can enter a new lifecycle and resume its stored work.
 
 This reference covers the source checkout, including `submit()` and `lifespan()`, which are unavailable in release `0.2.0`. Install that checkout into your application with `uv add /path/to/landing` and configure the [model](configuration.md#model).
 
@@ -47,7 +47,7 @@ For another host, enter `landing.running(background=True)`. Ordinary `running()`
 
 ## Stream events
 
-`landing.agent.run_stream()` accepts `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
+`landing.run_stream()` accepts `session_id`, text or content-part `prompt`, optional mutable `state`, per-call `model`, `allowed_tools`, `allowed_skills`, and `reasoning_effort`.
 
 ```python
 from contextlib import aclosing
@@ -58,7 +58,7 @@ from landing.runtime import Runtime
 
 async def explain():
     async with Runtime(Path("landing.sqlite3")).running() as landing:
-        stream = await landing.agent.run_stream(
+        stream = await landing.run_stream(
             session_id="release-question",
             prompt=',explain "Explain the failed release check."',
             allowed_tools=["fs.read", "bash", "skill"],
@@ -75,7 +75,7 @@ Include the corresponding `landing-{mode}` skill in a per-call allow list to ret
 
 Consume the stream fully or close it when leaving early. Closing unfinished work requests durable cancellation. Events include `text`, `reasoning`, `tool_call`, `tool_result`, `usage`, `error`, and `final`; `final` ends a model step, not necessarily the task. Read errors and usage from the stream, and validation or publication failures from the action record.
 
-Use `,triage`, `,fix`, `,review`, or `,explain` to delegate work. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task or calling the model. Selection survives restarts and is isolated by workspace and session. Content parts stay evidence rather than dispatching commands. Explicit `state` takes precedence over saved state. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
+Use `,triage`, `,fix`, `,review`, or `,explain` to delegate work. `,mode` reads selection; `,mode gatekeeper` selects it without creating a task or calling the model. Selection survives restarts and is isolated by workspace and session. Content parts stay evidence rather than dispatching commands. Explicit `state` bypasses state loading; supply its execution environment to override local execution. Per-call tools and skills only narrow [mode limits](configuration.md#mode-capabilities); callers serialize turns within a session.
 
 ## Hook integration
 
@@ -100,7 +100,7 @@ async def handle():
         ))
 ```
 
-Landing registers resources and task execution with the framework. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Work uses the selected workspace unless the host provides an execution environment.
+Landing registers resources and task execution with the framework. The message host stops its tasks before leaving the framework context; host hooks handle state, rendering, and delivery. Landing supplies task guidance. Set `framework.workspace` before entering its lifecycle to select the message host's default workspace. Mode and history remain isolated by workspace and session. Tools and checks use the environment supplied in state, or execute locally in the selected workspace. Host environment hooks receive the framework's workspace; Bub caches their environment per session and closes it at shutdown.
 
 ## Skills and additional tools
 
@@ -120,6 +120,6 @@ For stored outcomes and restart behavior, see [Action records](http.md#action-re
 
 ::: landing.runtime.Runtime
     options:
-      members: [running, lifespan, run, command, submit, cancel]
+      members: [running, lifespan, run, run_stream, command, submit, cancel]
 
 ::: landing.server.create_app

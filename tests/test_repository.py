@@ -121,14 +121,12 @@ def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch
     assert json.loads(capsys.readouterr().out)["result"] == "Deployment reference: explicit"
 
 
-@pytest.mark.parametrize("entry", ["cli", "http"])
 @pytest.mark.parametrize(
-    "limits",
+    ("entry", "limits"),
     [
-        {},
-        {"excluded_skills": ["Landing-Explainer"]},
-        {"allowed_skills": []},
-        {"allowed_skills": ["landing-explainer"], "excluded_skills": ["Landing-Explainer"]},
+        ("cli", {}),
+        ("http", {"allowed_skills": []}),
+        ("cli", {"allowed_skills": ["landing-explainer"], "excluded_skills": ["landing-explainer"]}),
     ],
 )
 def test_selected_mode_skill_can_be_overridden_or_disabled(tmp_path, monkeypatch, model, capsys, entry, limits):

@@ -280,7 +280,7 @@ def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
         message = "The reply predates this delegation."
         raise ValueError(message)
     receipt = publication.read_reply(comment_id)
-    cast("Tasks", context.tape.get_sidecar("tasks")).event(
+    context.state["_runtime_agent"].tasks.event(
         context.state["landing_action_id"], "github.reply_confirmed", {"id": comment_id}
     )
     return json.dumps({"url": receipt["html_url"], "body": receipt["body"]})
