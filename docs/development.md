@@ -40,7 +40,7 @@ GitHub event --> admission --> command --------------+       Bub Agent + checks
 
 HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. Every execution host consumes the same action stream; CLI and worker calls drain it to obtain the final record. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
-Task records and Bub tapes share one SQLite database. Command tools access tasks through the native Agent context. Resetting a session's tape clears its model history and mode without deleting action records.
+Task records and Bub tapes share one SQLite database. Command tools access tasks through Bub's sidecar provider. Resetting a session's tape clears its model history and mode without deleting action records.
 
 ```text
 Host starts -> Bub lifespan -> lock + SQLite recovery

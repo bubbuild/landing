@@ -5,6 +5,7 @@ from typing import cast
 from bub.tools import ToolContext, tool
 
 from landing.models import Action, ActionRequest, Mode
+from landing.tasks import Tasks
 
 COMMANDS: dict[str, Mode] = {
     "triage": "issuer",
@@ -24,7 +25,7 @@ async def mode(value: Mode | None = None, *, context: ToolContext) -> Mode:
 
 
 def admit(request: ActionRequest, *, context: ToolContext) -> Action:
-    action, _ = context.state["_runtime_agent"].tasks.create(
+    action, _ = cast("Tasks", context.tape.get_sidecar("tasks")).create(
         request,
         scope=context.state.get("landing_scope", "sdk"),
         key=context.state.get("landing_delivery_key"),

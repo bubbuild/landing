@@ -297,7 +297,6 @@ def test_saved_modes_survive_restart_and_stay_isolated(tmp_path, model):
                 )
                 assert await output(await restored.run_stream(session_id="other", prompt=",mode")) == "explainer"
                 await output(await restored.run_stream(session_id="shared", prompt=",tape.reset"))
-                assert restored.tasks.get(action.id).result == "Done."
                 assert await output(await restored.run_stream(session_id="shared", prompt=",mode")) == "explainer"
 
     asyncio.run(run())

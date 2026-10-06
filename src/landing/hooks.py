@@ -119,6 +119,10 @@ class LandingHooks(BuiltinImpl):
     def provide_tape_store(self):
         return self.runtime.tape_store
 
+    @hookimpl(specname="provide_tape_sidecar")
+    def task_sidecar(self):
+        return self.runtime.tasks
+
 
 def install_hooks(runtime: "Runtime") -> None:
     """Compose native defaults, business hooks, and storage through Bub's SDK."""
