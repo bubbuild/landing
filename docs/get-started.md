@@ -33,10 +33,10 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Run native checks
         run: uv sync --locked && uv run pytest
       - uses: bubbuild/landing@0.2.0

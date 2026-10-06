@@ -32,7 +32,7 @@ jobs:
       GIT_COMMITTER_NAME: ${{ vars.LANDING_GIT_NAME || 'github-actions[bot]' }}
       GIT_COMMITTER_EMAIL: ${{ vars.LANDING_GIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
@@ -51,7 +51,7 @@ jobs:
           git var GIT_AUTHOR_IDENT
           git var GIT_COMMITTER_IDENT
           gh auth setup-git
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Prepare MCP tools
@@ -84,7 +84,7 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/.ci-state/browser" ]; then
             cp -a "$GITHUB_WORKSPACE/.ci-state/browser/." "$RUNNER_TEMP/landing/browser/"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: landing-duty-${{ github.run_id }}-${{ github.run_attempt }}
