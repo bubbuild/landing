@@ -61,7 +61,6 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
 
 
 class Runtime(BubAgent):
-    settings: Settings
     execution: asyncio.Lock
     pending: asyncio.Event
 
@@ -79,11 +78,13 @@ class Runtime(BubAgent):
         self.workspaces = workspaces
         self.verify = verify
         self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-        self.settings = ensure_config(Settings)
+        self.configuration = ensure_config(Settings)
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
         install_hooks(self)
-        self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *self.settings.skill_dirs))
+        self.skill_roots = tuple(
+            Path(root).expanduser().resolve() for root in (*skill_dirs, *self.configuration.skill_dirs)
+        )
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
         super().__init__(
@@ -255,7 +256,7 @@ class Runtime(BubAgent):
 
     def capabilities(self, mode, invocation, workspace: Path) -> None:
         """Intersect mode and call selections, then exclude unavailable capabilities."""
-        limits = self.settings.modes.get(mode, ModeSettings())
+        limits = self.configuration.modes.get(mode, ModeSettings())
         if limits.allowed_tools is not None or limits.excluded_tools:
             available = self.tools
             configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)

@@ -79,7 +79,7 @@ class LandingHooks(BuiltinImpl):
             common=COMMON,
             selected=selected,
             mode=skill.body() if skill else "",
-            instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
+            instructions=self.runtime.configuration.modes.get(selected, ModeSettings()).instructions,
             workspace=workspace,
             repository=self._read_agents_file(state),
         )
