@@ -61,7 +61,7 @@ build-backend = "hatchling.build"
 exclude = ["/.lody", "/.ci-state", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/landing"]
+packages = ["src/landing", "src/skills"]
 
 [tool.ty.environment]
 python = "./.venv"

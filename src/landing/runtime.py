@@ -14,7 +14,7 @@ from bub.builtin.shell_manager import shell_manager
 from bub.builtin.tools import resolve_tool_names
 from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
-from bub.skills import discover_skills
+from bub.skills import discover_skills, iter_skill_roots
 from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
 from bub.tools import REGISTRY, Tool, ToolContext, tool
 from bub.turn import TurnState
@@ -96,16 +96,15 @@ class Runtime:
         self.worker_task: asyncio.Task[None] | None = None
 
     def create_agent(self, workspace: Path) -> BubAgent:
+        skill_dirs = None
+        if self.skill_roots:
+            roots = [root for root, _ in iter_skill_roots(workspace)]
+            skill_dirs = [roots[0], *self.skill_roots, *roots[1:]]
         agent = BubAgent(
             self.framework,
             tools=list(self.tools.values()),
             tape_store=self.tape_store,
-            skill_dirs=(
-                workspace / ".agents/skills",
-                *self.skill_roots,
-                Path.home() / ".agents/skills",
-                Path(__file__).with_name("skills"),
-            ),
+            skill_dirs=skill_dirs,
             command_prefix=self.settings.command_prefix,
         )
         # Keep the Runtime configuration when another host loads process-wide settings.
@@ -301,7 +300,10 @@ class Runtime:
                         self.capabilities(request.mode, invocation, workspace, agent)
                         stream = await agent.run_stream(
                             session_id=session_id,
-                            prompt=prompt if prompt is not None else task_prompt(request, checks),
+                            prompt=[
+                                {"type": "text", "text": f"$landing-{request.mode}"},
+                                *(prompt if prompt is not None else task_prompt(request, checks)),
+                            ],
                             state=state,
                             **invocation,
                         )

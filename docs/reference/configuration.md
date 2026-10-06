@@ -42,7 +42,7 @@ Precedence is environment, Landing YAML, existing Bub YAML, legacy provider-spec
 | `LANDING_SKILL_DIRS` | The same roots as a JSON list. |
 | Global `--skill-dir PATH` | Repeatable per-call or server roots. |
 
-Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, `~/.agents/skills`, then bundled Landing skills. Explicit roots add to configured roots; duplicate skill names select the earlier root. Existing `BUB_SKILL_DIRS` is a fallback alias. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
+Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, `~/.agents/skills`, then bundled skills. Explicit roots add to configured roots; duplicate skill names select the earlier root. Existing `BUB_SKILL_DIRS` is a fallback alias. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
 
 ## Mode capabilities
 
