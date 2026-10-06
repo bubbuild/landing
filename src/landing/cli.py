@@ -15,11 +15,9 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import typer
-import yaml
 from bub import BubFramework, hookimpl
 from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
-from typer.completion import install_callback, show_callback
 
 from landing.commands import COMMANDS
 from landing.database import open_database, own_database
@@ -47,6 +45,7 @@ class ExecutionSettings(FileSettings):
 JsonOutput = Annotated[bool, typer.Option("--json", help="Print records as JSON.")]
 Limit = Annotated[int, typer.Option(min=1, max=100, help="Maximum records to return.")]
 ActionId = Annotated[str, typer.Argument(metavar="ID")]
+actions = typer.Typer(help="Inspect and control recorded actions.", no_args_is_help=True)
 
 
 def present_errors(callback: Callable[..., Any]) -> Callable[..., Any]:
@@ -56,17 +55,15 @@ def present_errors(callback: Callable[..., Any]) -> Callable[..., Any]:
     def invoke(*args, **kwargs):
         try:
             return callback(*args, **kwargs)
-        except (ValueError, OSError, KeyError, yaml.YAMLError) as exc:
-            message = "The configuration file is invalid YAML." if isinstance(exc, yaml.YAMLError) else str(exc)
-            if kwargs.get("json_output", False):
-                typer.echo(json.dumps({"error": {"code": "invalid_request", "message": message}}))
-            typer.echo(message, err=True)
-            raise typer.Exit(2) from exc
         except typer.Exit:
             raise
-        except RuntimeError as exc:
-            typer.echo(str(exc), err=True)
-            raise typer.Exit(1) from exc
+        except (ValueError, OSError, KeyError, RuntimeError) as exc:
+            code = 1 if isinstance(exc, RuntimeError) else 2
+            message = str(exc)
+            if code == 2 and kwargs.get("json_output", False):
+                typer.echo(json.dumps({"error": {"code": "invalid_request", "message": message}}))
+            typer.echo(message, err=True)
+            raise typer.Exit(code) from exc
 
     return invoke
 
@@ -97,23 +94,12 @@ def show_version(value: bool) -> None:
 
 
 def configure(
-    ctx: typer.Context,
     db: Annotated[Path | None, typer.Option(help="Local SQLite path; overrides LANDING_DB.")] = None,
     skill_dir: Annotated[list[Path] | None, typer.Option(help="Additional trusted skill root (repeatable).")] = None,
     github_repository: Annotated[str | None, typer.Option(help="Repository context for the prepared gh CLI.")] = None,
     version: Annotated[
         bool,
         typer.Option("--version", callback=show_version, is_eager=True, help="Print the installed version and exit."),
-    ] = False,
-    install_completion: Annotated[
-        bool,
-        typer.Option(
-            "--install-completion", callback=install_callback, expose_value=False, help="Install shell completion."
-        ),
-    ] = False,
-    show_completion: Annotated[
-        bool,
-        typer.Option("--show-completion", callback=show_callback, expose_value=False, help="Print shell completion."),
     ] = False,
 ) -> None:
     """Configure this invocation without starting execution resources."""
@@ -122,23 +108,22 @@ def configure(
 def create_cli_app() -> typer.Typer:
     framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
     register_command_hooks(framework.plugin_manager)
-    app = framework.create_cli_app()
-    app.info.name = "landing"
-    app.info.help = "Explain CI failures, delegate fixes, and review evidence."
-    app.info.no_args_is_help = True
-    app.rich_markup_mode = None
-    app.info.context_settings = {"obj": framework, "help_option_names": ["-h", "--help"]}
-    app.callback()(configure)
+    app = typer.Typer(
+        name="landing",
+        help="Explain CI failures, delegate fixes, and review evidence.",
+        callback=configure,
+        no_args_is_help=True,
+        rich_markup_mode=None,
+        context_settings={"obj": framework, "help_option_names": ["-h", "--help"]},
+    )
+    framework.plugin_manager.hook.register_cli_commands(app=app)
     return app
 
 
 def display(value, *, json_output: bool = False, output: Path | None = None) -> None:
     if json_output:
-        text = (
-            json.dumps([item.model_dump() for item in value], indent=2)
-            if isinstance(value, list)
-            else value.model_dump_json(indent=2)
-        )
+        data = [item.model_dump() for item in value] if isinstance(value, list) else value.model_dump()
+        text = json.dumps(data, indent=2)
     elif isinstance(value, list):
         text = "ID\tMODE\tSTATUS\tUPDATED\tINSTRUCTION\n" + "\n".join(
             f"{item.id}\t{item.mode}\t{item.status}\t{item.updated_at}\t{(item.instruction or '')[:60]}"
@@ -215,6 +200,7 @@ def action_database(ctx: typer.Context) -> Path:
     return (execution_settings(ctx).db or DEFAULT_DATABASE).expanduser()
 
 
+@actions.command("list")
 @present_errors
 def list_actions(
     ctx: typer.Context, limit: Limit = 50, cursor: str | None = None, json_output: JsonOutput = False
@@ -223,6 +209,7 @@ def list_actions(
         display(Tasks(engine).list(limit, cursor), json_output=json_output)
 
 
+@actions.command()
 @present_errors
 def logs(
     ctx: typer.Context,
@@ -251,6 +238,11 @@ def inspect_action(ctx: typer.Context, action_id: ActionId, json_output: JsonOut
         display(action, json_output=json_output)
 
 
+actions.command("view", help="Read an action's status and result.")(inspect_action)
+actions.command("cancel", help="Cancel queued work while its host is stopped.")(inspect_action)
+
+
+@actions.command()
 @present_errors
 def watch(
     ctx: typer.Context,
@@ -267,6 +259,7 @@ def watch(
         raise typer.Exit(action.exit_code() if exit_status else 0)
 
 
+@actions.command()
 @present_errors
 def retry(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = False) -> None:
     """Retry a terminal action using its original request."""
@@ -323,16 +316,6 @@ def register_cli_commands(app: typer.Typer) -> None:
         "explain": "Explain the supplied question or evidence.",
     }.items():
         app.command(name=name, help=help_text)(delegate)
-    actions = typer.Typer(help="Inspect and control recorded actions.", no_args_is_help=True)
-    for name, callback in {
-        "list": list_actions,
-        "logs": logs,
-        "watch": watch,
-        "retry": retry,
-    }.items():
-        actions.command(name)(callback)
-    actions.command("view", help="Read an action's status and result.")(inspect_action)
-    actions.command("cancel", help="Cancel queued work while its host is stopped.")(inspect_action)
     app.add_typer(actions, name="action")
     app.command()(serve)
 

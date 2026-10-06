@@ -367,22 +367,10 @@ def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool
     return ancestry.returncode == 0 if ancestry.returncode in {0, 1} else None
 
 
-async def run(
-    landing: Runtime,
-    repository: str,
-    command: str,
-    instruction: str,
-    *,
-    number: int = 0,
-    head: str = "",
-    run_id: str = "",
-    checked_revision: str = "",
-    key: str,
-    checks: list[str],
-    event: dict | None = None,
-    reply_required: bool = True,
-) -> Action:
-    selected_workspace = landing.workspace_name(landing.framework.workspace)
+async def run(landing: Runtime, options: GitHubSettings, event: dict | None = None) -> Action:
+    repository, command = options.repository, options.delegated_command
+    number, head, key = options.number, options.head, cast(str, options.delivery_key)
+    reply_required = not bool(event and "workflow_run" in event)
     workspace = landing.framework.workspace
     mode = COMMANDS[command]
     stamp = marker(mode, key)
@@ -392,9 +380,9 @@ async def run(
         "repository": repository,
         "number": number,
         "candidate_head": head,
-        "ci_checkout": checked_revision,
-        "ci_checkout_contains_candidate": checkout_contains(workspace, head, checked_revision),
-        "native_run_id": run_id,
+        "ci_checkout": options.checked_revision,
+        "ci_checkout_contains_candidate": checkout_contains(workspace, head, options.checked_revision or ""),
+        "native_run_id": options.run_id,
         "thread_comment_id": thread,
         "publication_marker": stamp,
         "target_url": f"https://github.com/{repository}/{'pull' if is_pr else 'issues'}/{number}" if number else "",
@@ -433,10 +421,10 @@ async def run(
     source_input = FileInput(name="github-context.json", content=json.dumps(source))
     request = ActionRequest(
         mode=mode,
-        instruction=instruction or "Carry out the delegated work.",
-        workspace=selected_workspace,
+        instruction=options.instruction or "Carry out the delegated work.",
+        workspace=landing.workspace_name(workspace),
         input=[repository_context(repository), source_input, FileInput(name="github-guidance.txt", content=guidance)],
-        checks=checks if mode in {"fixer", "gatekeeper"} else [],
+        checks=options.check if mode in {"fixer", "gatekeeper"} else [],
     )
 
     publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
@@ -527,7 +515,36 @@ def github_event(
     options = GitHubSettings(**{
         name: value for name, value in parameters.items() if name != "ctx" and value is not None
     })
-    raise typer.Exit(asyncio.run(delivery(ctx, options)))
+    context = GitHubEnvironment()
+    payload = json.loads(options.event.read_text()) if options.event else None
+    if not admitted(
+        options.repository,
+        payload,
+        trust=options.trust,
+        upstream=tuple(name.strip() for name in options.upstream_workflow),
+        prefix=options.command_prefix,
+    ):
+        write_outputs(None)
+        raise typer.Exit()
+    from landing.cli import execution_runtime, execution_settings
+
+    settings = execution_settings(ctx)
+    payload = route_event(options, payload)
+
+    if not options.delivery_key:
+        if not context.run_id:
+            message = "Supply --delivery-key outside a GitHub workflow."
+            raise ValueError(message)
+        options.delivery_key = f"action:{context.run_id}:{context.run_attempt}"
+    if options.checked_revision is None:
+        options.checked_revision = context.checked_revision
+    runtime = execution_runtime(
+        ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
+    )
+    action = asyncio.run(run(runtime, options, payload))
+    typer.echo(action.model_dump_json(indent=2))
+    write_outputs(action)
+    raise typer.Exit(action.status != "completed")
 
 
 def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
@@ -553,48 +570,3 @@ def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
             args.number, args.head = pull["number"], pull["head"]["sha"]
 
     return event
-
-
-async def delivery(ctx: typer.Context, options: GitHubSettings) -> int:
-    context = GitHubEnvironment()
-    event = json.loads(options.event.read_text()) if options.event else None
-    if not admitted(
-        options.repository,
-        event,
-        trust=options.trust,
-        upstream=tuple(name.strip() for name in options.upstream_workflow),
-        prefix=options.command_prefix,
-    ):
-        write_outputs(None)
-        return 0
-    from landing.cli import execution_runtime, execution_settings
-
-    settings = execution_settings(ctx)
-    event = route_event(options, event)
-
-    key = options.delivery_key
-    if not key:
-        if not context.run_id:
-            message = "Supply --delivery-key outside a GitHub workflow."
-            raise ValueError(message)
-        key = f"action:{context.run_id}:{context.run_attempt}"
-    runtime = execution_runtime(
-        ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
-    )
-    action = await run(
-        runtime,
-        options.repository,
-        options.delegated_command,
-        options.instruction,
-        key=key,
-        checks=options.check,
-        event=event,
-        reply_required=not bool(event and "workflow_run" in event),
-        number=options.number,
-        head=options.head,
-        run_id=options.run_id,
-        checked_revision=options.checked_revision if options.checked_revision is not None else context.checked_revision,
-    )
-    typer.echo(action.model_dump_json(indent=2))
-    write_outputs(action)
-    return int(action.status != "completed")

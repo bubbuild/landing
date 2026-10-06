@@ -77,30 +77,31 @@ def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):
 
 def test_captured_help_and_diagnostics_remain_plain_in_ci():
     environment = {**os.environ, "GITHUB_ACTIONS": "true", "FORCE_COLOR": "1"}
-    for arguments, status in ((["triage", "--help"], 0), (["action", "list", "--limit", "0", "--json"], 2)):
+    for arguments, status in (
+        (["triage", "--help"], 0),
+        (["--show-completion"], 0),
+        (["action", "list", "--limit", "0", "--json"], 2),
+    ):
         result = subprocess.run(  # noqa: S603 -- exercise the installed CLI with explicit arguments.
-            [sys.executable, "-m", "landing", *arguments], capture_output=True, text=True, env=environment, check=False
+            ["/bin/bash", "-c", '"$0" -m landing "$@" || exit', sys.executable, *arguments],
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
         )
         assert result.returncode == status
         assert "\x1b[" not in result.stdout + result.stderr
         if status:
             assert not result.stdout
             assert "--limit" in result.stderr
+        elif "--show-completion" in arguments:
+            assert "_LANDING_COMPLETE" in result.stdout
         else:
             assert "--help" in result.stdout
 
 
-def test_cli_prints_shell_completion():
-    result = subprocess.run(  # noqa: S603 -- invoke the public CLI from a supported shell without installing anything.
-        ["/bin/bash", "-c", '"$0" -m landing --show-completion || exit', sys.executable],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "_LANDING_COMPLETE" in result.stdout
-
-
-def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, capsys):
+@pytest.mark.parametrize("native_host", [False, True])
+def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, native_host):
     responses, _ = model
     caller = tmp_path / "caller"
     candidate = tmp_path / "candidate"
@@ -112,19 +113,18 @@ def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkey
         completion(tool="bash", arguments={"command": 'test "$(cat answer.txt)" = 42'}),
         completion("Wrote and checked the candidate's answer."),
     ])
-    assert (
-        main([
-            "--db",
-            str(tmp_path / "landing.sqlite3"),
-            "fix",
-            "Write the answer.",
-            "--workspace",
-            str(candidate),
-            "--json",
-        ])
-        == 0
-    )
-    assert json.loads(capsys.readouterr().out)["status"] == "completed"
+    database = tmp_path / "landing.sqlite3"
+    app = Runtime(database, framework=BubFramework()).framework.create_cli_app() if native_host else create_cli_app()
+    options = ["--workspace", str(candidate)] if native_host else ["--db", str(database)]
+    workspace = [] if native_host else ["--workspace", str(candidate)]
+    runner = CliRunner()
+    result = runner.invoke(app, [*options, "fix", "Write the answer.", *workspace, "--json"])
+    assert result.exit_code == 0, result.output
+    action = json.loads(result.stdout)
+    assert action["status"] == "completed"
+    result = runner.invoke(app, [*options[:2], "action", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [action]
     assert (candidate / "answer.txt").read_text() == "42"
     assert not (caller / "answer.txt").exists()
 
@@ -144,26 +144,3 @@ def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tm
     assert "json_invalid" in diagnostic
     assert "bash" in diagnostic
     assert "sensitive-task-value" not in diagnostic
-
-
-def test_native_cli_uses_host_workspace_and_history(tmp_path, model):
-    responses, _ = model
-    responses.extend([
-        completion(tool="fs_write", arguments={"path": "answer.txt", "content": "42"}),
-        completion("Wrote the answer."),
-    ])
-    project = tmp_path / "project"
-    project.mkdir()
-    framework = BubFramework()
-    framework.load_builtin_hooks()
-    Runtime(tmp_path / "landing.sqlite3", framework=framework)
-    app = framework.create_cli_app()
-    runner = CliRunner()
-    result = runner.invoke(app, ["--workspace", str(project), "fix", "Write the answer.", "--json"])
-    assert result.exit_code == 0, result.output
-    action = json.loads(result.stdout)
-    assert (project / "answer.txt").read_text() == "42"
-    assert action["status"] == "completed"
-    result = runner.invoke(app, ["action", "list", "--json"])
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [action]
