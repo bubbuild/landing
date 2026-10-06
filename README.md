@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/images/landing-wordmark-dark.png">
-    <img src="docs/assets/images/landing-wordmark-light.png" alt="Landing" width="420">
+    <img src="https://raw.githubusercontent.com/bubbuild/landing/2eb4c40ff34b78ff909f12639a63f1b851a704cd/docs/assets/images/landing-wordmark-light.png" alt="Landing" width="420">
   </picture>
 </h1>
 
