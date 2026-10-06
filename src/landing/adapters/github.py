@@ -176,8 +176,7 @@ def admitted(
 
 
 def rows(endpoint: str, repository: str) -> list[dict]:
-    output = gh(["api", endpoint, "--paginate", "--jq", ".[] | @json"], repository)
-    return [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [item for page in json.loads(gh(["api", endpoint, "--paginate", "--slurp"], repository)) for item in page]
 
 
 def marker(mode: Mode, key: str) -> str:

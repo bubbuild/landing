@@ -69,8 +69,7 @@ elif "/comments/" in endpoint:
     print(json.dumps(record))
 elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     kind = endpoint.rsplit("/", 1)[-1]
-    for record in state[kind]:
-        print(json.dumps(record))
+    print(json.dumps([state[kind]] if "--slurp" in args else state[kind]))
 else:
     print(json.dumps({**state.get("target", {}), "head": {"sha": state.get("head", "candidate-head")}}))
 """)

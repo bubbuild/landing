@@ -56,7 +56,7 @@ jobs:
         run: echo "::warning::Landing feedback failed. Inspect the Action logs."
 ```
 
-Ubuntu's runner provides gh; use your normal setup action on other runners. The example publishes as `github-actions[bot]`. Keep existing required checks independent; `continue-on-error` makes this automatic review advisory and the next step warns when it fails. Omit that property when a delegated task must fail the job. For owner-restricted execution, use a protected workflow source and the [GitHub trust controls](guides/github.md#choose-who-can-delegate).
+Ubuntu's runner provides gh; prepare [a supported version](guides/github.md) with your normal setup action on other runners. The example publishes as `github-actions[bot]`. Keep existing required checks independent; `continue-on-error` makes this automatic review advisory and the next step warns when it fails. Omit that property when a delegated task must fail the job. For owner-restricted execution, use a protected workflow source and the [GitHub trust controls](guides/github.md#choose-who-can-delegate).
 
 ## Open a PR and read the result
 

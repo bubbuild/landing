@@ -1,6 +1,8 @@
 # Use Landing with GitHub
 
-Prepare a trusted checkout, authenticated gh in PATH, project dependencies, model configuration, and skills. Landing supplies event admission, repository context, and publication verification; the agent uses your prepared tools to investigate and publish. Start with [your first PR review](../get-started.md).
+Prepare a trusted checkout, authenticated gh 2.48 or later in PATH, project dependencies, model configuration, and skills. Landing supplies event admission, repository context, and publication verification; the agent uses your prepared tools to investigate and publish. Start with [your first PR review](../get-started.md).
+
+Use the [official GitHub CLI packages](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) or your usual setup action. Landing requires `gh api --paginate --slurp`; older versions are unsupported. The container installs gh from the official package repository. Optional attachment uploads require gh 2.99 or later and an upload-capable identity.
 
 ## Choose the publishing identity
 
