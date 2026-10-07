@@ -130,6 +130,20 @@ def invoke(tmp_path, platform, monkeypatch):
     return call
 
 
+@pytest.mark.parametrize(
+    ("payload", "diagnostic"),
+    [({"action": "created"}, "repository.full_name"), ([], "JSON object")],
+)
+def test_unusable_event_payload_is_reported_as_invalid_input(tmp_path, platform, monkeypatch, payload, diagnostic):
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(payload))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(source))
+    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert diagnostic in result.stderr
+
+
 def test_comment_actions_require_maintainer_and_use_configurable_identity(
     tmp_path, platform, invoke, model, monkeypatch
 ):

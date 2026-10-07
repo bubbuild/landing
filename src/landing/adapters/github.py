@@ -9,7 +9,7 @@ import signal
 import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 import typer
@@ -118,13 +118,25 @@ def permitted(repository: str, user: dict, trust: str, owner: dict) -> bool:
     return membership["state"] == "active" and membership["role"] == "admin"
 
 
+def required(source: object, *path: str) -> Any:
+    """Read a nested event field, reporting an unusable payload as invalid input."""
+    value: Any = source
+    for name in path:
+        if not isinstance(value, dict) or name not in value:
+            message = f"The event payload is missing {'.'.join(path)}."
+            raise ValueError(message)
+        value = value[name]
+    return value
+
+
 def workflow_source(repository: str, event: dict, upstream: tuple[str, ...]) -> bool:
-    run = event["workflow_run"]
+    run = required(event, "workflow_run")
+    source = required(run, "event")
     return (
-        run["name"] in upstream
-        and run["head_repository"]["full_name"].casefold() == repository.casefold()
-        and run["event"] in {"push", "release", "workflow_dispatch"}
-        and (run["event"] == "release" or run["head_branch"] == event["repository"]["default_branch"])
+        required(run, "name") in upstream
+        and required(run, "head_repository", "full_name").casefold() == repository.casefold()
+        and source in {"push", "release", "workflow_dispatch"}
+        and (source == "release" or required(run, "head_branch") == required(event, "repository", "default_branch"))
     )
 
 
@@ -140,7 +152,7 @@ def admitted(
     if context.repository and repository.casefold() != context.repository.casefold():
         message = "The Action target must be the workflow repository."
         raise ValueError(message)
-    if event and event["repository"]["full_name"].casefold() != repository.casefold():
+    if event and required(event, "repository", "full_name").casefold() != repository.casefold():
         message = "The event belongs to another repository."
         raise ValueError(message)
     # A local invocation without an event uses the caller's prepared credentials.
@@ -162,7 +174,7 @@ def admitted(
     )
     if trust == "repository" and context.actions and native_source and not comment:
         return True
-    actor = comment["user"] if comment else run["actor"] if run else event.get("sender")
+    actor = required(comment, "user") if comment else required(run, "actor") if run else event.get("sender")
     actor = actor or identity(f"users/{context.actor}", repository)
     owner = identity(f"repos/{repository}", repository)["owner"] if trust == "owner" else {}
     if not permitted(repository, actor, trust, owner):
@@ -346,7 +358,7 @@ def pull_target(
     repository: str, number: int, head: str, event: dict | None, *, review: bool = False
 ) -> tuple[bool, int, str]:
     comment = (event or {}).get("comment", {})
-    thread = (comment.get("in_reply_to_id") or comment["id"]) if "pull_request_review_id" in comment else 0
+    thread = (comment.get("in_reply_to_id") or required(comment, "id")) if "pull_request_review_id" in comment else 0
     is_pr = bool(head) or "pull_request" in (event or {}) or "pull_request" in (event or {}).get("issue", {})
     target = (event or {}).get("pull_request") or (event or {}).get("issue", {})
     if number and not is_pr:
@@ -523,6 +535,9 @@ def github_event(
     })
     context = GitHubEnvironment()
     payload = json.loads(options.event.read_text()) if options.event else None
+    if options.event and not isinstance(payload, dict):
+        message = "The event file must contain a JSON object."
+        raise ValueError(message)
     if not admitted(
         options.repository,
         payload,
@@ -555,21 +570,21 @@ def github_event(
 
 def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
     if event and "comment" in event:
-        lines = event["comment"]["body"].strip().splitlines()
+        lines = required(event, "comment", "body").strip().splitlines()
         parts = lines[0].split(maxsplit=2)
         if len(parts) < 2 or parts[1] not in COMMANDS:
             message = "Choose triage, fix, review, or explain after the command prefix."
             raise ValueError(message)
         args.delegated_command = parts[1]
         args.instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
-        target = event.get("issue") or event["pull_request"]
+        target = event.get("issue") or required(event, "pull_request")
         # pull_target reads the current head for a PR; the comment event does not carry it.
-        args.number = target["number"]
+        args.number = required(target, "number")
     elif event and "workflow_run" in event:
-        args.delegated_command, args.run_id = "triage", str(event["workflow_run"]["id"])
+        args.delegated_command, args.run_id = "triage", str(required(event, "workflow_run", "id"))
     elif event and not args.number:
         pull = event.get("pull_request")
         if pull:
-            args.number, args.head = pull["number"], pull["head"]["sha"]
+            args.number, args.head = required(pull, "number"), required(pull, "head", "sha")
 
     return event
