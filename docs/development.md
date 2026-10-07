@@ -120,7 +120,7 @@ Keep investigation details in artifacts and public feedback useful to the person
 With Docker or Podman:
 
 ```bash
-docker build --build-arg SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run landing --version)" -t landing:local .
+docker build --build-arg SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run --reinstall-package landing landing --version)" -t landing:local .
 uv run python tests/container_smoke.py --image landing:local
 ```
 

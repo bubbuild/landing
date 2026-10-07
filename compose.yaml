@@ -1,6 +1,9 @@
 services:
   landing:
-    build: .
+    build:
+      context: .
+      args:
+        SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
     image: ${LANDING_IMAGE:-ghcr.io/bubbuild/landing:latest}
     restart: unless-stopped
     ports:

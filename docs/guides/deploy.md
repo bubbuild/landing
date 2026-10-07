@@ -23,7 +23,7 @@ curl -i http://127.0.0.1:8080/v1/actions -H "Authorization: Bearer $LANDING_TOKE
 
 The response contains a task receipt; [Run the server](server.md) explains result inspection and cancellation.
 
-Use `compose.yaml` from the Landing repository. `LANDING_IMAGE` selects another image or digest. For a local build, set `LANDING_IMAGE=landing:local` and run `docker compose up --build -d`. Compose forwards only the listed variables; use an override for additional settings or mounts. See [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.
+Use `compose.yaml` from the Landing repository. `LANDING_IMAGE` selects another image or digest. For a local build, run `LANDING_IMAGE=landing:local SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run --reinstall-package landing landing --version)" docker compose up --build -d` from the repository checkout. Compose forwards only the listed variables; use an override for additional settings or mounts. See [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.
 
 ## Deploy with ONCE
 
