@@ -555,11 +555,8 @@ def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
         args.delegated_command = parts[1]
         args.instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
         target = event.get("issue") or event["pull_request"]
+        # pull_target reads the current head for a PR; the comment event does not carry it.
         args.number = target["number"]
-        if "pull_request" in event or "pull_request" in event.get("issue", {}):
-            pull = json.loads(gh(["api", f"repos/{args.repository}/pulls/{args.number}"], args.repository))
-            args.head = pull["head"]["sha"]
-            event = {**event, "pull_request": pull}
     elif event and "workflow_run" in event:
         args.delegated_command, args.run_id = "triage", str(event["workflow_run"]["id"])
     elif event and not args.number:

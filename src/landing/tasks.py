@@ -8,9 +8,16 @@ import json
 from uuid import uuid4
 
 from bub.tape import utc_now
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Connection, Engine, RowMapping
 
 from landing.models import TERMINAL, Action, ActionRequest, Decision, Event, Status
+
+
+def action(row: RowMapping) -> Action:
+    public = dict(row)
+    error_code, error_message = public.pop("error_code"), public.pop("error_message")
+    public["error"] = {"code": error_code, "message": error_message} if error_code else None
+    return Action.model_validate(public)
 
 
 class ConflictError(ValueError):
@@ -43,10 +50,7 @@ class Tasks:
         )
         if row is None:
             raise KeyError(action_id)
-        public = dict(row)
-        error_code, error_message = public.pop("error_code"), public.pop("error_message")
-        public["error"] = {"code": error_code, "message": error_message} if error_code else None
-        return Action.model_validate(public)
+        return action(row)
 
     def request(self, action_id: str) -> ActionRequest:
         with self.engine.connect() as connection:
@@ -131,14 +135,16 @@ class Tasks:
             rows = (
                 connection
                 .exec_driver_sql(
-                    """SELECT id FROM actions WHERE ? IS NULL OR (created_at, id) <
+                    """SELECT id, mode, status, instruction, workspace, result, decision, error_code, error_message,
+            retry_of, cancel_requested_at, created_at, updated_at, started_at, completed_at
+                FROM actions WHERE ? IS NULL OR (created_at, id) <
                 (SELECT created_at, id FROM actions WHERE id = ?) ORDER BY created_at DESC, id DESC LIMIT ?""",
                     (cursor, cursor, limit),
                 )
                 .mappings()
                 .all()
             )
-            return [self._get(connection, row["id"]) for row in rows]
+            return [action(row) for row in rows]
 
     def claim(self, action_id: str) -> bool:
         now = utc_now()

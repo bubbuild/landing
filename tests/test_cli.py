@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 
@@ -46,6 +47,17 @@ def test_cli_delegations_do_not_share_model_history(tmp_path, model):
     second = json.dumps(requests[1]["messages"])
     assert "first-task evidence" not in second
     assert "The first answer." not in second
+
+
+def test_newer_database_is_left_unchanged(tmp_path, capsys):
+    path = tmp_path / "landing.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA user_version = 99")
+    assert main(["--db", str(path), "action", "list"]) == 2
+    assert "newer Landing release" in capsys.readouterr().err
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone() == (99,)
+        assert connection.execute("SELECT name FROM sqlite_master").fetchall() == []
 
 
 @pytest.mark.parametrize("decision", ["allow", "block", "inconclusive"])

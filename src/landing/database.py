@@ -8,6 +8,8 @@ from typing import cast
 
 from sqlalchemy import URL, Engine, create_engine, event
 
+# Version 1 is the schema released in 0.2.0; raise it when a migration changes the schema.
+SCHEMA_VERSION = 1
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions (
     id TEXT PRIMARY KEY NOT NULL,
@@ -88,9 +90,13 @@ def open_database(path: Path | Engine) -> Iterator[Engine]:
     Path(cast(str, engine.url.database)).parent.mkdir(parents=True, exist_ok=True)
     try:
         with engine.begin() as connection:
+            if connection.exec_driver_sql("PRAGMA user_version").scalar_one() > SCHEMA_VERSION:
+                message = "A newer Landing release created this database. Upgrade Landing to use it."
+                raise ValueError(message)
             for statement in SCHEMA.split(";"):
                 if statement.strip():
                     connection.exec_driver_sql(statement)
+            connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
         yield engine
     finally:
         engine.dispose()
