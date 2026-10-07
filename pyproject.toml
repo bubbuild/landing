@@ -62,13 +62,13 @@ source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build]
-exclude = ["/.lody", "/.ci-state", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*"]
+exclude = ["/.lody", "/.ci-state", "/.git_archival.txt", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/landing", "src/skills"]
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }, { env = "SETUPTOOLS_SCM_PRETEND_VERSION" }]
+cache-keys = [{ file = "pyproject.toml" }, { file = ".git_archival.txt" }, { git = { commit = true, tags = true } }, { env = "SETUPTOOLS_SCM_PRETEND_VERSION" }]
 
 [tool.ty.environment]
 python = "./.venv"

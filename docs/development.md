@@ -105,7 +105,7 @@ Bundled jobs use a 120-second model request timeout. Main's feedback Action has 
 
 ## Publish a release
 
-Versions come from Git tags through `hatch-vcs`; untagged commits receive development versions with a commit hash. CLI and API versions use installed package metadata. Archives without Git or package metadata use `0.0.0`; the standard `SETUPTOOLS_SCM_PRETEND_VERSION` variable supplies a version when building the container.
+Versions come from Git tags through `hatch-vcs`; untagged commits receive development versions with a commit hash. GitHub source archives carry version metadata for Action installation. CLI and API versions use installed package metadata. Source copies without Git, archive, or package metadata use `0.0.0`; the standard `SETUPTOOLS_SCM_PRETEND_VERSION` variable supplies a version when building the container.
 
 After validation and merge, publish a GitHub release with an unprefixed version tag for the intended release. The workflow verifies the version, publishes to PyPI and GHCR, and deploys the documentation. The tag also selects the Action; stable images update `latest`.
 
