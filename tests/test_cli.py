@@ -75,29 +75,41 @@ def test_cli_reads_piped_evidence_and_writes_json_result(tmp_path, model):
     assert json.loads(destination.read_text())["result"] == "Deployment reference: approved"
 
 
-def test_captured_help_and_diagnostics_remain_plain_in_ci():
-    environment = {**os.environ, "GITHUB_ACTIONS": "true", "FORCE_COLOR": "1"}
-    for arguments, status in (
+def run_in_shell(*arguments: str) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 -- exercise the installed CLI with explicit arguments.
+        ["/bin/bash", "-c", '"$0" "$@" || exit', sys.executable, *arguments],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GITHUB_ACTIONS": "true", "FORCE_COLOR": "1"},
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("arguments", "status"),
+    [
         (["triage", "--help"], 0),
         (["--show-completion"], 0),
         (["action", "list", "--limit", "0", "--json"], 2),
+    ],
+)
+def test_captured_help_and_diagnostics_remain_plain_in_ci(arguments, status):
+    # Without /proc, shellingham lists processes with ps, which omits processes lacking a terminal (macOS CI).
+    if (
+        "--show-completion" in arguments
+        and run_in_shell("-c", "import shellingham; shellingham.detect_shell()").returncode
     ):
-        result = subprocess.run(  # noqa: S603 -- exercise the installed CLI with explicit arguments.
-            ["/bin/bash", "-c", '"$0" -m landing "$@" || exit', sys.executable, *arguments],
-            capture_output=True,
-            text=True,
-            env=environment,
-            check=False,
-        )
-        assert result.returncode == status
-        assert "\x1b[" not in result.stdout + result.stderr
-        if status:
-            assert not result.stdout
-            assert "--limit" in result.stderr
-        elif "--show-completion" in arguments:
-            assert "_LANDING_COMPLETE" in result.stdout
-        else:
-            assert "--help" in result.stdout
+        pytest.skip("Typer cannot detect the calling shell in this environment.")
+    result = run_in_shell("-m", "landing", *arguments)
+    assert result.returncode == status
+    assert "\x1b[" not in result.stdout + result.stderr
+    if status:
+        assert not result.stdout
+        assert "--limit" in result.stderr
+    elif "--show-completion" in arguments:
+        assert "_LANDING_COMPLETE" in result.stdout
+    else:
+        assert "--help" in result.stdout
 
 
 @pytest.mark.parametrize("native_host", [False, True])
