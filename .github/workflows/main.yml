@@ -67,10 +67,14 @@ jobs:
         run: make check
 
   tests-and-type-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
       fail-fast: false
     defaults:
       run:

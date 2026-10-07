@@ -55,7 +55,8 @@ CREATE INDEX IF NOT EXISTS tape_entries_history ON tape_entries(tape, id);
 def own_database(path: Path) -> Iterator[None]:
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as owner:
+    # Lock a sibling file: on macOS, flock on the database conflicts with SQLite's own fcntl locks.
+    with path.with_name(path.name + ".lock").open("a+b") as owner:
         try:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
