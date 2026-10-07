@@ -2,7 +2,7 @@
 
 Use one `Runtime` to execute actions, stream events, or submit background work. It shares action semantics with CLI and HTTP. Enter its lifecycle before calling it; leaving the context stops owned execution and releases the database. The same Runtime can enter a new lifecycle and resume its stored work.
 
-This reference covers the source checkout, including `submit()`, `lifespan()`, and `Runtime.run_stream()`, which are unavailable in release `0.2.0`. Migrate streaming calls from `landing.agent.run_stream(...)` in `0.2.0` to `landing.run_stream(...)`. Install that checkout into your application with `uv add /path/to/landing` and configure the [model](configuration.md#model).
+Add Landing to your application's environment with `uv add landing` and configure the [model](configuration.md#model). `uv tool install landing` installs an isolated CLI; embedding uses the package in your application's environment.
 
 ## Delegate an action
 

@@ -108,7 +108,7 @@ Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `
 | --- | --- |
 | `LANDING_DB` | SQLite path, default `~/.local/share/landing/landing.sqlite3`; image default `/storage/landing.sqlite3`. |
 | `LANDING_TOKEN` | Server bearer token; required to listen beyond localhost. |
-| `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. Available in the source checkout. |
+| `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. |
 | `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
 | `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. `BASE_URL` remains an alias. |
 
