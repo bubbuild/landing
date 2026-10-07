@@ -168,8 +168,9 @@ def test_cancellation_closes_mcp_subprocess(tmp_path, mcp_server, model):
             consumer = asyncio.create_task(
                 output(await landing.run_stream(session_id="pending", prompt="Record evidence."))
             )
+            # The server creates the receipt before writing its line; wait for the complete record.
             async with asyncio.timeout(15):
-                while not receipt.exists():
+                while not receipt.exists() or not receipt.read_text().endswith("\n"):
                     await asyncio.sleep(0.01)
             pid = json.loads(receipt.read_text())["pid"]
             consumer.cancel()
