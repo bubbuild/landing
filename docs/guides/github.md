@@ -30,7 +30,7 @@ In Actions, Landing supplies the trigger, target, and relevant revisions. The ag
 
 ## Publish native results
 
-PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested commit, with findings attached to the affected lines. A clean review needs no code comments. Reviews comment by default; approvals and change requests require explicit authorization. The gate recommendation remains separate.
+PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested commit, with findings attached to the affected lines. A clean review needs no code comments. Follow-up reviews on new commits read the PR's existing review threads: findings that still apply stay in their original threads and are referenced from the review body rather than posted again, and resolved threads stay settled unless new evidence changes their conclusion. Reviews comment by default; approvals and change requests require explicit authorization. The gate recommendation remains separate.
 
 Explicit delegations require a reply to their selected issue or PR; inline follow-ups reply in the original review thread. Landing verifies that the prepared identity published to the requested destination before reporting completion. Include `confirm_reply` when restricting tools for inline follow-ups.
 

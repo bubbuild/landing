@@ -23,17 +23,49 @@ from landing.models import COMMANDS, Action, ActionRequest, FileInput, Mode
 from landing.prompts import render
 from landing.runtime import Runtime
 
-REPOSITORY_GUIDANCE = "GitHub repository: $repository. Use the prepared gh CLI. In GitHub conversations use #number or owner/repo#number outside code spans; elsewhere use explicit links. Read contribution templates from the checkout's standard GitHub locations when needed."
+REPOSITORY_GUIDANCE = (
+    "GitHub repository: $repository. Use the prepared gh CLI. In GitHub conversations use #number or owner/repo#number "
+    "outside code spans; elsewhere use explicit links. Read contribution templates from the checkout's standard GitHub "
+    "locations when needed."
+)
 
-PUBLICATION_GUIDANCE = "When publishing, include $stamp at the start of the body to identify this delivery. For a body file, use gh pr/issue comment --body-file FILE or gh api -F body=@FILE; -f body=@FILE sends the literal path. Use --input FILE for a JSON payload. Refresh the current PR head before publishing. Supplemental evidence may be linked from the required reply or review; a separate evidence comment cannot replace that publication. The context records the candidate head separately from the actual CI checkout revision."
+PUBLICATION_GUIDANCE = (
+    "When publishing, include $stamp at the start of the body to identify this delivery. "
+    "For a body file, use gh pr/issue comment --body-file FILE or gh api -F body=@FILE; "
+    "-f body=@FILE sends the literal path. Use --input FILE for a JSON payload. "
+    "Refresh the current PR head before publishing. Supplemental evidence may be linked from the required reply or "
+    "review; a separate evidence comment cannot replace that publication. "
+    "The context records the candidate head separately from the actual CI checkout revision."
+)
 
-THREAD_GUIDANCE = "Reply in the original thread with POST repos/$repository/pulls/$number/comments/$thread/replies, rather than a new review. Include the delivery marker, or call confirm_reply with the returned comment ID."
+THREAD_GUIDANCE = (
+    "Reply in the original thread with POST repos/$repository/pulls/$number/comments/$thread/replies, rather than a new "
+    "review. Include the delivery marker, or call confirm_reply with the returned comment ID."
+)
 
-REVIEW_GUIDANCE = "Publish a native GitHub COMMENT review on PR #$number; APPROVE and REQUEST_CHANGES require separate explicit authorization. Use the reviews API with commit_id, body and inline comments containing path, line and side; ranges also use start_line and start_side. Verify locations against the inspected diff. Put the verdict in the review body and findings in inline comments; use the body for findings with no suitable diff location. Use suggestion blocks for verified replacements within the commented range, preserving the surrounding syntax, and <details> for longer reproductions or evidence. Reply to existing findings through the original review thread. Native check jobs are independent of Landing feedback; do not wait for this feedback job or the enclosing workflow to complete."
+REVIEW_GUIDANCE = (
+    "Publish a native GitHub COMMENT review on PR #$number; APPROVE and REQUEST_CHANGES require separate explicit "
+    "authorization. Use the reviews API with commit_id, body and inline comments containing path, line and side; "
+    "ranges also use start_line and start_side. Verify locations against the inspected diff. "
+    "Put the verdict in the review body and findings in inline comments; use the body for findings with no suitable "
+    "diff location. Use suggestion blocks for verified replacements within the commented range, preserving the "
+    "surrounding syntax, and <details> for longer reproductions or evidence. "
+    "Before publishing, read the PR's existing review threads, including their resolved and outdated state, through the "
+    "GraphQL reviewThreads connection. Add inline comments only for findings that no existing thread raises. "
+    "Leave a still-applicable open finding in its thread and refer to it from the review body by link; "
+    "reply in that thread only when the candidate changes its conclusion or affected location. "
+    "Resolved threads stay settled unless new evidence changes their conclusion. "
+    "Native check jobs are independent of Landing feedback; do not wait for this feedback job or the enclosing workflow "
+    "to complete."
+)
 
 AUTOMATIC_GUIDANCE = "This is automatic follow-up; no_update is available when there is no useful change."
 
-CONVERSATION_GUIDANCE = "Answer the delegation in issue or PR #$number. Link a repair or supporting evidence when needed; do not repeat an explanation already published in the linked issue, PR or review. Call confirm_reply with the returned conversation comment ID to read back the published body."
+CONVERSATION_GUIDANCE = (
+    "Answer the delegation in issue or PR #$number. Link a repair or supporting evidence when needed; "
+    "do not repeat an explanation already published in the linked issue, PR or review. "
+    "Call confirm_reply with the returned conversation comment ID to read back the published body."
+)
 
 
 class GitHubEnvironment(BaseSettings):
