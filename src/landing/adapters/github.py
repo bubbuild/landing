@@ -334,6 +334,14 @@ def repository_context(repository: str) -> FileInput:
     )
 
 
+def with_repository_context(request: ActionRequest, repository: str) -> ActionRequest:
+    """Add the repository context once; retried requests already carry it."""
+    context = repository_context(repository)
+    if context in request.input:
+        return request
+    return request.model_copy(update={"input": [*request.input, context]})
+
+
 def pull_target(
     repository: str, number: int, head: str, event: dict | None, *, review: bool = False
 ) -> tuple[bool, int, str]:

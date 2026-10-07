@@ -24,6 +24,10 @@ class ConflictError(ValueError):
     """An existing request or action conflicts with the operation."""
 
 
+class NotFoundError(KeyError):
+    """The requested action does not exist; still a KeyError for existing SDK callers."""
+
+
 class Tasks:
     """Sidecar provider owning the relational format, not a second execution engine."""
 
@@ -49,7 +53,7 @@ class Tasks:
             .first()
         )
         if row is None:
-            raise KeyError(action_id)
+            raise NotFoundError(action_id)
         return action(row)
 
     def request(self, action_id: str) -> ActionRequest:
@@ -63,7 +67,7 @@ class Tasks:
                 .first()
             )
             if row is None:
-                raise KeyError(action_id)
+                raise NotFoundError(action_id)
             return ActionRequest.model_validate({
                 **dict(row),
                 "input": json.loads(row["input"]),

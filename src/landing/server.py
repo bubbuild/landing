@@ -18,7 +18,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from landing.models import MAX_REQUEST_BYTES, TERMINAL, Action, ActionRequest, Event
 from landing.runtime import Runtime
-from landing.tasks import ConflictError
+from landing.tasks import ConflictError, NotFoundError
 
 
 class RequestLimit:
@@ -85,7 +85,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     app.add_middleware(RequestLimit)
 
-    @app.exception_handler(KeyError)
+    @app.exception_handler(NotFoundError)
     async def not_found(request, exc):
         return await http_exception_handler(request, HTTPException(404, "The action was not found."))
 
@@ -103,11 +103,9 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     def accept(body: ActionRequest, response: Response, key: str | None, retry_of: str | None = None) -> Action:
         if github_repository:
-            from landing.adapters.github import repository_context
+            from landing.adapters.github import with_repository_context
 
-            context = repository_context(github_repository)
-            if context not in body.input:
-                body = body.model_copy(update={"input": [*body.input, context]})
+            body = with_repository_context(body, github_repository)
         try:
             action, created = runtime.submit(body, key=key, scope="server", retry_of=retry_of)
         except RuntimeError as exc:

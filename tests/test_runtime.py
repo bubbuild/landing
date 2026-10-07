@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import pytest
 from bub import BubFramework
@@ -205,5 +206,36 @@ def test_background_processes_finish_before_post_fix_validation(tmp_path, model)
                 )
             )
             assert action.status == "completed"
+
+    asyncio.run(run())
+
+
+def test_cancellation_terminates_running_checks(tmp_path, model):
+    pid_file = tmp_path / "check.pid"
+
+    async def run():
+        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
+            request = ActionRequest(
+                mode="gatekeeper",
+                instruction="Review the change.",
+                workspace=str(tmp_path),
+                checks=["echo $$ > check.pid; exec sleep 60"],
+            )
+            task = asyncio.create_task(runtime.run(request))
+            async with asyncio.timeout(5):
+                while not pid_file.exists() or not pid_file.read_text().strip():
+                    await asyncio.sleep(0.01)
+            runtime.cancel(runtime.tasks.list()[0].id)
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 10)
+            # The host keeps running; the cancelled action must not leave its check behind.
+            pid = int(pid_file.read_text())
+            async with asyncio.timeout(5):
+                while True:
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        return
+                    await asyncio.sleep(0.05)
 
     asyncio.run(run())

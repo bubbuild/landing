@@ -230,18 +230,25 @@ class Runtime:
 
     async def checks(self, action_id: str, request: ActionRequest, environment: Environment) -> list[dict]:
         results = []
-        for command in request.checks:
-            shell = await shell_manager.start(cmd=command, cwd=None, session_id=action_id, environment=environment)
-            timed_out = False
-            try:
-                async with asyncio.timeout(300):
-                    await shell_manager.wait_closed(shell.shell_id)
-            except TimeoutError:
-                timed_out = True
-                await shell_manager.terminate(shell.shell_id)
-            item = {"command": command, "exit_code": shell.returncode, "output": shell.output, "timed_out": timed_out}
-            self.tasks.event(action_id, "validation", item)
-            results.append(item)
+        # Own check processes so cancellation cannot leave them running until the host exits.
+        async with shell_manager.lifespan():
+            for command in request.checks:
+                shell = await shell_manager.start(cmd=command, cwd=None, session_id=action_id, environment=environment)
+                timed_out = False
+                try:
+                    async with asyncio.timeout(300):
+                        await shell_manager.wait_closed(shell.shell_id)
+                except TimeoutError:
+                    timed_out = True
+                    await shell_manager.terminate(shell.shell_id)
+                item = {
+                    "command": command,
+                    "exit_code": shell.returncode,
+                    "output": shell.output,
+                    "timed_out": timed_out,
+                }
+                self.tasks.event(action_id, "validation", item)
+                results.append(item)
         return results
 
     def capabilities(self, mode, invocation, workspace: Path, agent: BubAgent) -> None:
@@ -292,50 +299,49 @@ class Runtime:
                 ):
                     state.pop(key, None)
                 environment = environment_from_state(state)
-                async with shell_manager.lifespan():
-                    checks = await self.checks(action_id, request, environment) if request.mode == "gatekeeper" else []
-                    # Close model-owned processes and MCP connections before post-fix validation.
-                    async with shell_manager.lifespan(), connected_tools(agent, workspace) as channel:
-                        state["mcp"] = channel
-                        self.capabilities(request.mode, invocation, workspace, agent)
-                        stream = await agent.run_stream(
-                            session_id=session_id,
-                            prompt=prompt if prompt is not None else task_prompt(request, checks),
-                            state=state,
-                            **invocation,
-                        )
-                        output = ""
-                        try:
-                            async with contextlib.aclosing(stream):
-                                async for event in stream:
-                                    events.put_nowait(event)
-                                    if event.kind == "final" and "text" in event.data:
-                                        output = str(event.data["text"])
-                                        self.tasks.output(action_id, output)
-                        finally:
-                            stream_state.error, stream_state.usage = stream.error, stream.usage
-                        if stream.error is not None:
-                            raise stream.error  # noqa: TRY301 -- persist the failed task at this boundary.
-                    state.pop("landing_llm_call", None)
-                    decision = None
-                    if request.mode == "gatekeeper":
-                        decision = (
-                            "block"
-                            if checks_failed(checks)
-                            else cast("Decision", state.get("landing_decision", "inconclusive"))
-                        )
-                    if not output.strip():
-                        self.tasks.output(action_id, output, decision)
-                        message = "The model returned empty output."
-                        raise RuntimeError(message)  # noqa: TRY301 -- persist the failed task at this boundary.
-                    if not state.get("landing_tool_failed") and (reason := state.get("landing_no_update")):
-                        self.tasks.event(action_id, "issue.unchanged", {"reason": reason})
-                    if request.mode == "gatekeeper" and checks_failed(checks):
-                        output += "\nRequired validation failed; the change cannot proceed."
+                checks = await self.checks(action_id, request, environment) if request.mode == "gatekeeper" else []
+                # Close model-owned processes and MCP connections before post-fix validation.
+                async with shell_manager.lifespan(), connected_tools(agent, workspace) as channel:
+                    state["mcp"] = channel
+                    self.capabilities(request.mode, invocation, workspace, agent)
+                    stream = await agent.run_stream(
+                        session_id=session_id,
+                        prompt=prompt if prompt is not None else task_prompt(request, checks),
+                        state=state,
+                        **invocation,
+                    )
+                    output = ""
+                    try:
+                        async with contextlib.aclosing(stream):
+                            async for event in stream:
+                                events.put_nowait(event)
+                                if event.kind == "final" and "text" in event.data:
+                                    output = str(event.data["text"])
+                                    self.tasks.output(action_id, output)
+                    finally:
+                        stream_state.error, stream_state.usage = stream.error, stream.usage
+                    if stream.error is not None:
+                        raise stream.error  # noqa: TRY301 -- persist the failed task at this boundary.
+                state.pop("landing_llm_call", None)
+                decision = None
+                if request.mode == "gatekeeper":
+                    decision = (
+                        "block"
+                        if checks_failed(checks)
+                        else cast("Decision", state.get("landing_decision", "inconclusive"))
+                    )
+                if not output.strip():
                     self.tasks.output(action_id, output, decision)
-                    if request.mode == "fixer" and checks_failed(await self.checks(action_id, request, environment)):
-                        message = "Required validation failed. Inspect the recorded checks and partial changes."
-                        raise RuntimeError(message)  # noqa: TRY301 -- persist the failed task at this boundary.
+                    message = "The model returned empty output."
+                    raise RuntimeError(message)  # noqa: TRY301 -- persist the failed task at this boundary.
+                if not state.get("landing_tool_failed") and (reason := state.get("landing_no_update")):
+                    self.tasks.event(action_id, "issue.unchanged", {"reason": reason})
+                if request.mode == "gatekeeper" and checks_failed(checks):
+                    output += "\nRequired validation failed; the change cannot proceed."
+                self.tasks.output(action_id, output, decision)
+                if request.mode == "fixer" and checks_failed(await self.checks(action_id, request, environment)):
+                    message = "Required validation failed. Inspect the recorded checks and partial changes."
+                    raise RuntimeError(message)  # noqa: TRY301 -- persist the failed task at this boundary.
                 for verifier in (self.verify, verify):
                     if verifier is not None:
                         verifier(self.tasks.get(action_id))
