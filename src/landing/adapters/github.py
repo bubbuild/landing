@@ -373,6 +373,56 @@ def pull_target(
     return is_pr, thread, head
 
 
+def reaction_endpoint(repository: str, event: dict | None) -> str | None:
+    """Locate the triggering comment or PR, which receives Landing's progress reaction."""
+    comment = (event or {}).get("comment")
+    if comment:
+        kind = "pulls" if "pull_request_review_id" in comment else "issues"
+        return f"repos/{repository}/{kind}/comments/{comment['id']}/reactions" if "id" in comment else None
+    pull = (event or {}).get("pull_request") or {}
+    return f"repos/{repository}/issues/{pull['number']}/reactions" if "number" in pull else None
+
+
+def react(repository: str, endpoint: str, content: str) -> dict | None:
+    # Reactions only signal progress; a missing reaction permission must not fail the delegated work.
+    try:
+        return json.loads(gh(["api", endpoint, "-f", f"content={content}"], repository))
+    except (RuntimeError, subprocess.TimeoutExpired, ValueError) as exc:
+        typer.echo(f"Cannot add the {content} reaction: {exc}", err=True)
+        return None
+
+
+def unreact(repository: str, endpoint: str, reaction: dict) -> None:
+    try:
+        gh(["api", f"{endpoint}/{reaction['id']}", "-X", "DELETE"], repository)
+    except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        typer.echo(f"Cannot remove the {reaction['content']} reaction: {exc}", err=True)
+
+
+def begin_reaction(repository: str, endpoint: str) -> dict | None:
+    progress = react(repository, endpoint, "eyes")
+    if progress is None:
+        return None
+    # A new PR candidate replaces the previous run's outcome, so the PR shows only the latest result.
+    try:
+        reactions = rows(endpoint, repository)
+    except (RuntimeError, subprocess.TimeoutExpired, ValueError) as exc:
+        typer.echo(f"Cannot read earlier reactions: {exc}", err=True)
+        reactions = []
+    for item in reactions:
+        if item.get("user", {}).get("id") == progress["user"]["id"] and item.get("content") in {"rocket", "confused"}:
+            unreact(repository, endpoint, item)
+    return progress
+
+
+def conclude_reaction(repository: str, endpoint: str, progress: dict | None, status: str) -> None:
+    if progress is not None:
+        unreact(repository, endpoint, progress)
+    # A superseded or terminated run leaves no outcome; the next run reports its own.
+    if status != "cancelled":
+        react(repository, endpoint, "rocket" if status == "completed" else "confused")
+
+
 def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool | None:
     executable = shutil.which("git")
     if not head or not checked_revision or not executable:
@@ -562,7 +612,18 @@ def github_event(
     runtime = execution_runtime(
         ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
     )
-    action = asyncio.run(run(runtime, options, payload))
+    endpoint = reaction_endpoint(options.repository, payload)
+    progress = begin_reaction(options.repository, endpoint) if endpoint else None
+    status = "failed"
+    try:
+        action = asyncio.run(run(runtime, options, payload))
+        status = action.status
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        status = "cancelled"
+        raise
+    finally:
+        if endpoint:
+            conclude_reaction(options.repository, endpoint, progress, status)
     typer.echo(action.model_dump_json(indent=2))
     write_outputs(action)
     raise typer.Exit(action.status != "completed")

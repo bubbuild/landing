@@ -33,7 +33,21 @@ if state.get("unavailable"):
     raise SystemExit("GitHub is unavailable")
 if args[0] != "api":
     raise SystemExit("Use the native API in this fixture.")
-if "--input" in args:
+reactions = state.setdefault("reactions", {})
+if "/reactions" in endpoint:
+    subject, _, reaction = endpoint.partition("/reactions")
+    if "DELETE" in args:
+        reactions[subject] = [item for item in reactions[subject] if item["id"] != int(reaction.strip("/"))]
+    elif "-f" in args:
+        content = args[args.index("-f") + 1].split("=", 1)[1]
+        state["reaction_id"] = state.get("reaction_id", 0) + 1
+        record = {"id": state["reaction_id"], "content": content, "user": state["publisher"]}
+        reactions.setdefault(subject, []).append(record)
+        print(json.dumps(record))
+    else:
+        print(json.dumps([reactions.get(subject, [])]))
+    path.write_text(json.dumps(state))
+elif "--input" in args:
     source = args[args.index("--input") + 1]
     body = json.loads(sys.stdin.read() if source == "-" else Path(source).read_text())
     kind = "reviews" if endpoint.endswith("/reviews") else "comments"
@@ -234,12 +248,16 @@ def test_agent_publishes_native_review_with_inline_comment_and_deduplicates(plat
     assert published[0]["commit_id"] == "candidate-head"
     assert published[0]["comments"][0]["path"] == "candidate.py"
     assert published[0]["comments"][0]["line"] == 2
+    reactions = json.loads(platform.read_text())["reactions"]
+    assert [item["content"] for item in reactions["repos/example/landing/issues/42"]] == ["rocket"]
     state = json.loads(platform.read_text())
     state["reviews"].append({"id": 9, "body": "A later independent review.", "state": "COMMENTED"})
     platform.write_text(json.dumps(state))
     calls = len(requests)
     assert invoke(event, key="review:42").id == action.id
     assert len(requests) == calls
+    reactions = json.loads(platform.read_text())["reactions"]
+    assert [item["content"] for item in reactions["repos/example/landing/issues/42"]] == ["rocket"]
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
     monkeypatch.setenv("INPUT_INSTRUCTION", "Review deployment behavior.")
     invoke(event, key="review:42", error="different request")
@@ -371,6 +389,7 @@ def test_delegated_inline_reply_is_confirmed_and_replay_does_not_publish_twice(p
     assert len(state["reviews"]) == 2
     assert state["comments"][-1]["in_reply_to_id"] == 17
     assert "initial attempt is unaffected" in state["comments"][-1]["body"]
+    assert [item["content"] for item in state["reactions"]["repos/example/landing/pulls/comments/18"]] == ["rocket"]
     assert invoke(event, key="comment:18").id == action.id
     assert json.loads(platform.read_text())["comments"] == state["comments"]
     event["comment"]["body"] = "Fixed in the latest commit; CI is pending."
@@ -400,6 +419,9 @@ def test_text_without_required_publication_is_failed_work(platform, invoke, mode
     assert action.result == "The review is ready."
     assert action.error is not None
     assert "confirmed publication" in action.error["message"]
+    assert [
+        item["content"] for item in json.loads(platform.read_text())["reactions"]["repos/example/landing/issues/42"]
+    ] == ["confused"]
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
 
 
