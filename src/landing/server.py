@@ -13,11 +13,39 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from scalar_fastapi import AgentScalarConfig, add_scalar_reference
 from sqlalchemy.exc import SQLAlchemyError
-from starlette.datastructures import URL
+from starlette.datastructures import URL, Headers
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from landing.models import MAX_REQUEST_BYTES, TERMINAL, Action, ActionRequest, Event
 from landing.runtime import Runtime
 from landing.tasks import ConflictError
+
+
+class RequestLimit:
+    """Stop reading a request body at the admission limit instead of buffering it first."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        declared = Headers(scope=scope).get("content-length", "")
+        received = 0
+
+        async def limited() -> Message:
+            nonlocal received
+            if declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
+                raise HTTPException(413, "The request exceeds 16 MiB.")
+            message = await receive()
+            received += len(message.get("body", b""))
+            # FastAPI re-raises HTTPException from body parsing, so the route's handlers answer it.
+            if received > MAX_REQUEST_BYTES:
+                raise HTTPException(413, "The request exceeds 16 MiB.")
+            return message
+
+        await self.app(scope, limited, send)
 
 
 def create_app(  # noqa: C901 -- route definitions share an application lifespan.
@@ -55,11 +83,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
 
     api = APIRouter(dependencies=[Depends(authenticate)] if token else [])
 
-    @app.middleware("http")
-    async def limit_request_size(request: Request, call_next):
-        if len(await request.body()) > MAX_REQUEST_BYTES:
-            return await http_exception_handler(request, HTTPException(413, "The request exceeds 16 MiB."))
-        return await call_next(request)
+    app.add_middleware(RequestLimit)
 
     @app.exception_handler(KeyError)
     async def not_found(request, exc):

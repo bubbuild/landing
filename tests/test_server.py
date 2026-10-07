@@ -2,6 +2,7 @@ import asyncio
 import threading
 import time
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -78,6 +79,26 @@ def test_admission_rejects_invalid_requests_without_tasks(tmp_path, model):
         assert client.post("/v1/actions", json={**body, "workspace": str(tmp_path)}).status_code == 422
         assert client.get("/v1/actions/missing").status_code == 404
         assert client.get("/v1/actions").json() == []
+
+
+def test_oversized_requests_stop_at_the_admission_limit(tmp_path):
+    sent = 0
+
+    async def chunks():
+        nonlocal sent
+        for _ in range(64):
+            sent += 1
+            yield b"x" * 1024 * 1024
+
+    async def post(**kwargs):
+        app = create_app(tmp_path / "landing.sqlite3", token="test-secret")  # noqa: S106 -- test-only credential.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            return (await client.post("/v1/actions", **kwargs)).status_code
+
+    assert asyncio.run(post(content=chunks())) == 413
+    assert sent <= 17
+    declared = {"Content-Length": str(64 * 1024 * 1024)}
+    assert asyncio.run(post(content=b"{}", headers=declared)) == 413
 
 
 def test_embedded_application_uses_landing_lifespan(tmp_path, model):
