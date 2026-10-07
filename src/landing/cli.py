@@ -153,9 +153,8 @@ async def delegate_action(ctx: typer.Context, request: ActionRequest | str) -> A
             context = repository_context(repository)
             if context not in request.input:
                 request = request.model_copy(update={"input": [*request.input, context]})
-        if retry_of:
-            return await runtime.run(request, retry_of=retry_of)
-        return await runtime.run(request, session_id="cli", scope="cli")
+        # Each delegation uses its own action session; unrelated CLI calls must not share model history.
+        return await runtime.run(request, retry_of=retry_of, scope="cli")
 
 
 def delegate(

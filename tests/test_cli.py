@@ -37,6 +37,17 @@ def test_cli_modes_complete_and_reopen_history(tmp_path, model, capsys, command,
     assert json.loads(capsys.readouterr().out) == action
 
 
+def test_cli_delegations_do_not_share_model_history(tmp_path, model):
+    responses, requests = model
+    responses.extend([completion("The first answer."), completion("The second answer.")])
+    database = str(tmp_path / "landing.sqlite3")
+    assert main(["--db", database, "explain", "Explain the first-task evidence."]) == 0
+    assert main(["--db", database, "fix", "Fix the second problem."]) == 0
+    second = json.dumps(requests[1]["messages"])
+    assert "first-task evidence" not in second
+    assert "The first answer." not in second
+
+
 @pytest.mark.parametrize("decision", ["allow", "block", "inconclusive"])
 def test_ci_exit_status(tmp_path, model, capsys, decision):
     responses, _ = model
