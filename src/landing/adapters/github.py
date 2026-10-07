@@ -496,6 +496,10 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
         checks=options.check if mode in {"fixer", "gatekeeper"} else [],
     )
 
+    # pull_target has already rejected a stale candidate, so its rejection leaves the current outcome in place.
+    endpoint = reaction_endpoint(repository, event)
+    progress = begin_reaction(repository, endpoint) if endpoint else None
+    status = "failed"
     publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
     manager = landing.framework.plugin_manager
     manager.register(publication, name="github-publication")
@@ -510,22 +514,31 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
                     request.model_copy(update={"input": snapshot}), scope=repository, key=key
                 )
                 publication.verify(action)
-                return landing.tasks.finish(action.id, "completed", result=f"Already published: {existing['html_url']}")
-            try:
-                action = await landing.run(
-                    request,
-                    session_id=f"github:{number or key}",
-                    scope=repository,
-                    key=key,
-                    verify=publication.verify,
+                action = landing.tasks.finish(
+                    action.id, "completed", result=f"Already published: {existing['html_url']}"
                 )
-            except asyncio.CancelledError:
-                if not publication.action_id:
-                    raise
-                action = landing.tasks.get(publication.action_id)
-            return action
+            else:
+                try:
+                    action = await landing.run(
+                        request,
+                        session_id=f"github:{number or key}",
+                        scope=repository,
+                        key=key,
+                        verify=publication.verify,
+                    )
+                except asyncio.CancelledError:
+                    if not publication.action_id:
+                        raise
+                    action = landing.tasks.get(publication.action_id)
+        status = action.status
+    except asyncio.CancelledError:
+        status = "cancelled"
+        raise
     finally:
         manager.unregister(publication)
+        if endpoint:
+            conclude_reaction(repository, endpoint, progress, status)
+    return action
 
 
 def write_outputs(action: Action | None) -> None:
@@ -612,18 +625,7 @@ def github_event(
     runtime = execution_runtime(
         ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
     )
-    endpoint = reaction_endpoint(options.repository, payload)
-    progress = begin_reaction(options.repository, endpoint) if endpoint else None
-    status = "failed"
-    try:
-        action = asyncio.run(run(runtime, options, payload))
-        status = action.status
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        status = "cancelled"
-        raise
-    finally:
-        if endpoint:
-            conclude_reaction(options.repository, endpoint, progress, status)
+    action = asyncio.run(run(runtime, options, payload))
     typer.echo(action.model_dump_json(indent=2))
     write_outputs(action)
     raise typer.Exit(action.status != "completed")

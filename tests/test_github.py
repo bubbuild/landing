@@ -425,6 +425,22 @@ def test_text_without_required_publication_is_failed_work(platform, invoke, mode
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
 
 
+def test_stale_review_delegation_keeps_the_current_outcome_reaction(platform, invoke, model):
+    state = json.loads(platform.read_text())
+    state["head"] = "new-candidate"
+    current = {"repos/example/landing/issues/42": [{"id": 7, "content": "rocket", "user": state["publisher"]}]}
+    state["reactions"] = current
+    platform.write_text(json.dumps(state))
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    }
+    invoke(event, key="stale", error="PR head changed")
+    assert json.loads(platform.read_text())["reactions"] == current
+    assert not model[1]
+
+
 @pytest.mark.parametrize("lookup_fails", [False, True])
 def test_review_stops_queued_tools_for_superseded_or_unverifiable_head(tmp_path, platform, invoke, model, lookup_fails):
     responses, requests = model

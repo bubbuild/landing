@@ -32,7 +32,7 @@ In Actions, Landing supplies the trigger, target, and relevant revisions. The ag
 
 PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested commit, with findings attached to the affected lines. A clean review needs no code comments. Reviews comment by default; approvals and change requests require explicit authorization. The gate recommendation remains separate.
 
-While admitted work runs, Landing adds an eyes reaction to the triggering PR or command comment. When the work finishes, a rocket replaces it for completed work and a confused reaction for failed work; superseded or terminated runs only remove it. Reactions are best effort: a token without reaction permission leaves the work and its publication unaffected.
+While admitted work runs, Landing adds an eyes reaction to the triggering PR or command comment. When the work finishes, a rocket replaces it for completed work and a confused reaction for failed work; cancelled or superseded runs only remove it. A delegation for a head that is no longer current is rejected before it starts and leaves existing reactions unchanged. A hard-killed runner cannot clean up, so its eyes reaction stays until the next run on that subject replaces it. Reactions are best effort: a token without reaction permission leaves the work and its publication unaffected.
 
 Explicit delegations require a reply to their selected issue or PR; inline follow-ups reply in the original review thread. Landing verifies that the prepared identity published to the requested destination before reporting completion. Include `confirm_reply` when restricting tools for inline follow-ups.
 
