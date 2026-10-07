@@ -105,7 +105,9 @@ Bundled jobs use a 120-second model request timeout. Main's feedback Action has 
 
 ## Publish a release
 
-Set the version with `uv version VERSION` and update installation examples and Action references. After validation and merge, publish a GitHub release with the matching unprefixed tag, such as `0.2.0`. The workflow verifies the version, publishes to PyPI and GHCR, and deploys the documentation. The tag also selects the Action; stable images update `latest`.
+Versions come from Git tags through `hatch-vcs`; untagged commits receive development versions with a commit hash. CLI and API versions use installed package metadata. Archives without Git or package metadata use `0.0.0`; the standard `SETUPTOOLS_SCM_PRETEND_VERSION` variable supplies a version when building the container.
+
+After validation and merge, publish a GitHub release with an unprefixed version tag for the intended release. The workflow verifies the version, publishes to PyPI and GHCR, and deploys the documentation. The tag also selects the Action; stable images update `latest`.
 
 ## Learn from outcomes
 
@@ -118,7 +120,7 @@ Keep investigation details in artifacts and public feedback useful to the person
 With Docker or Podman:
 
 ```bash
-docker build -t landing:local .
+docker build --build-arg SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run landing --version)" -t landing:local .
 uv run python tests/container_smoke.py --image landing:local
 ```
 

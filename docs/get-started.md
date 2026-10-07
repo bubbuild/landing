@@ -17,7 +17,7 @@ Use your actual repository and provider model. The secret command prompts for th
 
 ## Add the workflow
 
-Save the following as `.github/workflows/review.yml`. The example pins Landing to release `0.2.0`; you can pin it to a reviewed commit instead. Your workflow prepares the project and runs native checks, then calls Landing once. The Action checks the event and caller before starting the agent.
+Save the following as `.github/workflows/review.yml`. The example follows Landing's `main`; pin a release tag or reviewed commit to keep the runtime fixed. Your workflow prepares the project and runs native checks, then calls Landing once. The Action checks the event and caller before starting the agent.
 
 ```yaml
 name: Review
@@ -39,7 +39,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
       - name: Run native checks
         run: uv sync --locked && uv run pytest
-      - uses: bubbuild/landing@0.2.0
+      - uses: bubbuild/landing@main
         if: github.event.pull_request.head.repo.full_name == github.repository
         id: landing
         timeout-minutes: 20

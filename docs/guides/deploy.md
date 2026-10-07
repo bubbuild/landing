@@ -1,6 +1,6 @@
 # Deploy Landing
 
-Use the released image `ghcr.io/bubbuild/landing:0.2.0`. Stable releases also update `latest`; pin a version or digest for deployment. Prepare model settings and a project workspace with the tools its tasks need.
+Use `ghcr.io/bubbuild/landing:latest` for the latest stable release. Pin a release tag or digest to keep the deployed image fixed. Prepare model settings and a project workspace with the tools its tasks need.
 
 ## Start with Compose
 
@@ -32,7 +32,7 @@ The image follows [ONCE's application contract](https://github.com/basecamp/once
 Configure the [replica destination](recovery.md#replicate-the-database) and credentials before deployment:
 
 ```bash
-once deploy ghcr.io/bubbuild/landing:0.2.0 --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+once deploy ghcr.io/bubbuild/landing:latest --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 ```
 
 Enable ONCE's full-volume backups for workspace files. Landing uses paused-container backup behavior. Litestream protects SQLite separately; [Recovery](recovery.md) describes both paths. Verify deployment and remote replication in your actual environment.

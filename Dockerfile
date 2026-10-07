@@ -6,6 +6,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 WORKDIR /opt/landing
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+ARG SETUPTOOLS_SCM_PRETEND_VERSION
 RUN uv sync --frozen --no-dev --no-editable --no-cache
 
 FROM python:3.12-slim-bookworm

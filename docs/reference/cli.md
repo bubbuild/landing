@@ -84,7 +84,7 @@ In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT
 
 ## GitHub Action
 
-`bubbuild/landing@0.2.0` executes work from GitHub workflow events. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
+The `bubbuild/landing` Action executes work from GitHub workflow events. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
 
 | Input | Contract |
 | --- | --- |

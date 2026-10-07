@@ -3,10 +3,12 @@
 Run a task against your own checkout with Python 3.12 or later, uv, and a POSIX host. Install Landing as an isolated tool, then prepare your project dependencies and checks:
 
 ```bash
-uv tool install "landing==0.2.0"
+uv tool install landing
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 ```
+
+This installs the latest release. Update it with `uv tool upgrade landing`. For a development build from `main`, use `uv tool install --force git+https://github.com/bubbuild/landing.git`; its version identifies the source revision.
 
 Run commands from your project checkout. If `landing` is not on your PATH after installation, run `uv tool update-shell` and restart your shell. For another provider or endpoint, see [Configuration](../reference/configuration.md#model).
 
