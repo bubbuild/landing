@@ -6,12 +6,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Mode = Literal["issuer", "fixer", "gatekeeper", "explainer"]
+Mode = Literal["issuer", "fixer", "gatekeeper", "explainer", "bumper"]
 COMMANDS: dict[str, Mode] = {
     "triage": "issuer",
     "fix": "fixer",
     "review": "gatekeeper",
     "explain": "explainer",
+    "bump": "bumper",
 }
 Status = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
 Decision = Literal["allow", "block", "inconclusive"]
@@ -53,8 +54,8 @@ class ActionRequest(Model):
         if any(not command.strip() for command in self.checks):
             message = "Check commands must not be empty."
             raise ValueError(message)
-        if self.checks and self.mode not in {"fixer", "gatekeeper"}:
-            message = "Check commands are supported by fixer and gatekeeper."
+        if self.checks and self.mode not in {"fixer", "gatekeeper", "bumper"}:
+            message = "Check commands are supported by fixer, gatekeeper, and bumper."
             raise ValueError(message)
         if len(self.model_dump_json().encode()) > MAX_REQUEST_BYTES:
             message = "The request exceeds 16 MiB."

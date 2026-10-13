@@ -21,7 +21,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 ## Delegate an action
 
 ```text
-landing {triage,fix,review,explain} [INSTRUCTION] [OPTIONS]
+landing {triage,fix,review,explain,bump} [INSTRUCTION] [OPTIONS]
 ```
 
 A nonblank instruction or at least one input is required. Results are text by default. Commands execute the task and return its result. Use the [HTTP API](http.md) to submit work to a running service and receive a receipt immediately.
@@ -30,13 +30,15 @@ A nonblank instruction or at least one input is required. Results are text by de
 | --- | --- |
 | `--input FILE` | Repeatable UTF-8 snapshot; `-` reads stdin once. Paths refer to the caller's filesystem. |
 | `--workspace VALUE` | Execution directory, default current directory. |
-| `--check COMMAND` | Repeatable required command for fix or review, with a five-minute timeout per check. |
+| `--check COMMAND` | Repeatable required command for fix, bump, or review, with a five-minute timeout per check. |
 | `--json` | Print an action record. |
 | `--output PATH` | Also save the displayed result; the parent directory must exist. |
 
-Commands select modes: `triage` selects issuer, `fix` selects fixer, `review` selects gatekeeper, and `explain` selects explainer. [Mode capabilities](configuration.md#mode-capabilities) filter tools and skills; they are not a sandbox. Review guidance asks the agent to leave the candidate unchanged.
+Commands select modes: `triage` selects issuer, `fix` selects fixer, `review` selects gatekeeper, `explain` selects explainer, and `bump` selects bumper. [Mode capabilities](configuration.md#mode-capabilities) filter tools and skills; they are not a sandbox. Review guidance asks the agent to leave the candidate unchanged.
 
-Review checks run before evaluation; failure forces `block`. Fix checks run after the agent finishes; failure marks the action failed and preserves edits and any explanation. Empty completions fail.
+Review checks run before evaluation; failure forces `block`. Fix and bump checks run after the agent finishes; failure marks the action failed and preserves edits and any explanation. Empty completions fail.
+
+Bump accepts dependency targets, policy and configuration locations through ordinary instructions or inputs. See [local dependency updates](../guides/local.md#delegate-a-dependency-update) and [GitHub updates](../guides/github.md#help-dependency-updates-after-ci-fails) for preparation and repair behavior.
 
 ## Inspect and control actions
 
@@ -80,6 +82,8 @@ landing --db landing.sqlite3 github event --repository example/service --event e
 
 `github event` reads a GitHub event, checks caller authority, and executes the selected command. It uses the prepared gh identity and current workspace, returns an action record as JSON, and treats review decisions as advisory. `--help` lists its options. Use repeatable `--check` and `--upstream-workflow` options for local calls. An unrelated or unauthorized event exits successfully without an action record.
 
+A `repository_dispatch` with `action: dependabot_alert` supplies a positive integer `client_payload.alert_number`. The current GitHub alert state selects the command: open selects bump; fixed or dismissed selects triage. Alert lookup errors fail the invocation. See [security alert integration](../guides/github.md#handle-security-alerts-and-unresolved-blockers) for setup and issue tracking.
+
 In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT_*` environment. Multiline `INPUT_CHECKS` and `INPUT_UPSTREAM_WORKFLOW` supply checks and allowed workflow names. Explicit options take precedence. The database uses `--db`, then `INPUT_DATABASE`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`. Outside a workflow, supply `--delivery-key`. Native output and summary files receive the same values as the composite Action.
 
 ## GitHub Action
@@ -88,16 +92,18 @@ The `bubbuild/landing` Action executes work from GitHub workflow events. [Get st
 
 | Input | Contract |
 | --- | --- |
-| `command` | `review` (default), `fix`, `triage`, or `explain`; comment events route their own command. |
-| `instruction` | Task and acceptance criteria; defaults to an evidence-based review request. |
+| `command` | `review` (default), `fix`, `triage`, `explain`, or `bump`; comment events route their own command. |
+| `instruction` | Task and acceptance criteria; defaults to carrying out the selected action using repository guidance. |
 | `repository` | Workflow repository; cross-repository targets fail. |
 | `trust` | `repository` (default) or `owner`. |
 | `upstream-workflow` | Allowed `workflow_run` name; empty rejects these events. |
+| `bump-on-failure` | Default `false`; opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails. |
+| `dependency-update-actors` | Update account logins, one per line; defaults to `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
 | `number` | Issue or PR number; supplied by the event when available. |
 | `head` | Candidate head, distinct from the checked revision; PR events supply it. |
 | `checked-revision` | Actual checked commit, default `github.sha`. |
 | `run-id` | Native run to inspect, default the current run. |
-| `delivery-key` | Stable delivery identity; default run ID and attempt. |
+| `delivery-key` | Stable delivery identity; default run ID and attempt, or PR number and candidate head for automatic bump. |
 | `command-prefix` | Comment prefix, default `/landing`. |
 | `checks` | Required check commands, one per line. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |

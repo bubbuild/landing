@@ -62,6 +62,8 @@ elif "--input" in args:
     print(json.dumps(record))
 elif endpoint == "graphql":
     print(json.dumps(state["publisher"]["id"]))
+elif "/dependabot/alerts/" in endpoint:
+    print(json.dumps(state["alert"]))
 elif endpoint.endswith("/permission"):
     print(json.dumps({"permission": state["permission"]}))
 elif "/memberships/" in endpoint:
@@ -84,8 +86,11 @@ elif "/comments/" in endpoint:
 elif endpoint.endswith("/reviews") or endpoint.endswith("/comments"):
     kind = endpoint.rsplit("/", 1)[-1]
     print(json.dumps([state[kind]] if "--slurp" in args else state[kind]))
+elif "/commits/" in endpoint and endpoint.endswith("/pulls"):
+    print(json.dumps([state.get("associated_pulls", [])]))
 else:
-    print(json.dumps({**state.get("target", {}), "head": {"sha": state.get("head", "candidate-head")}}))
+    target = state.get("target", {})
+    print(json.dumps({**target, "head": {**target.get("head", {}), "sha": state.get("head", "candidate-head")}}))
 """)
     executable.chmod(0o755)
     monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
@@ -121,7 +126,7 @@ def invoke(tmp_path, platform, monkeypatch):
             "GITHUB_EVENT_PATH": str(source),
             "GITHUB_RUN_ID": "acceptance",
             "INPUT_REPOSITORY": repository,
-            "INPUT_DELIVERY_KEY": key,
+            "INPUT_DELIVERY_KEY": key or "",
             "INPUT_DATABASE": str(database or tmp_path / "landing.sqlite3"),
             "INPUT_COMMAND_PREFIX": prefix,
             "INPUT_NUMBER": str(number),
@@ -143,6 +148,145 @@ def invoke(tmp_path, platform, monkeypatch):
         return action
 
     return call
+
+
+@pytest.fixture
+def alert_dispatch(platform, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "repository_dispatch")
+    state = json.loads(platform.read_text())
+    state["alert"] = {
+        "number": 7,
+        "state": "open",
+    }
+    platform.write_text(json.dumps(state))
+    return {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "action": "dependabot_alert",
+        "client_payload": {"alert_number": 7, "state": "fixed"},
+    }
+
+
+@pytest.mark.parametrize("current_state", ["open", "fixed", "dismissed"])
+def test_current_alert_state_selects_work(platform, invoke, model, alert_dispatch, current_state):
+    state = json.loads(platform.read_text())
+    state["alert"]["state"] = current_state
+    platform.write_text(json.dumps(state))
+    alert_dispatch["client_payload"]["state"] = "fixed" if current_state == "open" else "open"
+    if current_state == "open":
+        model[0].append(completion("The affected dependency has no patched version."))
+    else:
+        model[0].append(completion(tool="no_update", arguments={"reason": "No tracked work changed."}))
+    action = invoke(alert_dispatch)
+    assert action is not None and action.status == "completed"
+    assert action.mode == ("bumper" if current_state == "open" else "issuer")
+    assert not json.loads(platform.read_text())["comments"]
+
+
+def test_unreadable_alert_reports_error_without_publication(platform, invoke, model, alert_dispatch):
+    state = json.loads(platform.read_text())
+    state["unavailable"] = True
+    platform.write_text(json.dumps(state))
+    invoke(alert_dispatch, error="GitHub is unavailable")
+    assert not json.loads(platform.read_text())["comments"]
+
+
+@pytest.fixture
+def dependency_ci(platform, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
+    state = json.loads(platform.read_text())
+    state["target"] = {
+        "number": 42,
+        "state": "open",
+        "user": {"login": "dependabot[bot]"},
+        "head": {"repo": {"full_name": "example/landing"}},
+        "base": {"repo": {"full_name": "example/landing"}},
+    }
+    platform.write_text(json.dumps(state))
+    return {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {
+            "id": 123,
+            "name": "release-main",
+            "event": "pull_request",
+            "conclusion": "failure",
+            "actor": {"login": "dependabot[bot]"},
+            "head_repository": {"full_name": "example/landing"},
+            "head_branch": "dependabot/example-lib-2",
+            "head_sha": "candidate-head",
+            "pull_requests": [{"number": 42}],
+            "html_url": "https://github.com/example/landing/actions/runs/123",
+        },
+    }
+
+
+@pytest.mark.parametrize("source", ["pull_request", "workflow_dispatch"])
+def test_failed_dependency_pr_gets_one_bump_reply(
+    tmp_path, platform, invoke, model, monkeypatch, dependency_ci, source
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    dependency_ci["workflow_run"]["event"] = source
+    dependency_ci["workflow_run"]["actor"]["login"] = "maintainer"
+    if source == "workflow_dispatch":
+        dependency_ci["workflow_run"]["pull_requests"] = []
+        state = json.loads(platform.read_text())
+        state["associated_pulls"] = [{"number": 42, "state": "open", "head": {"sha": "candidate-head"}}]
+        platform.write_text(json.dumps(state))
+    stamp = github.marker("bumper", "bump:42:candidate-head")
+    (tmp_path / "reply.json").write_text(json.dumps({"body": stamp + "\nThe candidate is blocked upstream."}))
+    model[0].extend([
+        completion(
+            tool="bash",
+            arguments={
+                "command": "gh api repos/example/landing/issues/42/comments --input reply.json",
+            },
+        ),
+        completion("Reported the dependency candidate's blocker."),
+    ])
+    action = invoke(dependency_ci, key=None)
+    assert action is not None and action.mode == "bumper" and action.status == "completed"
+    delivered = json.loads(platform.read_text())
+    assert len(delivered["comments"]) == 1
+    assert delivered["comments"][0]["body"].endswith("The candidate is blocked upstream.")
+    dependency_ci["workflow_run"]["id"] = 456
+    assert invoke(dependency_ci, key=None, database=tmp_path / "next-run.sqlite3") is None
+    assert json.loads(platform.read_text())["comments"] == delivered["comments"]
+
+
+@pytest.mark.parametrize("condition", ["disabled", "success", "unapproved-workflow", "foreign-source"])
+def test_dependency_ci_failure_skips_ineligible_candidates(
+    platform, invoke, model, monkeypatch, dependency_ci, condition
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false" if condition == "disabled" else "true")
+    run = dependency_ci["workflow_run"]
+    if condition == "success":
+        run["conclusion"] = condition
+    elif condition == "unapproved-workflow":
+        run["name"] = "other-workflow"
+    elif condition == "foreign-source":
+        run["head_repository"]["full_name"] = "outside/landing"
+    assert invoke(dependency_ci, key=None) is None
+    assert not json.loads(platform.read_text())["comments"]
+
+
+@pytest.mark.parametrize("condition", ["author", "closed", "stale-head", "fork", "multiple-prs"])
+def test_dependency_ci_failure_skips_ineligible_prs(platform, invoke, model, monkeypatch, dependency_ci, condition):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    state = json.loads(platform.read_text())
+    if condition == "author":
+        state["target"]["user"]["login"] = "contributor"
+    elif condition == "closed":
+        state["target"]["state"] = "closed"
+    elif condition == "stale-head":
+        state["head"] = "new-candidate-head"
+    elif condition == "fork":
+        state["target"]["head"]["repo"]["full_name"] = "outside/landing"
+    else:
+        dependency_ci["workflow_run"]["pull_requests"].append({"number": 43})
+    platform.write_text(json.dumps(state))
+    assert invoke(dependency_ci, key=None) is None
+    assert not json.loads(platform.read_text())["comments"]
 
 
 @pytest.mark.parametrize(

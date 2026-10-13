@@ -45,6 +45,7 @@ class LandingHooks:
         for name, help_text in {
             "triage": "Identify a problem and its acceptance criteria.",
             "fix": "Repair the delegated problem and validate changes.",
+            "bump": "Update the requested dependencies and validate changes.",
             "review": "Evaluate a candidate against independent evidence.",
             "explain": "Explain the supplied question or evidence.",
         }.items():

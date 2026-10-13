@@ -23,7 +23,7 @@ async def review():
         ))
 ```
 
-`Runtime.run()` admits a request with its explicit mode: issuer, fixer, gatekeeper, or explainer. Read the returned action's status, decision, result, and error; `exit_code()` applies ordinary CLI semantics.
+`Runtime.run()` admits a request with its explicit mode: issuer, fixer, gatekeeper, explainer, or bumper. Read the returned action's status, decision, result, and error; `exit_code()` applies ordinary CLI semantics.
 
 Pass `workspaces={"candidate": Path("/srv/candidate")}` to select registered workspace names instead of filesystem paths.
 

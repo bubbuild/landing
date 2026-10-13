@@ -1,15 +1,15 @@
 name: bubbuild/landing
-description: Review code, triage issues, fix problems, and explain failures with your own model and tools.
+description: Review code, triage issues, fix problems, update dependencies, and explain failures with your own model and tools.
 branding:
   icon: check-circle
   color: blue
 inputs:
   command:
-    description: User action (review, fix, triage, or explain).
+    description: User action (review, fix, triage, explain, or bump).
     default: review
   instruction:
     description: Delegated work and acceptance criteria.
-    default: Review the candidate against repository guidance and independent checks. Publish actionable feedback and record a decision.
+    default: Carry out the delegated task using repository guidance.
   repository:
     description: Workflow repository receiving the work; cross-repository targets are rejected.
     default: ${{ github.repository }}
@@ -19,6 +19,14 @@ inputs:
   upstream-workflow:
     description: Allowed workflow_run source name; empty rejects workflow_run events.
     default: ''
+  bump-on-failure:
+    description: Opt in to helping dependency update PRs after an allowed upstream workflow fails.
+    default: 'false'
+  dependency-update-actors:
+    description: Allowed dependency PR authors, one per line.
+    default: |
+      dependabot[bot]
+      renovate[bot]
   number:
     description: Issue or PR number; the event supplies it when available.
     default: '0'
@@ -73,6 +81,8 @@ runs:
       env:
         INPUT_TRUST: ${{ inputs.trust }}
         INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
+        INPUT_BUMP_ON_FAILURE: ${{ inputs.bump-on-failure }}
+        INPUT_DEPENDENCY_UPDATE_ACTORS: ${{ inputs.dependency-update-actors }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_INSTRUCTION: ${{ inputs.instruction }}
         INPUT_REPOSITORY: ${{ inputs.repository }}

@@ -53,6 +53,8 @@ def checks_failed(checks: list[dict]) -> bool:
 def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
     parts = [request.instruction or "Carry out the delegated work using the supplied evidence."]
     parts.extend(item.text if item.type == "text" else f"{item.name}:\n{item.content}" for item in request.input)
+    if request.mode == "bumper" and request.checks:
+        parts.append("Required final check commands:\n" + json.dumps(request.checks))
     if checks:
         parts.append("Validation results:\n" + json.dumps(checks))
     return [{"type": "text", "text": "\n\n".join(parts)}]
@@ -300,7 +302,7 @@ class Runtime:
                     state.pop(key, None)
                 environment = environment_from_state(state)
                 checks = await self.checks(action_id, request, environment) if request.mode == "gatekeeper" else []
-                # Close model-owned processes and MCP connections before post-fix validation.
+                # Close model-owned processes and MCP connections before post-edit validation.
                 async with shell_manager.lifespan(), connected_tools(agent, workspace) as channel:
                     state["mcp"] = channel
                     self.capabilities(request.mode, invocation, workspace, agent)
@@ -339,7 +341,9 @@ class Runtime:
                 if request.mode == "gatekeeper" and checks_failed(checks):
                     output += "\nRequired validation failed; the change cannot proceed."
                 self.tasks.output(action_id, output, decision)
-                if request.mode == "fixer" and checks_failed(await self.checks(action_id, request, environment)):
+                if request.mode in {"fixer", "bumper"} and checks_failed(
+                    await self.checks(action_id, request, environment)
+                ):
                     message = "Required validation failed. Inspect the recorded checks and partial changes."
                     raise RuntimeError(message)  # noqa: TRY301 -- persist the failed task at this boundary.
                 for verifier in (self.verify, verify):

@@ -36,7 +36,7 @@ Native checks and operational signals reach maintainers directly. Landing helps 
 
 ## Delegate a concrete task
 
-Use `explain` for a question, `triage` to make a problem actionable, `fix` for a repair, and `review` to evaluate a candidate. State the unresolved condition, expected outcome, relevant constraints, and evidence that would settle it.
+Use `explain` for a question, `triage` to make a problem actionable, `fix` for a repair, `review` to evaluate a candidate, and `bump` to update dependencies. State the unresolved condition, expected outcome, relevant constraints, and evidence that would settle it.
 
 ```text
 Fix the documented timeout behavior. Reproduce the failure, preserve the public CLI contract, and use the existing acceptance check. Report the observed result and any remaining uncertainty.

@@ -46,7 +46,7 @@ export LANDING_API_KEY="your-provider-api-key"
 landing explain "Explain this failure and the next useful check." --input check.log
 ```
 
-Run from your project checkout and use a saved UTF-8 log for `check.log`. The commands are `explain`, `triage`, `fix`, and `review`; each works independently. [Local use](https://getlanding.dev/guides/local/) shows how to delegate work and inspect the result.
+Run from your project checkout and use a saved UTF-8 log for `check.log`. The commands are `explain`, `triage`, `fix`, `review`, and `bump`; each works independently. [Local use](https://getlanding.dev/guides/local/) shows how to delegate work and inspect the result.
 
 ## Work with your team
 

@@ -20,6 +20,7 @@ from tests.conftest import completion
         ("fix", "fixer"),
         ("review", "gatekeeper"),
         ("explain", "explainer"),
+        ("bump", "bumper"),
     ],
 )
 def test_cli_modes_complete_and_reopen_history(tmp_path, model, capsys, command, mode):
@@ -209,6 +210,34 @@ def test_retry_keeps_original_workspace_after_changing_directory(tmp_path, model
     assert (candidate / "answer.txt").read_text() == "retried"
     assert not (elsewhere / "answer.txt").exists()
     assert not (alternate / "answer.txt").exists()
+
+
+def test_bump_keeps_edits_and_result_when_required_check_fails(tmp_path, model, capsys):
+    responses, _ = model
+    explanation = "Prepared version 2; compatibility remains unvalidated."
+    responses.extend([
+        completion(tool="fs_write", arguments={"path": "version.txt", "content": "2"}),
+        completion(explanation),
+    ])
+    database = str(tmp_path / "landing.sqlite3")
+    assert (
+        main([
+            "--db",
+            database,
+            "bump",
+            "Prepare version 2.",
+            "--workspace",
+            str(tmp_path),
+            "--check",
+            "false",
+            "--json",
+        ])
+        == 1
+    )
+    action = json.loads(capsys.readouterr().out)
+    assert action["status"] == "failed"
+    assert action["result"] == explanation
+    assert (tmp_path / "version.txt").read_text() == "2"
 
 
 def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tmp_path, model, capsys):

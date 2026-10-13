@@ -94,12 +94,16 @@ class GitHubSettings(BaseSettings):
     )
     repository: str = Field(validation_alias=AliasChoices("INPUT_REPOSITORY", "GITHUB_REPOSITORY"))
     event: FilePath | None = Field(default=None, validation_alias="GITHUB_EVENT_PATH")
-    delegated_command: Literal["review", "fix", "triage", "explain"] = Field(
+    delegated_command: Literal["review", "fix", "triage", "explain", "bump"] = Field(
         default="review", validation_alias="INPUT_COMMAND"
     )
     instruction: str = "Carry out the delegated task using repository guidance."
     trust: Literal["repository", "owner"] = "repository"
     upstream_workflow: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    bump_on_failure: bool = False
+    dependency_update_actors: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["dependabot[bot]", "renovate[bot]"]
+    )
     command_prefix: str = "/landing"
     number: int = Field(default=0, ge=0)
     head: str = ""
@@ -109,7 +113,7 @@ class GitHubSettings(BaseSettings):
     database: Path | None = None
     check: Annotated[list[str], NoDecode] = Field(default_factory=list, validation_alias="INPUT_CHECKS")
 
-    @field_validator("check", "upstream_workflow", mode="before")
+    @field_validator("check", "upstream_workflow", "dependency_update_actors", mode="before")
     @classmethod
     def multiline_inputs(cls, value):
         return [line for line in value.splitlines() if line.strip()] if isinstance(value, str) else value
@@ -161,14 +165,22 @@ def required(source: object, *path: str) -> Any:
     return value
 
 
-def workflow_source(repository: str, event: dict, upstream: tuple[str, ...]) -> bool:
+def workflow_source(repository: str, event: dict, upstream: tuple[str, ...], *, bump_on_failure: bool = False) -> bool:
     run = required(event, "workflow_run")
     source = required(run, "event")
     return (
         required(run, "name") in upstream
         and required(run, "head_repository", "full_name").casefold() == repository.casefold()
-        and source in {"push", "release", "workflow_dispatch"}
-        and (source == "release" or required(run, "head_branch") == required(event, "repository", "default_branch"))
+        and (
+            (source in {"pull_request", "workflow_dispatch"} and bump_on_failure and run.get("conclusion") == "failure")
+            or (
+                source in {"push", "release", "workflow_dispatch"}
+                and (
+                    source == "release"
+                    or required(run, "head_branch") == required(event, "repository", "default_branch")
+                )
+            )
+        )
     )
 
 
@@ -179,6 +191,7 @@ def admitted(
     trust: str = "repository",
     upstream: tuple[str, ...] = (),
     prefix: str = "/landing",
+    bump_on_failure: bool = False,
 ) -> bool:
     context = GitHubEnvironment()
     if context.repository and repository.casefold() != context.repository.casefold():
@@ -192,7 +205,7 @@ def admitted(
         return True
     event = event or {}
     run = event.get("workflow_run")
-    if run and not workflow_source(repository, event, upstream):
+    if run and not workflow_source(repository, event, upstream, bump_on_failure=bump_on_failure):
         return False
     comment = event.get("comment")
     body = (comment.get("body") or "").strip() if comment else ""
@@ -201,8 +214,10 @@ def admitted(
         return False
     # Native writes and dispatch authenticate the source, including App tokens.
     # workflow_run is covered only after validating its originating workflow above.
-    native_source = context.event_name in {"push", "release", "workflow_dispatch"} or (
-        context.event_name == "workflow_run" and run is not None
+    native_source = (
+        context.event_name in {"push", "release", "workflow_dispatch", "schedule"}
+        or (context.event_name == "workflow_run" and run is not None)
+        or (context.event_name == "repository_dispatch" and event.get("action") == "dependabot_alert")
     )
     if trust == "repository" and context.actions and native_source and not comment:
         return True
@@ -220,6 +235,47 @@ def admitted(
 
 def rows(endpoint: str, repository: str) -> list[dict]:
     return [item for page in json.loads(gh(["api", endpoint, "--paginate", "--slurp"], repository)) for item in page]
+
+
+def dependency_pull(options: GitHubSettings, event: dict) -> dict | None:
+    """Resolve an opted-in update account's failed CI to its current, same-repository PR."""
+    run = required(event, "workflow_run")
+    actors = {name.strip().casefold() for name in options.dependency_update_actors if name.strip()}
+    pulls = required(run, "pull_requests")
+    head = required(run, "head_sha")
+    if not pulls:
+        pulls = [
+            pull
+            for pull in rows(f"repos/{options.repository}/commits/{head}/pulls", options.repository)
+            if pull.get("state") == "open" and pull.get("head", {}).get("sha") == head
+        ]
+    if len(pulls) != 1:
+        return None
+    number = required(pulls[0], "number")
+    if (options.number and options.number != number) or (options.head and options.head != head):
+        return None
+    pull = json.loads(gh(["api", f"repos/{options.repository}/pulls/{number}"], options.repository))
+    if (
+        required(pull, "state") != "open"
+        or required(pull, "user", "login").casefold() not in actors
+        or required(pull, "head", "sha") != head
+        or required(pull, "head", "repo", "full_name").casefold() != options.repository.casefold()
+        or required(pull, "base", "repo", "full_name").casefold() != options.repository.casefold()
+    ):
+        return None
+    return pull
+
+
+def dependency_alert(options: GitHubSettings, event: dict) -> dict:
+    """Resolve a dispatched alert reference against its current repository state."""
+    number = required(event, "client_payload", "alert_number")
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        message = "client_payload.alert_number must be a positive integer."
+        raise ValueError(message)
+    alert = json.loads(gh(["api", f"repos/{options.repository}/dependabot/alerts/{number}"], options.repository))
+    options.delegated_command = "bump" if required(alert, "state") == "open" else "triage"
+    options.instruction = f"Follow Dependabot alert {number} using its current API state. " + options.instruction
+    return {**event, "dependabot_alert": alert}
 
 
 def marker(mode: Mode, key: str) -> str:
@@ -345,7 +401,7 @@ class Publication:
         # Retain this delivery's original evidence when a later event repeats it.
         snapshot = tasks.request(recorded.id).input if recorded else request.input
         action, _ = tasks.create(request.model_copy(update={"input": snapshot}), scope=self.repository, key=key)
-        if not recorded and request.mode == "fixer":
+        if not recorded and request.mode in {"fixer", "bumper"}:
             return tasks.finish(
                 action.id,
                 "failed",
@@ -415,7 +471,7 @@ def with_repository_context(request: ActionRequest, repository: str) -> ActionRe
 
 
 def pull_target(
-    repository: str, number: int, head: str, event: dict | None, *, review: bool = False
+    repository: str, number: int, head: str, event: dict | None, *, review: bool = False, current: bool = False
 ) -> tuple[bool, int, str]:
     comment = (event or {}).get("comment", {})
     thread = (comment.get("in_reply_to_id") or required(comment, "id")) if "pull_request_review_id" in comment else 0
@@ -424,10 +480,10 @@ def pull_target(
     if number and not is_pr:
         target = json.loads(gh(["api", f"repos/{repository}/issues/{number}"], repository))
         is_pr = "pull_request" in target
-    if is_pr and (not head or (review and not thread)):
+    if is_pr and (not head or (review and not thread) or current):
         target = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
-        if review and not thread and head and target["head"]["sha"] != head:
-            message = "The PR head changed; delegate a new review for the current candidate."
+        if ((review and not thread) or current) and head and target["head"]["sha"] != head:
+            message = "The PR head changed; delegate work for the current candidate."
             raise ValueError(message)
         head = target["head"]["sha"]
     return is_pr, thread, head
@@ -496,15 +552,21 @@ def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool
     return ancestry.returncode == 0 if ancestry.returncode in {0, 1} else None
 
 
-async def run(landing: Runtime, options: GitHubSettings, event: dict | None = None) -> Action:
+async def run(landing: Runtime, options: GitHubSettings, event: dict | None = None) -> Action | None:
     repository, command = options.repository, options.delegated_command
     number, head, key = options.number, options.head, cast(str, options.delivery_key)
-    reply_required = not bool(event and "workflow_run" in event)
+    reply_required = not bool(event and ("workflow_run" in event or "dependabot_alert" in event))
     workspace = landing.framework.workspace
     mode = COMMANDS[command]
     stamp = marker(mode, key)
-    is_pr, thread, head = pull_target(repository, number, head, event, review=mode == "gatekeeper")
+    is_pr, thread, head = pull_target(
+        repository, number, head, event, review=mode == "gatekeeper", current=mode == "bumper"
+    )
     expected_review = is_pr and mode == "gatekeeper" and not thread
+    publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
+    # Automatic notifications can repeat on fresh runners without the original validation record.
+    if mode == "bumper" and event and "workflow_run" in event and publication.find():
+        return None
     source = {
         "repository": repository,
         "number": number,
@@ -534,16 +596,15 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
                 "pull_request_review_id",
             }
         },
+        "dependabot_alert": (event or {}).get("dependabot_alert", {}),
     }
-    destination = ""
+    destination = CONVERSATION_GUIDANCE if number else ""
     if thread:
         destination = THREAD_GUIDANCE
     elif expected_review:
         destination = REVIEW_GUIDANCE
     elif mode == "issuer" and not reply_required:
         destination = AUTOMATIC_GUIDANCE
-    elif number:
-        destination = CONVERSATION_GUIDANCE
     guidance = render(
         PUBLICATION_GUIDANCE, destination, repository=repository, number=number, thread=thread, stamp=stamp
     )
@@ -553,14 +614,13 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
         instruction=options.instruction or "Carry out the delegated work.",
         workspace=landing.workspace_name(workspace),
         input=[repository_context(repository), source_input, FileInput(name="github-guidance.txt", content=guidance)],
-        checks=options.check if mode in {"fixer", "gatekeeper"} else [],
+        checks=options.check if mode in {"fixer", "gatekeeper", "bumper"} else [],
     )
 
-    # pull_target has already rejected a stale candidate, so its rejection leaves the current outcome in place.
+    # Reject stale or already-delivered candidates before replacing the current reaction.
     endpoint = reaction_endpoint(repository, event)
     progress = begin_reaction(repository, endpoint) if endpoint else None
     status = "failed"
-    publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
     manager = landing.framework.plugin_manager
     manager.register(publication, name="github-publication")
     try:
@@ -626,12 +686,19 @@ def github_event(
         typer.Option(exists=True, dir_okay=False, help="Native event JSON file."),
     ] = None,
     delegated_command: Annotated[
-        Literal["review", "fix", "triage", "explain"] | None,
+        Literal["review", "fix", "triage", "explain", "bump"] | None,
         typer.Option("--command", help="Default delegated action."),
     ] = None,
     instruction: Annotated[str | None, typer.Option(help="Work and acceptance criteria.")] = None,
     trust: Annotated[Literal["repository", "owner"] | None, typer.Option(help="Native caller scope.")] = None,
     upstream_workflow: Annotated[list[str] | None, typer.Option(help="Allowed upstream workflow (repeatable).")] = None,
+    bump_on_failure: Annotated[
+        bool | None, typer.Option("--bump-on-failure/--no-bump-on-failure", help="Help update PRs after failed CI.")
+    ] = None,
+    dependency_update_actors: Annotated[
+        list[str] | None,
+        typer.Option("--dependency-update-actor", help="Allowed dependency update account (repeatable)."),
+    ] = None,
     command_prefix: Annotated[str | None, typer.Option(help="Comment command prefix.")] = None,
     number: Annotated[int | None, typer.Option(min=0, help="Issue or PR number.")] = None,
     head: Annotated[str | None, typer.Option(help="Candidate commit.")] = None,
@@ -656,12 +723,26 @@ def github_event(
         trust=options.trust,
         upstream=tuple(name.strip() for name in options.upstream_workflow),
         prefix=options.command_prefix,
+        bump_on_failure=options.bump_on_failure,
     ):
         write_outputs(None)
         raise typer.Exit()
     from landing.cli import execution_runtime, execution_settings
 
     settings = execution_settings(ctx)
+    upstream_run = (payload or {}).get("workflow_run", {})
+    if payload and (
+        upstream_run.get("event") == "pull_request"
+        or (
+            upstream_run.get("event") == "workflow_dispatch"
+            and upstream_run.get("head_branch") != required(payload, "repository", "default_branch")
+        )
+    ):
+        pull = dependency_pull(options, payload)
+        if pull is None:
+            write_outputs(None)
+            raise typer.Exit()
+        payload = {**payload, "pull_request": pull}
     payload = route_event(options, payload)
 
     if not options.delivery_key:
@@ -675,8 +756,10 @@ def github_event(
         ctx, settings, database=options.database or settings.db or context.runner_temp / "landing/landing.sqlite3"
     )
     action = asyncio.run(run(runtime, options, payload))
-    typer.echo(action.model_dump_json(indent=2))
     write_outputs(action)
+    if action is None:
+        raise typer.Exit()
+    typer.echo(action.model_dump_json(indent=2))
     raise typer.Exit(action.status != "completed")
 
 
@@ -685,15 +768,25 @@ def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
         lines = required(event, "comment", "body").strip().splitlines()
         parts = lines[0].split(maxsplit=2)
         if len(parts) < 2 or parts[1] not in COMMANDS:
-            message = "Choose triage, fix, review, or explain after the command prefix."
+            message = "Choose triage, fix, review, explain, or bump after the command prefix."
             raise ValueError(message)
         args.delegated_command = parts[1]
         args.instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
         target = event.get("issue") or required(event, "pull_request")
         # pull_target reads the current head for a PR; the comment event does not carry it.
         args.number = required(target, "number")
+    elif event and event.get("action") == "dependabot_alert":
+        return dependency_alert(args, event)
     elif event and "workflow_run" in event:
-        args.delegated_command, args.run_id = "triage", str(required(event, "workflow_run", "id"))
+        run = required(event, "workflow_run")
+        args.delegated_command, args.run_id = "triage", str(required(run, "id"))
+        if "pull_request" in event:
+            pull = required(event, "pull_request")
+            args.delegated_command = "bump"
+            args.instruction = "Help this existing dependency update after candidate CI failed. " + args.instruction
+            args.number, args.head = required(pull, "number"), required(pull, "head", "sha")
+            if not args.delivery_key:
+                args.delivery_key = f"bump:{args.number}:{args.head}"
     elif event and not args.number:
         pull = event.get("pull_request")
         if pull:

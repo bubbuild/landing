@@ -32,6 +32,18 @@ landing fix "Fix the missing-name behavior: print usage to stderr and exit 2. Pr
 
 Replace the instruction and check with your actual problem. Fix changes the workspace, then Landing runs the required check. A successful action returns `status: completed`; failed execution or validation preserves partial changes and any explanation. Inspect the diff and the recorded check before accepting it. Ordinary local execution does not automatically commit or publish.
 
+## Delegate a dependency update
+
+Name the dependency, target version, directory and applicable project policy. Prepare its update tools and an isolated checkout:
+
+```bash
+landing bump "Update example-lib to exactly 1.2.3 using project tools and .github/dependabot.yml. This is local work without CI; repair demonstrated compatibility failures." --workspace ../candidate --check "make acceptance" --json --output bump.json
+```
+
+Replace the target, configuration location and check with your request. An exact target can change the manifest version while preserving its pinning style; a lockfile refresh stays within existing constraints. The agent follows project policy, updates dependency files and runs local checks. Without CI, demonstrated check failures can guide repair in the same invocation. Preparation-only work leaves the candidate diff and results. Ordinary local execution does not commit or publish.
+
+Required final checks run after agent work; failure preserves edits and the result without restarting repair. Inspect the resolved version, diff and checks before accepting the candidate. For [GitHub updates](github.md#help-dependency-updates-after-ci-fails), compatibility repair waits for current candidate CI failure.
+
 ## Review the candidate
 
 ```bash

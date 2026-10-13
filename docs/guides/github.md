@@ -14,7 +14,7 @@ Use existing Git configuration or the standard `GIT_AUTHOR_*` and `GIT_COMMITTER
 
 ## Follow repository conventions
 
-Root and scoped `AGENTS.md` files and prepared [skills](../make-it-yours.md#prepare-skills) supply project procedures. Include branch conventions, acceptance checks, and instructions for starting candidate CI. Prepare an isolated checkout for fixes.
+Root and scoped `AGENTS.md` files and prepared [skills](../make-it-yours.md#prepare-skills) supply project procedures. Include branch conventions, acceptance checks, and instructions for starting candidate CI. Prepare an isolated checkout for fixes and dependency updates.
 
 When creating an authorized issue or PR, the agent reads the applicable template from [GitHub's standard locations](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/about-issue-and-pull-request-templates). It fills sections with actual evidence and leaves unverified checkboxes unchecked. YAML issue-form labels become Markdown headings; gh does not submit the interactive form. Templates are fetched when needed.
 
@@ -51,9 +51,37 @@ Listen for `issue_comment` and `pull_request_review_comment`; the Action reads t
 /landing fix Fix this issue and preserve its user-visible behavior.
 /landing review Review the candidate against independent checks.
 /landing explain Explain the failed job and the next useful check.
+/landing bump Update example-lib to 1.2.3 in the root project, following update policy and keeping the lockfile consistent.
 ```
 
 The prefix is configurable and can use your actual bot mention. Every delegation, including a thread follow-up, requires an explicit command. Ordinary status replies and Landing's marked output do not trigger work. Authorized machine accounts can delegate; a bot name or installation ID grants no authority by itself.
+
+Manual Action calls can select `command: bump`; local event calls can use `github event --command bump`. Supply dependency targets and project or bot configuration through ordinary instructions or inputs. Required checks run after edits, and explicit delegations require a verified conversation or thread reply. [Local dependency updates](local.md#delegate-a-dependency-update) covers work without CI.
+
+### Help dependency updates after CI fails
+
+Opt in with `bump-on-failure: true` and an `upstream-workflow` name that runs independent candidate checks. Listen for `workflow_run: completed`; only a `failure` conclusion from a `pull_request` run or a candidate branch `workflow_dispatch` qualifies. The current PR author must match `dependency-update-actors`, which defaults to `dependabot[bot]` and `renovate[bot]`. Prepare isolated candidate tools and [Dependabot credentials](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions). Leave automatic help disabled to require an explicit `/landing bump` delegation.
+
+Automatic help requires one open same-repository PR whose head matches the failed run. Ineligible or ambiguous candidates skip; API errors fail the invocation. With the default delivery key, repeated notifications skip when the publishing account already left a marked reply for that candidate. The agent rechecks the current head and CI results before editing.
+
+New updates produce an authorized draft and independent CI. Compatibility repair waits for current candidate CI failure. Existing PRs receive authorized repairs on their original branch and retain their draft status; missing write access does not justify a replacement PR. Added commits can affect a bot's [automatic maintenance](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/manage-dependabot-prs). A new head receives a new assessment; if automatic repair leaves the same failure unresolved, the agent replies with the blocker instead of repeating speculative edits.
+
+Landing's duty workflow invokes the same bump task every Monday at 02:23 UTC or on manual dispatch. It covers open Dependabot alerts and Python dependencies using uv under project version policy, preserving pinning style when versions change. New candidates use `deps/landing-*` draft PRs; existing candidates are reused. Automatic help allows Dependabot, Renovate and the prepared publisher's `deps/landing-*` PRs; `LANDING_DEPENDENCY_UPDATE_ACTORS` adds logins. Set `LANDING_BUMP_ON_FAILURE=false` to disable it.
+
+### Handle security alerts and unresolved blockers
+
+GitHub exposes `dependabot_alert` as a [webhook event](https://docs.github.com/en/webhooks/webhook-events-and-payloads#dependabot_alert), not a native Actions trigger. Real-time delivery requires a prepared receiver that verifies GitHub's signature and forwards the repository's alert number through [repository dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#repository_dispatch). Landing's duty workflow accepts this payload; it does not deploy a receiver or configure its subscription.
+
+```json
+{
+  "event_type": "dependabot_alert",
+  "client_payload": {"alert_number": 7}
+}
+```
+
+The current GitHub alert state determines the work: open selects bump; fixed or dismissed reconciles tracked work without a new upgrade. Alert lookup errors fail the invocation. The executing identity needs Dependabot alerts read access, such as [`vulnerability-alerts: read`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions) for the workflow token.
+
+When authorized, the agent reuses or creates an issue for confirmed exposure or blockers such as no patched version, policy conflicts or unresolved compatibility failures. It records the alert or candidate, dependency path, blocker and acceptance criteria. Routine PRs need no extra issue; unchanged evidence needs no issue update. Dismissal alone does not prove repair.
 
 Listeners must exist on the default branch to receive events. Landing's [duty workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing-duty.yml) is a project example, not a requirement for using the Action.
 
@@ -61,11 +89,11 @@ Listeners must exist on the default branch to receive events. Landing's [duty wo
 
 `trust: repository` admits effective repository writers and administrators. `trust: owner` admits the current personal owner by user ID, or an active organization owner with native membership `role: admin`. It does not admit every repository administrator. Native [repository permission](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user) and [organization membership](https://docs.github.com/en/rest/orgs/members#get-organization-membership-for-a-user) APIs are authoritative; Landing keeps no member list or permission cache.
 
-Comments check their author, not the PR author or `author_association`. Repository policy reuses GitHub's authorization for native Actions dispatch, push, release, and validated `workflow_run` sources, including authorized Apps. These entries do not query a bot's user-level repository permission. Other events check the sender; owner policy always checks identity and also checks the rerunning user on reruns. Local invocation without an event uses the executing user's credentials.
+Comments check their author, not the PR author or `author_association`. Repository policy reuses GitHub's authorization for native Actions dispatch, schedules, push, release, and validated `workflow_run` sources, including authorized Apps. These entries do not query a bot's user-level repository permission. Other events check the sender; owner policy always checks identity and also checks the rerunning user on reruns. Local invocation without an event uses the executing user's credentials.
 
 Admission authorizes delegated model use, tools, checks, and publication. Known unauthorized callers skip without starting a task or publishing a refusal. Organization-owner checks first skip callers without repository admin access, then query membership. Unreadable membership, including an ambiguous 404, fails closed; other permission lookup errors also fail the invocation. Owner checks need a credential with repository Metadata/Contents read and organization Members read. Set `GH_ADMISSION_TOKEN` when admission uses a different credential from publication.
 
-Action targets and events must match the workflow repository. `workflow_run` additionally needs an allowed `upstream-workflow` name, matching source repository, and a default-branch push, manual dispatch, or release as its source event. Success alone does not authorize execution. An event file must come from a trusted caller; an external webhook receiver verifies the original signature before translation.
+Action targets and events must match the workflow repository. `workflow_run` additionally needs an allowed `upstream-workflow` name, matching source repository, and a default-branch push, manual dispatch, or release as its source event. The opted-in dependency help path also admits failed PR or candidate dispatch runs under the candidate and account rules above. Success alone does not authorize execution. An event file must come from a trusted caller; an external webhook receiver verifies the original signature before translation.
 
 Use protected default-branch or pinned workflow code for policy and setup. Owner-restricted credential jobs also need GitHub environment branch restrictions, required reviewers, and branch governance such as CODEOWNERS. Repository administrators can edit settings, so owner trust alone does not isolate secrets from them. [CI integration](ci.md#prepare-execution) shows native environment controls. The workflow prepares the project and calls the Action once; admission governs Landing's work and does not protect earlier steps or make candidate code trusted. Job permissions constrain `GITHUB_TOKEN`, not separately supplied PATs or App tokens.
 

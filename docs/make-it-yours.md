@@ -29,7 +29,7 @@ Instructions guide the agent; they do not grant permissions or enforce an operat
 
 ## Prepare skills
 
-Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, `~/.agents/skills`, and its bundled mode skills. Each mode uses its permitted `landing-issuer`, `landing-fixer`, `landing-gatekeeper`, or `landing-explainer` method automatically. To replace a built-in method, prepare a same-named skill in your project or another trusted root. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
+Skills live in a named directory with a `SKILL.md` containing `name` and `description` YAML front matter. Landing discovers the workspace's `.agents/skills`, additional trusted roots, `~/.agents/skills`, and its bundled mode skills. Each mode uses its permitted `landing-issuer`, `landing-fixer`, `landing-gatekeeper`, `landing-explainer`, or `landing-bumper` method automatically. To replace a built-in method, prepare a same-named skill in your project or another trusted root. The agent can load a permitted skill through its `skill` tool; `$skill-name` includes it directly in an instruction.
 
 ```bash
 landing explain 'Use $deployment-check to explain the failed deployment.' --workspace ./candidate --input deployment.log

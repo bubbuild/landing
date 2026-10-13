@@ -21,11 +21,11 @@ When `LANDING_TOKEN` is configured, action endpoints require `Authorization: Bea
 
 | Field | Contract |
 | --- | --- |
-| `mode` | Required: `issuer`, `fixer`, `gatekeeper`, or `explainer`. |
+| `mode` | Required: `issuer`, `fixer`, `gatekeeper`, `explainer`, or `bumper`. |
 | `instruction` | Optional string; a nonblank instruction or nonempty input is required. |
 | `workspace` | Registered name, default `default`; the service prepares no checkout. |
 | `input` | Text or file snapshots, default empty; files require `name` and `content`, with `media_type` defaulting to `text/plain`. |
-| `checks` | Nonblank commands, default empty; supported only by fixer and gatekeeper. |
+| `checks` | Nonblank commands, default empty; supported only by fixer, gatekeeper, and bumper. Fixer and bumper run checks after edits; gatekeeper runs them before evaluation. |
 
 `POST /v1/actions` commits the request before returning `201` with an action record and `Location`. Optional `Idempotency-Key` accepts 1–256 characters. The same key and request return the existing action with `200`; conflicting content returns `409`. Retry admission also supports the header.
 
