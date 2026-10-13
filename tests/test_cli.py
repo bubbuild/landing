@@ -38,6 +38,23 @@ def test_cli_modes_complete_and_reopen_history(tmp_path, model, capsys, command,
     assert json.loads(capsys.readouterr().out) == action
 
 
+def test_delegated_text_cannot_execute_a_command(tmp_path, model, capsys):
+    model[0].append(completion("Explained the literal command."))
+    assert (
+        main([
+            "--db",
+            str(tmp_path / "landing.sqlite3"),
+            "explain",
+            ",touch delegated-command",
+            "--workspace",
+            str(tmp_path),
+        ])
+        == 0
+    )
+    assert "Explained the literal command." in capsys.readouterr().out
+    assert not (tmp_path / "delegated-command").exists()
+
+
 def test_cli_delegations_do_not_share_model_history(tmp_path, model):
     responses, requests = model
     responses.extend([completion("The first answer."), completion("The second answer.")])

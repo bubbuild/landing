@@ -113,6 +113,7 @@ def invoke(tmp_path, platform, monkeypatch):
         number=0,
         trust="repository",
         error=None,
+        database=None,
     ):
         source = tmp_path / "event.json"
         source.write_text(json.dumps(event))
@@ -121,7 +122,7 @@ def invoke(tmp_path, platform, monkeypatch):
             "GITHUB_RUN_ID": "acceptance",
             "INPUT_REPOSITORY": repository,
             "INPUT_DELIVERY_KEY": key,
-            "INPUT_DATABASE": str(tmp_path / "landing.sqlite3"),
+            "INPUT_DATABASE": str(database or tmp_path / "landing.sqlite3"),
             "INPUT_COMMAND_PREFIX": prefix,
             "INPUT_NUMBER": str(number),
             "INPUT_TRUST": trust,
@@ -771,3 +772,26 @@ def test_invisible_owner_membership_does_not_hide_admission_failure(platform, in
     }
     invoke(event, trust="owner", error="membership is not visible")
     assert not model[1]
+
+
+@pytest.mark.parametrize("lost_record", [False, True])
+def test_replayed_repair_does_not_claim_validation(tmp_path, platform, invoke, model, monkeypatch, lost_record):
+    monkeypatch.setenv("INPUT_CHECKS", "false")
+    (tmp_path / "reply.json").write_text(json.dumps({"body": github.marker("fixer", "delegation") + "\nRepaired."}))
+    model[0].extend([
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"}
+        ),
+        completion("Repaired."),
+    ])
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "comment": {"user": {"login": "maintainer"}, "body": "/landing fix Repair the candidate."},
+        "issue": {"number": 42},
+    }
+    assert invoke(event).status == "failed"
+    calls = len(model[1])
+    replay = invoke(event, database=tmp_path / "fresh.sqlite3" if lost_record else None)
+    assert replay.status == "failed"
+    assert len(model[1]) == calls
+    assert len(json.loads(platform.read_text())["comments"]) == 1

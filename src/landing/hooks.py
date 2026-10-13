@@ -1,6 +1,7 @@
 """Bub hooks supply Landing task guidance, state, and storage."""
 
 import asyncio
+from dataclasses import replace
 from importlib.metadata import distribution
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -93,10 +94,25 @@ class LandingHooks:
 
     @hookimpl
     def before_llm_call(self, request, state):
-        if state.get("landing_tool_failed"):
-            return None
-        if reason := state.get("landing_no_update"):
+        if not state.get("landing_tool_failed") and (reason := state.get("landing_no_update")):
             return LlmCallDecision.finish(reason)
+        messages = []
+        for message in request.messages:
+            content = message.get("content")
+            if (
+                isinstance(content, list)
+                and content
+                and all(
+                    isinstance(part, dict)
+                    and set(part) == {"type", "text"}
+                    and part["type"] == "text"
+                    and isinstance(part["text"], str)
+                    for part in content
+                )
+            ):
+                message = {**message, "content": "".join(part["text"] for part in content)}
+            messages.append(message)
+        return replace(request, messages=messages)
 
     @hookimpl(specname="after_tool_call")
     def observe_tool_result(self, call, result, state) -> None:

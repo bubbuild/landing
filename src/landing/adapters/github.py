@@ -331,6 +331,34 @@ class Publication:
                 raise RuntimeError(message)
         tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
 
+    def replay(self, request: ActionRequest, key: str) -> Action | None:
+        """Reuse delivery evidence without replacing execution or validation history."""
+        tasks = self.runtime.tasks
+        receipt = self.find()
+        recorded = tasks.find(self.repository, key)
+        if receipt is None:
+            if recorded and recorded.status == "completed":
+                self.verify(recorded)
+            return None
+        if recorded and recorded.status != "completed":
+            return recorded
+        # Retain this delivery's original evidence when a later event repeats it.
+        snapshot = tasks.request(recorded.id).input if recorded else request.input
+        action, _ = tasks.create(request.model_copy(update={"input": snapshot}), scope=self.repository, key=key)
+        if not recorded and request.mode == "fixer":
+            return tasks.finish(
+                action.id,
+                "failed",
+                result=f"Already published: {receipt['html_url']}",
+                error={
+                    "code": "unknown",
+                    "message": "The original execution and validation record is unavailable. "
+                    "Delegate a new key with current evidence instead of repeating this delivery.",
+                },
+            )
+        self.verify(action)
+        return tasks.finish(action.id, "completed", result=f"Already published: {receipt['html_url']}")
+
     @hookimpl
     async def before_tool_call(self, call, state):
         if not self.review or "landing_action_id" not in state:
@@ -537,19 +565,8 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
     manager.register(publication, name="github-publication")
     try:
         async with landing.running():
-            existing = publication.find()
-            if existing:
-                recorded = landing.tasks.find(repository, key)
-                # The receipt identifies this delivery; retain its original evidence snapshot on replay.
-                snapshot = landing.tasks.request(recorded.id).input if recorded else request.input
-                action, _ = landing.tasks.create(
-                    request.model_copy(update={"input": snapshot}), scope=repository, key=key
-                )
-                publication.verify(action)
-                action = landing.tasks.finish(
-                    action.id, "completed", result=f"Already published: {existing['html_url']}"
-                )
-            else:
+            action = publication.replay(request, key)
+            if action is None:
                 try:
                     action = await landing.run(
                         request,
