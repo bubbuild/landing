@@ -1,7 +1,7 @@
 """Shared SQLite lifecycle for task records and Bub tape storage."""
 
 import fcntl
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS tape_entries_history ON tape_entries(tape, id);
 
 
 @contextmanager
-def own_database(path: Path) -> Iterator[None]:
+def own_database(path: Path) -> Generator[None]:
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     # Lock a sibling file: on macOS, flock on the database conflicts with SQLite's own fcntl locks.
@@ -85,7 +85,7 @@ def database_engine(path: Path) -> Engine:
 
 
 @contextmanager
-def open_database(path: Path | Engine) -> Iterator[Engine]:
+def open_database(path: Path | Engine) -> Generator[Engine]:
     engine = path if isinstance(path, Engine) else database_engine(path)
     Path(cast(str, engine.url.database)).parent.mkdir(parents=True, exist_ok=True)
     try:

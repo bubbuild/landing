@@ -1,6 +1,6 @@
 """Bind prepared MCP servers to the existing SDK agent for one task."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -47,7 +47,7 @@ def configuration(workspace: Path) -> Path:
 
 
 @asynccontextmanager
-async def connected_tools(agent: Agent, workspace: Path) -> AsyncIterator[MCPChannel]:
+async def connected_tools(agent: Agent, workspace: Path) -> AsyncGenerator[MCPChannel]:
     channel = MCPChannel.from_server_configs(read_config(configuration(workspace)))
     try:
         await channel.connect()

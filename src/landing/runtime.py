@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator, Callable, Collection, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Collection, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
@@ -177,7 +177,7 @@ class Runtime:
         raise ValueError(message)
 
     @contextlib.asynccontextmanager
-    async def running(self, *, background: bool = False) -> AsyncIterator["Runtime"]:
+    async def running(self, *, background: bool = False) -> AsyncGenerator["Runtime"]:
         """Run work within Bub's resources, stopping execution before they close."""
         async with self.framework.running():
             self.worker_task = asyncio.create_task(self.worker()) if background else None
@@ -187,7 +187,7 @@ class Runtime:
                 await self.stop()
 
     @contextlib.asynccontextmanager
-    async def lifespan(self, app: object) -> AsyncIterator[None]:
+    async def lifespan(self, app: object) -> AsyncGenerator[None]:
         """ASGI lifespan callback that owns background execution."""
         async with self.running(background=True):
             yield
