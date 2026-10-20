@@ -7,25 +7,27 @@ from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from bub import BubFramework, ensure_config
+from bub import BubFramework, ensure_config, tool
+from bub.builtin import tools as builtin_tools
 from bub.builtin.environment import environment_from_state
 from bub.builtin.shell_manager import shell_manager
+from bub.builtin.spill import SpillSettings, SpillStore, spill_read
 from bub.builtin.tools import resolve_tool_names
 from bub.core import Agent
 from bub.core.tape import session_tape_name
-from bub.core.tools import Tool, ToolContext, tool
+from bub.core.tools import ToolContext
 from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
 from bub.hooks.agent import AgentPlugins
-from bub.prompt import to_content
 from bub.skills import SkillMetadata, discover_skills, iter_skill_roots
 from bub.turn import TurnState
 from pydantic import ValidationError
 
 from landing.database import database_engine
-from landing.hooks import LandingHooks
+from landing.hooks import LandingHooks, skill
 from landing.mcp import connected_tools
 from landing.models import Action, ActionRequest, Decision
+from landing.prompts import system_prompt
 from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -52,14 +54,14 @@ def checks_failed(checks: list[dict]) -> bool:
     return any(item["exit_code"] != 0 or item["timed_out"] for item in checks)
 
 
-def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
+def task_prompt(request: ActionRequest, checks: list[dict]) -> str:
     parts = [request.instruction or "Carry out the delegated work using the supplied evidence."]
     parts.extend(item.text if item.type == "text" else f"{item.name}:\n{item.content}" for item in request.input)
     if request.mode == "bumper" and request.checks:
         parts.append("Required final check commands:\n" + json.dumps(request.checks))
     if checks:
         parts.append("Validation results:\n" + json.dumps(checks))
-    return [{"type": "text", "text": "\n\n".join(parts)}]
+    return "\n\n".join(parts)
 
 
 class Runtime:
@@ -72,7 +74,6 @@ class Runtime:
         path: Path,
         *,
         workspaces: Mapping[str, Path] | None = None,
-        tools: Iterable[Tool] = (),
         skill_dirs: Iterable[Path] = (),
         plugins: Iterable[object] = (),
         verify: Callable[[Action], None] | None = None,
@@ -87,19 +88,39 @@ class Runtime:
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
         self.settings = settings
-        self.tools = {item.name: item for item in (decide, no_update, *tools)}
+        self.tools = [
+            builtin_tools.bash,
+            builtin_tools.bash_output,
+            builtin_tools.kill_bash,
+            builtin_tools.fs_read,
+            builtin_tools.fs_write,
+            builtin_tools.fs_edit,
+            builtin_tools.tape_info,
+            builtin_tools.tape_search,
+            builtin_tools.tape_reset,
+            builtin_tools.tape_handoff,
+            builtin_tools.tape_anchors,
+            builtin_tools.web_fetch,
+            spill_read,
+            skill,
+            decide,
+            no_update,
+        ]
         self.tape_store = SQLiteTapeStore(self.engine)
+        self.spill_store = SpillStore(ensure_config(SpillSettings))
         self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *settings.skill_dirs))
-        hooks = LandingHooks(self.framework)
-        hooks.runtime = self
-        self.framework.plugin_manager.register(hooks, name="landing")
-        self.plugins = AgentPlugins(self.framework, plugins=plugins)
+        self.plugins = AgentPlugins(self.framework, plugins=[LandingHooks(self), *plugins])
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
     def create_agent(self) -> Agent:
         return self.plugins.attach(
-            Agent(max_steps=self.settings.max_steps, name="landing", **self.plugins.components())
+            Agent(
+                max_steps=self.settings.max_steps,
+                name="landing",
+                system_prompt=system_prompt(self.settings),
+                **self.plugins.components(),
+            )
         )
 
     def skills(self, workspace: Path) -> list[SkillMetadata]:
@@ -240,9 +261,11 @@ class Runtime:
         async with self.execution:
             if not self.tasks.claim(action_id):
                 return self.tasks.get(action_id)
+            default_workspace = self.framework.workspace
             try:
                 request = self.tasks.request(action_id)
                 workspace = self.workspace(request.workspace)
+                self.framework.workspace = workspace
                 invocation = self.tasks.event_data(action_id, "execution") or {}
                 session_id = invocation.pop("session_id", action_id)
                 agent = self.create_agent()
@@ -255,7 +278,6 @@ class Runtime:
                     "landing_llm_call",
                     "landing_no_update",
                     "landing_tool_failed",
-                    "allowed_skills",
                 ):
                     state.pop(key, None)
                 environment = environment_from_state(state)
@@ -266,7 +288,7 @@ class Runtime:
                     self.capabilities(request.mode, workspace, agent, state)
                     output = ""
                     async with agent.run(
-                        to_content(task_prompt(request, checks)),
+                        task_prompt(request, checks),
                         tape=session_tape_name(session_id, workspace),
                         model=self.settings.chat_model(
                             state.get("model"), reasoning_effort=state.get("reasoning_effort")
@@ -324,6 +346,8 @@ class Runtime:
                 )
             else:
                 return self.tasks.finish(action_id, "completed", result=output, decision=decision)
+            finally:
+                self.framework.workspace = default_workspace
 
     def cancel(self, action_id: str) -> Action:
         action = self.tasks.cancel(action_id)

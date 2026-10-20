@@ -32,7 +32,7 @@ completion_args:
   temperature: 0.2
 ```
 
-Precedence is environment, Landing YAML, then defaults. Landing reads its own `LANDING_*` settings and configuration file. Configure provider protocols and clients through Republic options in `client_args`; for a Chat Completions endpoint, use `api_format: chat`. Landing does not read `~/.bub/config.yml` or the flat `BUB_MODEL`, `BUB_API_KEY`, and `BUB_API_BASE` aliases. Model clients retain Bub's native provider credential resolution when explicit credentials are absent.
+Precedence is environment, Landing YAML, then defaults. Bub loads Landing's YAML and resolves registered component settings. Configure provider protocols and clients through Republic options in `client_args`; for a Chat Completions endpoint, use `api_format: chat`. Model clients use Bub's native provider credential resolution when explicit credentials are absent.
 
 ## Skills
 
@@ -110,7 +110,7 @@ Discovered tools use names such as `mcp.playwright_browser_navigate`. Mode tool 
 | `LANDING_TOKEN` | Server bearer token; required to listen beyond localhost. |
 | `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. |
 | `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
-| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. `BASE_URL` remains an alias. |
+| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. |
 
 CLI and service settings read their own fields from environment and Landing YAML. YAML keys are `db`, `token`, `replicate`, `github_repository` and `base_url`. CLI options override corresponding settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
 

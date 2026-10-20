@@ -11,7 +11,7 @@ export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 ```
 
-You can save settings in `~/.landing/config.yml`; see [Configuration](reference/configuration.md) for endpoints, precedence, and compatibility with existing settings. Model requests go to the selected provider, whose data handling applies.
+You can save settings in `~/.landing/config.yml`; see [Configuration](reference/configuration.md) for endpoints and precedence. Model requests go to the selected provider, whose data handling applies.
 
 Prepare checkouts, language runtimes, dependencies, credentials, and baseline data using your existing setup process. A remote client uses the server's prepared environment. Landing does not install project tools or skills for you.
 

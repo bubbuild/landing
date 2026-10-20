@@ -74,7 +74,7 @@ def service(engine, image, name, storage, replica, *, replica_path=None):
         "--env",
         "LANDING_MODEL_TIMEOUT_SECONDS=3",
         "--env",
-        "BASE_URL=https://landing.example.test",
+        "LANDING_BASE_URL=https://landing.example.test",
         *network,
         image,
     )

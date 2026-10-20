@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -9,6 +10,36 @@ from typer.testing import CliRunner
 
 from landing.cli import create_cli_app, main
 from tests.conftest import completion
+
+
+@pytest.mark.parametrize("spill_reads", [True, False])
+def test_explain_can_use_evidence_in_a_large_file(tmp_path, model, monkeypatch, capsys, spill_reads):
+    (tmp_path / "report.txt").write_text("log entry\n" * 2000 + "reference=approved\n" + "log entry\n" * 2000)
+    if not spill_reads:
+        monkeypatch.setenv("LANDING_MODES", '{"explainer":{"excluded_tools":["spill.read"]}}')
+
+    async def inspect(**kwargs):
+        evidence = str(kwargs["messages"])
+        if "reference=approved" in evidence:
+            return completion("Deployment reference: approved")
+        if handle := re.search(r"handle: ([a-f0-9]+)", evidence):
+            return completion(tool="spill_read", arguments={"handle": handle[1], "count": 4})
+        return completion("The deployment reference is missing.")
+
+    responses, _ = model
+    responses.extend([completion(tool="fs_read", arguments={"path": "report.txt"}), inspect, inspect])
+    assert (
+        main([
+            "--db",
+            str(tmp_path / "landing.sqlite3"),
+            "explain",
+            "Identify the deployment reference in report.txt.",
+            "--workspace",
+            str(tmp_path),
+        ])
+        == 0
+    )
+    assert capsys.readouterr().out.strip() == "Deployment reference: approved"
 
 
 @pytest.mark.parametrize(

@@ -1,15 +1,13 @@
 """Default behavior; repository instructions and skills supply project standards."""
 
-from string import Template
+import re
 
+from bub.core import PromptContext, SystemPrompt
+from bub.prompt import prompt_text
+from bub.skills import render_skills_prompt
+from bub.utils import workspace_from_state
 
-def render(*templates: str, **values: object) -> str:
-    """Render owned templates once; substituted instructions and evidence stay literal."""
-    blocks = (Template(template).substitute(values) for template in templates)
-    return "\n\n".join(filter(None, blocks))
-
-
-SYSTEM = "$common\n\nMode: $selected\n\n$mode\n\n$instructions\n\n$repository\n\nTask workspace: $workspace"
+from landing.settings import ModeSettings, Settings
 
 COMMON = """You are Landing, helping people with development work.
 Use the delegated outcome and existing evidence to identify what remains to be answered or done for the recipient. Choose checks, questions and writes that resolve that need. Once the evidence supports the requested answer or action, deliver it; continue only for unfinished delegated work or a new observation that changes the conclusion. Write direct English with the answer first and the evidence or next action needed to judge, reproduce or act. Keep investigation details in execution history. Follow the applicable template; otherwise use natural paragraphs. Do not repeat resolved conclusions or routine successful checks.
@@ -21,3 +19,33 @@ Use prepared Git and platform identities; report a missing required identity bef
 Complete the requested work. Task completion, confirmed delivery and passing checks do not establish human acceptance. When publication is part of the delegated work, publish and read back the write before claiming delivery. Never wait for a status that depends on this task finishing.
 Use concise, clickable references with short descriptive labels when the answer needs them. Link commits with short, unambiguous hashes; keep full identities in tools and verification. Mention revisions only when they affect the conclusion. Examples illustrate presentation, not facts about this task or required formats. Never publish example facts or placeholders.
 """
+
+
+def system_prompt(settings: Settings) -> SystemPrompt:
+    prompt = SystemPrompt([COMMON])
+
+    @prompt.add
+    def mode(context: PromptContext) -> str:
+        selected = context.state["landing_mode"]
+        skill = context.state["landing_skills"].get(f"landing-{selected}")
+        instructions = settings.modes.get(selected, ModeSettings()).instructions
+        return f"Mode: {selected}\n\n{skill.body() if skill else ''}\n\n{instructions}"
+
+    @prompt.add
+    def repository(context: PromptContext) -> str:
+        try:
+            return (workspace_from_state(context.state) / "AGENTS.md").read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @prompt.add
+    def workspace(context: PromptContext) -> str:
+        return f"Task workspace: {workspace_from_state(context.state)}"
+
+    @prompt.add
+    def skills(context: PromptContext) -> str:
+        selected = context.state["landing_skills"]
+        expanded = set(re.findall(r"\$([A-Za-z0-9_.-]+)", prompt_text(context.prompt))) & selected.keys()
+        return render_skills_prompt(list(selected.values()), expanded_skills=expanded)
+
+    return prompt

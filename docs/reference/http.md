@@ -46,7 +46,7 @@ When `LANDING_TOKEN` is configured, action endpoints require `Authorization: Bea
 
 Health checks, `/docs`, and the generated schema are public. Documentation describes the API without exposing task history or credentials.
 
-Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `BASE_URL` supplies the public origin behind a proxy.
+Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `LANDING_BASE_URL` supplies the public origin behind a proxy.
 
 ## Action records
 

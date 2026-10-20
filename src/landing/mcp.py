@@ -11,11 +11,9 @@ from bub_mcp.config import MCPSettings, read_config
 from bub_mcp.plugin import MCPChannel
 from pydantic_settings import SettingsConfigDict
 
-from landing.settings import FileSettings
-
 
 @config()
-class MCPConfiguration(FileSettings, BubSettings):
+class MCPConfiguration(BubSettings):
     """Own the flat file-selection setting; bub-mcp owns the mcp section."""
 
     model_config = SettingsConfigDict(

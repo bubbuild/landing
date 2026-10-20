@@ -9,34 +9,43 @@ import os
 import shlex
 import sys
 import time
-from importlib.metadata import distribution, version
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, cast
 
 import typer
-from pydantic import AliasChoices, Field
+from bub import Settings as BubSettings
+from bub import config, ensure_config
+from bub.configure import load
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
 from landing.database import open_database, own_database
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
-from landing.settings import FileSettings
+from landing.settings import ConfigurationFile
 from landing.tasks import NotFoundError, Tasks
 
 DEFAULT_DATABASE = Path("~/.local/share/landing/landing.sqlite3")
 
 
-class ExecutionSettings(FileSettings):
+@config()
+class ExecutionSettings(BubSettings):
     """CLI and service configuration, independent of SDK model settings."""
 
     model_config = SettingsConfigDict(
-        env_prefix="LANDING_", env_ignore_empty=True, populate_by_name=True, extra="ignore", hide_input_in_errors=True
+        env_prefix="LANDING_",
+        env_ignore_empty=True,
+        populate_by_name=True,
+        extra="ignore",
+        hide_input_in_errors=True,
+        validate_assignment=True,
     )
     db: Path | None = None
     token: str | None = Field(default=None, repr=False)
     github_repository: str | None = None
-    base_url: str | None = Field(default=None, validation_alias=AliasChoices("LANDING_BASE_URL", "BASE_URL"))
+    base_url: str | None = None
     replicate: bool = False
 
 
@@ -64,8 +73,12 @@ class Command(TyperCommand):
 
 
 def execution_settings(ctx: typer.Context) -> ExecutionSettings:
-    parameters = ctx.find_root().params
-    return ExecutionSettings(**{name: value for name, value in parameters.items() if value is not None})
+    load(ConfigurationFile().config_file.expanduser())
+    settings = ensure_config(ExecutionSettings)
+    for name, value in ctx.find_root().params.items():
+        if name in ExecutionSettings.model_fields and value is not None:
+            setattr(settings, name, value)
+    return settings
 
 
 def execution_runtime(ctx: typer.Context, settings: ExecutionSettings, *, database: Path | None = None) -> Runtime:
@@ -94,6 +107,8 @@ def configure(
 
 
 def create_cli_app() -> typer.Typer:
+    from landing.adapters.github import register_cli_commands
+
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",
@@ -112,8 +127,7 @@ def create_cli_app() -> typer.Typer:
         app.command(name=name, cls=Command, help=help_text)(delegate)
     app.add_typer(actions, name="action")
     app.command(cls=Command)(serve)
-    for entry in distribution("landing").entry_points.select(group="landing.adapters"):
-        entry.load().register_cli_commands(app)
+    register_cli_commands(app)
     return app
 
 

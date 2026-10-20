@@ -67,12 +67,16 @@ def test_cli_model_configuration(tmp_path, source):
         assert authorization == ["Bearer selected-key"]
 
 
-def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch, model, capsys):
+@pytest.mark.parametrize("source", ["environment", "yaml"])
+def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch, model, capsys, source):
     configured = tmp_path / "configured.sqlite3"
     explicit = tmp_path / "explicit.sqlite3"
-    config_file = tmp_path / "landing.yml"
-    monkeypatch.setenv("LANDING_CONFIG", str(config_file))
-    config_file.write_text(json.dumps({"db": str(configured)}))
+    if source == "environment":
+        monkeypatch.setenv("LANDING_DB", str(configured))
+    else:
+        config_file = tmp_path / "landing.yml"
+        monkeypatch.setenv("LANDING_CONFIG", str(config_file))
+        config_file.write_text(json.dumps({"db": str(configured)}))
     responses, _ = model
     responses.append(completion("Explained the configured project."))
     assert main(["explain", "Explain this project.", "--workspace", str(tmp_path), "--json"]) == 0
@@ -81,6 +85,7 @@ def test_cli_database_configuration_and_explicit_override(tmp_path, monkeypatch,
     assert json.loads(capsys.readouterr().out) == action
     assert main(["--db", str(explicit), "action", "list", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == []
+    assert explicit.is_file()
 
 
 @pytest.mark.parametrize("source", ["environment", "yaml"])

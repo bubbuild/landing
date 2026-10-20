@@ -27,7 +27,7 @@ Use `compose.yaml` from the Landing repository. `LANDING_IMAGE` selects another 
 
 ## Deploy with ONCE
 
-The image follows [ONCE's application contract](https://github.com/basecamp/once#making-a-once-compatible-application): port 80, `/up`, and persistent data under `/storage`. ONCE supplies `BASE_URL` for public pagination links and terminates TLS at its proxy.
+The image exposes port 80 and `/up`, and stores persistent data under `/storage`. When deploying behind ONCE or another TLS proxy, set `LANDING_BASE_URL` to the public origin for pagination links.
 
 Configure the [replica destination](recovery.md#replicate-the-database) and credentials before deployment:
 

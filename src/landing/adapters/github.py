@@ -9,18 +9,18 @@ import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from string import Template
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 import typer
-from bub import hookimpl
+from bub import hookimpl, tool
 from bub.core.events import ToolCallDecision
-from bub.core.tools import ToolContext, tool
+from bub.core.tools import ToolContext
 from pydantic import AliasChoices, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from landing.models import COMMANDS, Action, ActionRequest, FileInput, Mode
-from landing.prompts import render
 from landing.runtime import Runtime
 
 REPOSITORY_GUIDANCE = (
@@ -458,7 +458,7 @@ def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
 def repository_context(repository: str) -> FileInput:
     return FileInput(
         name="github-repository.txt",
-        content=render(REPOSITORY_GUIDANCE, repository=repository),
+        content=Template(REPOSITORY_GUIDANCE).substitute(repository=repository),
     )
 
 
@@ -605,8 +605,8 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
         destination = REVIEW_GUIDANCE
     elif mode == "issuer" and not reply_required:
         destination = AUTOMATIC_GUIDANCE
-    guidance = render(
-        PUBLICATION_GUIDANCE, destination, repository=repository, number=number, thread=thread, stamp=stamp
+    guidance = Template(f"{PUBLICATION_GUIDANCE}\n\n{destination}").substitute(
+        repository=repository, number=number, thread=thread, stamp=stamp
     )
     source_input = FileInput(name="github-context.json", content=json.dumps(source))
     request = ActionRequest(
@@ -669,7 +669,6 @@ def write_outputs(action: Action | None) -> None:
             output.write(outputs["result"] + "\n")
 
 
-@hookimpl
 def register_cli_commands(app: typer.Typer) -> None:
     from landing.cli import Command
 

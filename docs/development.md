@@ -42,7 +42,7 @@ The CLI registers Landing commands and bundled adapter commands directly. Help a
 
 HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. The CLI and worker await the same owned execution task, which consumes the native Agent stream. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
-Task records and Bub tapes share one SQLite database. Bub exposes task records through a tape sidecar. Resetting a session's tape clears its model history without deleting action records.
+Landing task records and Bub tapes share one SQLite database. Resetting a session's tape clears its model history without deleting action records.
 
 ```text
 Host starts -> AgentPlugins lifespan -> lock + SQLite recovery
@@ -62,7 +62,9 @@ GitHub enables reply confirmation through a native hook and verifies publication
 
 ## Instructions and skills
 
-`LandingHooks` supplies task guidance, state, storage, and explicit `provide_tools` declarations. Native `AgentPlugins` connects these hooks to the Agent's EventBus, including interception, continuation, and steering. The task skill tool uses Bub's discovery and rendering with Landing's mode selection; Bub's app-specific skill and subagent tools require `BubAgent` and are not provided. Native filesystem, shell, web, tape, and spill tools are reused directly. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path, followed by the selected skill index.
+`Runtime` explicitly selects native filesystem, shell, web, tape, and spill tools and adds Landing tools. `LandingHooks` supplies state, storage, execution policy, and the selected tools through native hooks. `AgentPlugins` registers supplied plugins and connects their hooks to the Agent's EventBus, including interception, continuation, and steering. Additional tools use Bub's `@tool` and `provide_tools` hook. Landing depends on `bub[app]` to reuse these components and uses the core Agent's default Tape context and message prompt handling. A result hook bounds oversized text through Bub's `SpillStore` and content helpers, preserves media, and leaves output inline when the mode disables `spill.read`. Full output stays in SQLite for later runs in the same session. Unknown or unavailable tools follow core tool error handling.
+
+The task skill tool uses Bub's discovery and rendering with Landing's mode selection; Bub's app-specific skill and subagent tools require `BubAgent` and are not provided. Bub's `SystemPrompt` and `@prompt.add` compose the common behavior and dynamic sections from `PromptContext`. These sections place the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path, followed by the selected skill index.
 
 Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in the native `src/skills` namespace; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 

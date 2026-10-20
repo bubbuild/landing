@@ -1,4 +1,4 @@
-"""Bub task sidecar: durable admission and task records in the tape database."""
+"""Durable admission and task records in Landing's SQLite database."""
 
 from __future__ import annotations
 
@@ -29,9 +29,7 @@ class NotFoundError(KeyError):
 
 
 class Tasks:
-    """Sidecar provider owning the relational format, not a second execution engine."""
-
-    name = "tasks"
+    """Store accepted requests, results, and action history."""
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine

@@ -5,7 +5,7 @@ from pathlib import Path
 from bub import config
 from bub.builtin.settings import AgentSettings
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from landing.models import Mode
 
@@ -28,29 +28,8 @@ class ConfigurationFile(BaseSettings):
     )
 
 
-class FileSettings(BaseSettings):
-    """Read component settings from Landing's configuration file."""
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            env_settings,
-            dotenv_settings,
-            init_settings,
-            YamlConfigSettingsSource(settings_cls, yaml_file=ConfigurationFile().config_file.expanduser()),
-            file_secret_settings,
-        )
-
-
 @config()
-class Settings(FileSettings, AgentSettings):
+class Settings(AgentSettings):
     """Configure Bub's model policy using Landing's settings."""
 
     model_config = SettingsConfigDict(
