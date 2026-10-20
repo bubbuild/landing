@@ -1,11 +1,48 @@
-"""Exercise the real Bub SDK; replace only the external model request."""
+"""Exercise Bub and Republic; replace only the provider's HTTP transport."""
 
+import json
 import os
 from collections import deque
+from contextlib import asynccontextmanager
+from typing import Any
 
+import httpx2
 import pytest
-from any_llm.types.completion import ChatCompletion
-from bub.builtin.model_runner import ModelRunner
+import republic
+from pydantic import BaseModel
+
+from tests.provider import event_stream
+
+
+class Function(BaseModel):
+    name: str
+    arguments: str
+
+
+class ToolCall(BaseModel):
+    id: str = "call-1"
+    type: str = "function"
+    function: Function
+
+
+class Message(BaseModel):
+    role: str = "assistant"
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+
+
+class Choice(BaseModel):
+    index: int = 0
+    finish_reason: str
+    message: Message
+
+
+class Completion(BaseModel):
+    id: str = "completion-1"
+    object: str = "chat.completion"
+    created: int = 0
+    model: str = "test-model"
+    choices: list[Choice]
 
 
 @pytest.fixture(autouse=True)
@@ -19,20 +56,10 @@ def local_cli_environment(monkeypatch, tmp_path):
 
 
 def completion(text=None, *, tool=None, arguments=None):
-    message = {"role": "assistant", "content": text}
+    message = Message(content=text)
     if tool:
-        import json
-
-        message["tool_calls"] = [
-            {"id": "call-1", "type": "function", "function": {"name": tool, "arguments": json.dumps(arguments or {})}}
-        ]
-    return ChatCompletion.model_validate({
-        "id": "completion-1",
-        "object": "chat.completion",
-        "created": 0,
-        "model": "test-model",
-        "choices": [{"index": 0, "finish_reason": "tool_calls" if tool else "stop", "message": message}],
-    })
+        message.tool_calls = [ToolCall(function=Function(name=tool, arguments=json.dumps(arguments or {})))]
+    return Completion(choices=[Choice(finish_reason="tool_calls" if tool else "stop", message=message)])
 
 
 @pytest.fixture
@@ -40,15 +67,24 @@ def model(monkeypatch):
     responses = deque()
     requests = []
     monkeypatch.setenv("LANDING_MODEL", "openai:test-model")
+    get_model = republic.get_model
 
-    async def complete(self, **kwargs):
-        requests.append(kwargs)
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
         response = responses.popleft()
         if isinstance(response, Exception):
             raise response
         if callable(response):
-            return await response(**kwargs)
-        return response
+            response = await response(**body)
+        return httpx2.Response(200, headers={"Content-Type": "text/event-stream"}, text=event_stream(response))
 
-    monkeypatch.setattr(ModelRunner, "completion_response", complete)
+    @asynccontextmanager
+    async def configured_model(spec, **kwargs):
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+            options: dict[str, Any] = {**kwargs, "api_format": "chat", "api_key": "test-key", "http_client": client}
+            async with get_model(spec, **options) as selected:
+                yield selected
+
+    monkeypatch.setattr(republic, "get_model", configured_model)
     return responses, requests

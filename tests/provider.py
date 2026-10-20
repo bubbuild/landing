@@ -7,6 +7,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 
+def event_stream(completion):
+    response = completion.model_dump()
+    choice = response["choices"][0]
+    delta = {key: value for key, value in choice["message"].items() if value is not None}
+    for index, tool in enumerate(delta.get("tool_calls", [])):
+        tool["index"] = index
+    chunks = []
+    for content, finish in ((delta, None), ({}, choice["finish_reason"])):
+        chunk = {
+            "id": response["id"],
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{"index": 0, "delta": content, "finish_reason": finish}],
+        }
+        chunks.append("data: " + json.dumps(chunk) + "\n\n")
+    return "".join(chunks) + "data: [DONE]\n\n"
+
+
 @contextmanager
 def provider(responses, *, authorization=None):
     pending = deque(responses)
@@ -18,24 +37,11 @@ def provider(responses, *, authorization=None):
                 authorization.append(self.headers.get("Authorization"))
             requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
             response = pending.popleft()
-            response = (response(requests[-1]) if callable(response) else response).model_dump()
-            choice = response["choices"][0]
-            delta = {key: value for key, value in choice["message"].items() if value is not None}
-            for index, tool in enumerate(delta.get("tool_calls", [])):
-                tool["index"] = index
+            response = response(requests[-1]) if callable(response) else response
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            for content, finish in ((delta, None), ({}, choice["finish_reason"])):
-                chunk = {
-                    "id": response["id"],
-                    "object": "chat.completion.chunk",
-                    "created": 0,
-                    "model": "test-model",
-                    "choices": [{"index": 0, "delta": content, "finish_reason": finish}],
-                }
-                self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
-            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.write(event_stream(response).encode())
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 -- the HTTP handler's public parameter name.
             pass

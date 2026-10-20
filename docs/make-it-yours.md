@@ -60,4 +60,4 @@ Checks execute in the task workspace. Exit status establishes pass or failure, s
 
 Supply focused evidence with `--input`, use the prepared gh CLI for [GitHub](guides/github.md), or translate another platform's events into the [HTTP contract](reference/http.md). Provider signatures belong at that translation boundary. Use a [service](guides/server.md) for shared callers.
 
-Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters, or embed the [Python API](reference/python.md). Actions and model history stay in SQLite; workspace files remain separate. Choose retention and [recovery](guides/recovery.md) for both.
+Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters. Use the CLI, GitHub integration, or [HTTP service](reference/http.md) to delegate work. For an embedded agent, use [Bub's SDK](https://bub.build/docs/build/sdk/). Actions and model history stay in SQLite; workspace files remain separate. Choose retention and [recovery](guides/recovery.md) for both.

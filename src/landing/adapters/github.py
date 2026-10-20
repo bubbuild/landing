@@ -7,15 +7,15 @@ import os
 import shutil
 import signal
 import subprocess
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 import typer
 from bub import hookimpl
-from bub.hooks.interception import ToolCallDecision
-from bub.tools import ToolContext, tool
+from bub.core.events import ToolCallDecision
+from bub.core.tools import ToolContext, tool
 from pydantic import AliasChoices, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -306,11 +306,12 @@ class Publication:
     def load_state(self):
         return {"_runtime_github_publication": self}
 
+    @hookimpl
+    def provide_tools(self):
+        return [confirm_reply]
+
     @hookimpl(specname="provide_lifespan")
     async def publication_lifespan(self):
-        tools = self.runtime.tools
-        previous = tools[confirm_reply.name]
-        tools[confirm_reply.name] = replace(confirm_reply, agent_use=True)
         loop = asyncio.get_running_loop()
         task = cast("asyncio.Task", asyncio.current_task())
         loop.add_signal_handler(signal.SIGTERM, task.cancel)
@@ -318,7 +319,6 @@ class Publication:
             yield
         finally:
             loop.remove_signal_handler(signal.SIGTERM)
-            tools[confirm_reply.name] = previous
 
     def __post_init__(self) -> None:
         if self.number:
@@ -443,7 +443,7 @@ class Publication:
                 return ToolCallDecision.deny(self.reason)
 
 
-@tool(context=True, agent_use=False)
+@tool(context=True)
 def confirm_reply(comment_id: int, *, context: ToolContext) -> str:
     """Read back a published reply at the delegated conversation or inline review thread."""
     publication = cast("Publication", context.state["_runtime_github_publication"])

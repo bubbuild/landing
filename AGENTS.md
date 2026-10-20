@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Landing delegates development work through CLI, HTTP, Python, and a GitHub Action. Explain, triage, fix, and review select four modes in one agent. SQLite stores accepted work and model history; users prepare their own execution environment and publishing identity.
+Landing delegates development work through CLI, HTTP, and a GitHub Action. Explain, triage, fix, review, and bump select task modes in one agent. SQLite stores accepted work and model history; users prepare their own execution environment and publishing identity.
 
 ## Development
 
@@ -15,7 +15,7 @@ Run affected behavior tests, for example `uv run python -m pytest tests/test_cli
 
 ## Design
 
-Read the affected contract in `docs/reference/`. Keep action semantics consistent across entry points while preserving intentional transport and delivery differences. Use one Bub 0.5.0 SDK runtime with native state, hooks, tools, and skill discovery. Declare owned tools with `@tool`, adapter commands with Typer, and component settings with Pydantic Settings. Integrations own their configuration and platform rules; the prepared environment owns extension installation.
+Read the affected contract in `docs/reference/`. Keep action semantics consistent across entry points while preserving intentional transport and delivery differences. Compose Bub 0.6 core Agent with its native AgentPlugins bridge for hooks, state, tools, and storage. Landing is an application; use Bub directly for embedding. Declare owned tools with `@tool`, adapter commands with Typer, and component settings with Pydantic Settings. Integrations own their configuration and platform rules; the prepared environment owns extension installation.
 
 Repair the owning layer. Prefer public upstream APIs, existing dependencies, and the standard library. Extract helpers only for cohesive responsibilities with matching contracts and reasons to change. Avoid forwarding wrappers, unnecessary adapter splits, and compatibility branches for unreleased intermediate designs. Preserve released public behavior and stored data unless the task authorizes a change. Keep patches focused and lockfile changes intentional.
 

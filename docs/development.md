@@ -19,31 +19,33 @@ Use `make docs` for preview. Documentation commands export the server's OpenAPI 
 
 ## Test what people observe
 
-Behavior tests cover supported CLI, HTTP, SDK, and workflow outcomes. Regression tests cover actual mistakes likely to recur. Assertions on public results, cancellation, capability selection, or comment locations can establish those contracts. Tests should survive an implementation rewrite that preserves the experience.
+Behavior tests cover supported CLI, HTTP, and workflow outcomes. Regression tests cover actual mistakes likely to recur. Assertions on public results, cancellation, capability selection, or comment locations can establish those contracts. Tests should survive an implementation rewrite that preserves the experience.
 
 Avoid tests for helper structure, internal event positions, database rows, or upstream parameter translation. Straightforward glue can be inspected and accepted through a real workflow. Add a focused counterexample for an unresolved behavior rather than testing every intermediate state or field.
 
-The suite replaces external model requests with deterministic responses while running the SDK loop, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
+The suite replaces the provider HTTP transport with deterministic responses while running Bub, Republic, tools, SQLite, checks, and local HTTP normally. GitHub tests use a platform emulator and isolate ambient identities. Fixtures isolate ambient Landing and Bub settings. Real workflow results establish downstream delivery and model quality.
 
 ## Runtime architecture
 
-CLI, HTTP, SDK, and GitHub use one Runtime, which executes tasks through Bub's SDK Agent. Entries select work and its delivery surface; the accepted SQLite request is the execution source. Each request records its selected mode; the executor restores full session state and prepares the environment. Package entry points declare bundled adapters; Landing loads only its own declarations into Bub's hook manager, which collects their Typer commands. Framework creation reads YAML; Agent configuration, resources, and model execution activate after GitHub admission. Help and history inspection start no agent. Modes apply to individual tasks rather than session state.
+Landing is an application with CLI, HTTP, and GitHub entry points. Its internal Runtime composes `bub.core.Agent` with Bub's `AgentPlugins`; Landing does not expose an embedding SDK. The pinned Bub 0.6 development revision supplies the native plugin bridge, which follows the published 0.6.0a3 preview. The `app` dependencies provide reusable hooks and tools; Landing owns its entry points and does not run Bub's message pipeline. Mode selection and accepted SQLite requests drive execution.
 
 ```text
-CLI triage / fix / review / explain ----> run --------+
-Python run / run_stream ----------------------------+--> SQLite -> execute
-HTTP POST / Python submit --> receipt --> worker ----+               |
-GitHub event --> admission --> run ------------------+       Bub Agent + checks
-                                                                    |
-                                                     result / stream / reply
+CLI / GitHub -> admission -> run -----+
+HTTP -> receipt -> background worker -+-> SQLite -> execute
+                                                     |
+                          AgentPlugins -> core.Agent + checks
+                                |                    |
+                      hooks / state / storage    result / reply
 ```
 
-HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. Every execution host consumes the same action stream; CLI and worker calls drain it to obtain the final record. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
+The CLI registers Landing commands and bundled adapter commands directly. Help and history inspection start no agent. Each execution creates a core Agent inside the plugin lifespan, restores state with `AgentPlugins.build_state()`, attaches plugin tools and interceptors, then consumes the native stream inside `Agent.run()`. Agent and tool resources close before post-edit checks and delivery verification.
+
+HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. The CLI and worker await the same owned execution task, which consumes the native Agent stream. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
 Task records and Bub tapes share one SQLite database. Bub exposes task records through a tape sidecar. Resetting a session's tape clears its model history without deleting action records.
 
 ```text
-Host starts -> Bub lifespan -> lock + SQLite recovery
+Host starts -> AgentPlugins lifespan -> lock + SQLite recovery
       |
       +--> action scopes: environment + shell + MCP
       |          |
@@ -52,15 +54,15 @@ Host starts -> Bub lifespan -> lock + SQLite recovery
 Host exits -> stop and await work -> close environments -> unlock SQLite
 ```
 
-`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. A host-provided environment applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
+`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. A `provide_environment` plugin applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
 
-Cancellation goes through the executing host. Closing an unfinished SDK stream cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
+Cancellation goes through the executing host. Interrupting a foreground invocation cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
 
 GitHub enables reply confirmation through a native hook and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. `LANDING_REPLICATE` delegates service supervision and backup recovery to Litestream, which starts the same CLI with replication disabled in its child. The container prepares its directory and executes the ordinary CLI. Help, invalid arguments, and non-service commands bypass replication.
 
 ## Instructions and skills
 
-`LandingHooks` supplies task guidance, state, and storage alongside host hooks. Each task constructs a native SDK Agent with its tools, skill roots, and shared SQLite store; tape context and tool interception reuse Bub defaults. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path. Bub appends native tool and skill guidance. Stable prefixes help cache reuse, subject to the provider and available capabilities.
+`LandingHooks` supplies task guidance, state, storage, and explicit `provide_tools` declarations. Native `AgentPlugins` connects these hooks to the Agent's EventBus, including interception, continuation, and steering. The task skill tool uses Bub's discovery and rendering with Landing's mode selection; Bub's app-specific skill and subagent tools require `BubAgent` and are not provided. Native filesystem, shell, web, tape, and spill tools are reused directly. The system prompt places common behavior, the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path, followed by the selected skill index.
 
 Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in the native `src/skills` namespace; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 

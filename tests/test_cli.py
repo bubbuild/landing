@@ -5,11 +5,9 @@ import subprocess
 import sys
 
 import pytest
-from bub import BubFramework
 from typer.testing import CliRunner
 
 from landing.cli import create_cli_app, main
-from landing.runtime import Runtime
 from tests.conftest import completion
 
 
@@ -153,8 +151,7 @@ def test_captured_help_and_diagnostics_remain_plain_in_ci(arguments, status):
         assert "--help" in result.stdout
 
 
-@pytest.mark.parametrize("native_host", [False, True])
-def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, native_host):
+def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch):
     responses, _ = model
     caller = tmp_path / "caller"
     candidate = tmp_path / "candidate"
@@ -167,9 +164,9 @@ def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkey
         completion("Wrote and checked the candidate's answer."),
     ])
     database = tmp_path / "landing.sqlite3"
-    app = Runtime(database, framework=BubFramework()).framework.create_cli_app() if native_host else create_cli_app()
-    options = ["--workspace", str(candidate)] if native_host else ["--db", str(database)]
-    workspace = [] if native_host else ["--workspace", str(candidate)]
+    app = create_cli_app()
+    options = ["--db", str(database)]
+    workspace = ["--workspace", str(candidate)]
     runner = CliRunner()
     result = runner.invoke(app, [*options, "fix", "Write the answer.", *workspace, "--json"])
     assert result.exit_code == 0, result.output
@@ -252,6 +249,5 @@ def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tm
     assert action["decision"] is None
     assert main(["--db", database, "action", "logs", action["id"]]) == 0
     diagnostic = capsys.readouterr().out
-    assert "json_invalid" in diagnostic
-    assert "bash" in diagnostic
+    assert "Expected a function tool call with JSON object arguments" in diagnostic
     assert "sensitive-task-value" not in diagnostic

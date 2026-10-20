@@ -9,21 +9,19 @@ import os
 import shlex
 import sys
 import time
-from importlib.metadata import version
+from importlib.metadata import distribution, version
 from pathlib import Path
 from typing import Annotated, cast
 
 import typer
-from bub import BubFramework
 from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
 from landing.database import open_database, own_database
-from landing.hooks import LandingHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
-from landing.settings import ConfigurationFile, FileSettings
+from landing.settings import FileSettings
 from landing.tasks import NotFoundError, Tasks
 
 DEFAULT_DATABASE = Path("~/.local/share/landing/landing.sqlite3")
@@ -70,19 +68,10 @@ def execution_settings(ctx: typer.Context) -> ExecutionSettings:
     return ExecutionSettings(**{name: value for name, value in parameters.items() if value is not None})
 
 
-def host_runtime(ctx: typer.Context) -> Runtime | None:
-    if (framework := ctx.find_object(BubFramework)) and isinstance(
-        hooks := framework.plugin_manager.get_plugin("landing"), LandingHooks
-    ):
-        return getattr(hooks, "runtime", None)
-    return None
-
-
 def execution_runtime(ctx: typer.Context, settings: ExecutionSettings, *, database: Path | None = None) -> Runtime:
-    return host_runtime(ctx) or Runtime(
+    return Runtime(
         database or settings.db or DEFAULT_DATABASE,
         skill_dirs=ctx.find_root().params.get("skill_dir") or (),
-        framework=ctx.find_object(BubFramework),
     )
 
 
@@ -105,17 +94,26 @@ def configure(
 
 
 def create_cli_app() -> typer.Typer:
-    framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-    framework.plugin_manager.register(LandingHooks(framework), name="landing")
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",
         callback=configure,
         no_args_is_help=True,
         rich_markup_mode=None,
-        context_settings={"obj": framework, "help_option_names": ["-h", "--help"]},
+        context_settings={"help_option_names": ["-h", "--help"]},
     )
-    framework.plugin_manager.hook.register_cli_commands(app=app)
+    for name, help_text in {
+        "triage": "Identify a problem and its acceptance criteria.",
+        "fix": "Repair the delegated problem and validate changes.",
+        "bump": "Update the requested dependencies and validate changes.",
+        "review": "Evaluate a candidate against independent evidence.",
+        "explain": "Explain the supplied question or evidence.",
+    }.items():
+        app.command(name=name, cls=Command, help=help_text)(delegate)
+    app.add_typer(actions, name="action")
+    app.command(cls=Command)(serve)
+    for entry in distribution("landing").entry_points.select(group="landing.adapters"):
+        entry.load().register_cli_commands(app)
     return app
 
 
@@ -191,8 +189,6 @@ def delegate(
 
 
 def action_database(ctx: typer.Context) -> Path:
-    if runtime := host_runtime(ctx):
-        return runtime.path
     return (execution_settings(ctx).db or DEFAULT_DATABASE).expanduser()
 
 
@@ -275,8 +271,7 @@ def serve(
     if host not in {"127.0.0.1", "localhost", "::1"} and not settings.token:
         message = "Set LANDING_TOKEN before listening beyond localhost."
         raise ValueError(message)
-    embedded = host_runtime(ctx)
-    runtime = embedded or execution_runtime(ctx, settings)
+    runtime = execution_runtime(ctx, settings)
     workspaces = dict(runtime.workspaces or {"default": runtime.framework.workspace})
     for value in workspace or []:
         name, separator, path = value.partition("=")
@@ -292,9 +287,6 @@ def serve(
         github_repository=settings.github_repository,
     )
     if settings.replicate:
-        if embedded:
-            message = "Use an external supervisor for an existing SDK host."
-            raise ValueError(message)
         command = [sys.executable, "-m", "landing", "--github-repository", settings.github_repository or ""]
         command.extend(["serve", "--host", host, "--port", str(port)])
         for name, path in workspaces.items():

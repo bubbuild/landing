@@ -7,7 +7,7 @@ import hashlib
 import json
 from uuid import uuid4
 
-from bub.tape import utc_now
+from bub.core.tape import utc_now
 from sqlalchemy import Connection, Engine, RowMapping
 
 from landing.models import TERMINAL, Action, ActionRequest, Decision, Event, Status
@@ -25,7 +25,7 @@ class ConflictError(ValueError):
 
 
 class NotFoundError(KeyError):
-    """The requested action does not exist; still a KeyError for existing SDK callers."""
+    """The requested action does not exist."""
 
 
 class Tasks:

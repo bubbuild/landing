@@ -1,4 +1,4 @@
-"""Prepared MCP tools through the public CLI, SDK, and task lifecycle."""
+"""Prepared MCP tools through the public CLI and task lifecycle."""
 
 import asyncio
 import json
@@ -7,13 +7,11 @@ import sys
 
 import bub
 import pytest
-from bub import BubFramework
 
 from landing.cli import main
 from landing.models import ActionRequest
 from landing.runtime import Runtime
 from tests.conftest import completion
-from tests.test_sdk import output
 
 
 @pytest.fixture
@@ -53,7 +51,7 @@ server.run(show_banner=False)
     return home, configure
 
 
-@pytest.mark.parametrize("source", ["project", "user", "bub", "explicit", "bub-env", "yaml"])
+@pytest.mark.parametrize("source", ["project", "user", "bub", "explicit", "yaml"])
 def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkeypatch, capfd, source):
     home, configure = mcp_server
     workspace = tmp_path / "project"
@@ -64,14 +62,14 @@ def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkey
         configure(home / ".agents/mcp.json", receipts["user"])
     if source not in {"bub", "user"}:
         configure(workspace / ".agents/mcp.json", receipts["project"])
-    if source in {"explicit", "bub-env", "yaml"}:
+    if source in {"explicit", "yaml"}:
         configure(workspace / "custom.json", receipts["explicit"])
         if source == "yaml":
             settings = tmp_path / "settings.yml"
             settings.write_text("mcp_config: custom.json\n")
             monkeypatch.setenv("LANDING_CONFIG", str(settings))
         else:
-            monkeypatch.setenv("LANDING_MCP_CONFIG" if source == "explicit" else "BUB_MCP_CONFIG_PATH", "custom.json")
+            monkeypatch.setenv("LANDING_MCP_CONFIG", "custom.json")
     responses, _ = model
     responses.extend([
         completion(tool="mcp_evidence_record", arguments={"text": "candidate"}),
@@ -90,41 +88,33 @@ def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkey
         == 0
     )
     assert json.loads(capfd.readouterr().out)["result"] == "Recorded candidate."
-    expected = "explicit" if source in {"explicit", "bub-env", "yaml"} else source
+    expected = "explicit" if source in {"explicit", "yaml"} else source
     assert json.loads(receipts[expected].read_text())["text"] == "candidate"
     assert all(not receipt.exists() for name, receipt in receipts.items() if name != expected)
 
 
-@pytest.mark.parametrize("source", ["framework", "project"])
-def test_mcp_tools_follow_mode_and_caller_permissions(tmp_path, mcp_server, model, monkeypatch, source):
+@pytest.mark.parametrize("source", ["config", "project"])
+def test_mcp_tools_follow_mode_permissions(tmp_path, mcp_server, model, monkeypatch, source):
     _, configure = mcp_server
     receipt = tmp_path / "record.txt"
     selected = tmp_path / ".agents/mcp.json" if source == "project" else tmp_path / "custom.json"
     configure(selected, receipt)
+    if source == "config":
+        settings = tmp_path / "landing.yml"
+        settings.write_text(json.dumps({"mcp_config": str(selected)}))
+        monkeypatch.setenv("LANDING_CONFIG", str(settings))
     monkeypatch.setenv(
         "LANDING_MODES", '{"explainer":{"allowed_tools":[]},"fixer":{"allowed_tools":["mcp.evidence_record"]}}'
     )
     responses, _ = model
-    for text in ("denied", "allowed", "caller-denied"):
-        responses.extend([
-            completion(tool="mcp_evidence_record", arguments={"text": text}),
-            completion(text),
-        ])
+    for text in ("denied", "allowed"):
+        responses.extend([completion(tool="mcp_evidence_record", arguments={"text": text}), completion(text)])
 
     async def run():
-        settings = tmp_path / "host.yml"
-        settings.write_text(json.dumps({"mcp_config": str(selected)}))
-        framework = BubFramework(config_file=settings) if source == "framework" else BubFramework()
-        framework.workspace = tmp_path
-        async with Runtime(tmp_path / "landing.sqlite3", framework=framework).running() as landing:
-            for command, mode in (("explain", "explainer"), ("fix", "fixer")):
-                prompt = "Record evidence."
-                await output(await landing.run_stream(session_id=command, prompt=prompt, mode=mode))
-            await output(
-                await landing.run_stream(
-                    session_id="limited", prompt="Record evidence.", mode="fixer", allowed_tools=[]
-                )
-            )
+        async with Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}).running() as landing:
+            for mode in ("explainer", "fixer"):
+                action = await landing.run(ActionRequest(mode=mode, instruction="Record evidence."))
+                assert action.status == "completed"
         assert [json.loads(line)["text"] for line in receipt.read_text().splitlines()] == ["allowed"]
 
     asyncio.run(run())
@@ -165,9 +155,7 @@ def test_cancellation_closes_mcp_subprocess(tmp_path, mcp_server, model):
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             landing.framework.workspace = tmp_path
-            consumer = asyncio.create_task(
-                output(await landing.run_stream(session_id="pending", prompt="Record evidence."))
-            )
+            consumer = asyncio.create_task(landing.run(ActionRequest(mode="explainer", instruction="Record evidence.")))
             # The server creates the receipt before writing its line; wait for the complete record.
             async with asyncio.timeout(15):
                 while not receipt.exists() or not receipt.read_text().endswith("\n"):
