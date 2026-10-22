@@ -1,63 +1,53 @@
 """Bub hooks supply Landing task guidance, state, and storage."""
 
 import asyncio
-from dataclasses import replace
-from importlib.metadata import distribution
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bub import hookimpl
-from bub.builtin.hook_impl import BuiltinImpl
+from bub import hookimpl, tool
 from bub.builtin.settings import load_session_settings
+from bub.builtin.spill import SPILL_READ_MODEL_NAME, SPILL_SIDECAR_NAME, SpillStore
+from bub.core.events import LLMCallDecision, ToolCall, ToolCallResult
+from bub.core.tape import session_tape_name
+from bub.core.tools import ToolContext, content_result, result_content
 from bub.envelope import field_of
-from bub.hooks.interception import LlmCallDecision
-from bub.skills import discover_skills
-from bub.utils import workspace_from_state
+from bub.errors import BubError
+from bub.turn import TurnState
 
 from landing.database import open_database, own_database
-from landing.prompts import COMMON, SYSTEM, render
-from landing.settings import ModeSettings
 
 if TYPE_CHECKING:
     from landing.runtime import Runtime
 
 
+@tool(context=True, name="skill")
+def skill(name: str | None = None, *, context: ToolContext) -> dict:
+    """List the task's selected skills, or read one skill's instructions."""
+    skills = context.state.get("landing_skills", {})
+    if name is None:
+        return {"skills": list(skills)}
+    if selected := skills.get(name.casefold()):
+        return {"name": selected.name, "location": str(selected.location), "content": selected.body()}
+    return {"error": f"skill '{name}' is unavailable in this task"}
+
+
 class LandingHooks:
-    """Compose selected native hooks with Landing business hooks."""
+    """Supply Landing policy and resources through native agent hooks."""
 
-    runtime: "Runtime"
-
-    def __init__(self, framework) -> None:
-        self.framework = framework
-        defaults = BuiltinImpl(framework)
-        # Reuse native tape context and tool interception without a message host.
-        self.provide_tape_sidecar = defaults.provide_tape_sidecar
-        self.build_tape_context = defaults.build_tape_context
-        self.before_tool_call = defaults.before_tool_call
-        self.after_tool_call = defaults.after_tool_call
-        for entry in distribution("landing").entry_points.select(group="landing.adapters"):
-            framework.plugin_manager.register(entry.load(), name=entry.name)
+    def __init__(self, runtime: "Runtime") -> None:
+        self.runtime = runtime
 
     @hookimpl
-    def register_cli_commands(self, app):
-        from landing import cli
-
-        for name, help_text in {
-            "triage": "Identify a problem and its acceptance criteria.",
-            "fix": "Repair the delegated problem and validate changes.",
-            "bump": "Update the requested dependencies and validate changes.",
-            "review": "Evaluate a candidate against independent evidence.",
-            "explain": "Explain the supplied question or evidence.",
-        }.items():
-            app.command(name=name, cls=cli.Command, help=help_text)(cli.delegate)
-        app.add_typer(cli.actions, name="action")
-        app.command(cls=cli.Command)(cli.serve)
+    def provide_tools(self):
+        return self.runtime.tools
 
     @hookimpl
     async def load_state(self, message, session_id):
-        workspace = Path(field_of(message, "_runtime_workspace", self.framework.workspace)).expanduser().resolve()
+        workspace = (
+            Path(field_of(message, "_runtime_workspace", self.runtime.framework.workspace)).expanduser().resolve()
+        )
         agent = field_of(message, "_runtime_agent")
-        tape = agent.tape.session_tape(session_id, workspace)
+        tape = agent.tape(session_tape_name(session_id, workspace))
         return {
             "session_id": session_id,
             "_runtime_agent": agent,
@@ -66,68 +56,44 @@ class LandingHooks:
         }
 
     @hookimpl
-    def system_prompt(self, prompt, state) -> str:
-        workspace = workspace_from_state(state)
-        selected = state.get("landing_mode", "explainer")
-        allowed = state.get("allowed_skills")
-        skill = next(
-            (
-                item
-                for item in discover_skills(workspace, skill_dirs=state["_runtime_agent"].skill_dirs)
-                if item.name == f"landing-{selected}" and (allowed is None or item.name in allowed)
-            ),
-            None,
-        )
-        repository = workspace / "AGENTS.md"
-        try:
-            instructions = repository.read_text(encoding="utf-8").strip()
-        except OSError:
-            instructions = ""
-        return render(
-            SYSTEM,
-            common=COMMON,
-            selected=selected,
-            mode=skill.body() if skill else "",
-            instructions=self.runtime.settings.modes.get(selected, ModeSettings()).instructions,
-            workspace=workspace,
-            repository=instructions,
-        )
-
-    @hookimpl
     def before_llm_call(self, request, state):
         if not state.get("landing_tool_failed") and (reason := state.get("landing_no_update")):
-            return LlmCallDecision.finish(reason)
-        messages = []
-        for message in request.messages:
-            content = message.get("content")
-            if (
-                isinstance(content, list)
-                and content
-                and all(
-                    isinstance(part, dict)
-                    and set(part) == {"type", "text"}
-                    and part["type"] == "text"
-                    and isinstance(part["text"], str)
-                    for part in content
-                )
-            ):
-                message = {**message, "content": "".join(part["text"] for part in content)}
-            messages.append(message)
-        return replace(request, messages=messages)
+            return LLMCallDecision.finish(reason)
 
-    @hookimpl(specname="after_tool_call")
-    def observe_tool_result(self, call, result, state) -> None:
+    @hookimpl(trylast=True)
+    async def after_tool_call(self, call: ToolCall, result: ToolCallResult, state: TurnState) -> None:
         if result.error is not None:
             state["landing_tool_failed"] = True
+        context = call.context
+        if context is None or context.code_mode or context.command:
+            return
+        # Only spill when the model can read the stored output back.
+        if SPILL_READ_MODEL_NAME not in state.get("_runtime_tool_names", ()):
+            return
+        if result.error is None:
+            value = result.result
+        elif isinstance(result.error, BubError):
+            value = result.error.as_dict() if result.result is None else result.result
+        else:
+            return
+
+        spill = context.tape.get_sidecar(SPILL_SIDECAR_NAME)
+        if not isinstance(spill, SpillStore):
+            return
+        content = result_content(value)
+        text = "".join(part for part in content if isinstance(part, str))
+        bounded = await spill.spill_tool_result(context.tape, text, tool=call.tool, run_id=call.run_id)
+        if bounded != text:
+            media = [part for part in content if not isinstance(part, str)]
+            result.result = content_result([bounded, *media]) if media else bounded
 
     @hookimpl
     def after_llm_call(self, request, result, state) -> None:
-        # The SDK calls this before parsing tool arguments. Retain metadata, never their contents.
+        # Failure diagnostics retain call metadata without tool arguments.
         state["landing_llm_call"] = {
             "run_id": result.run_id,
             "tools": [
-                name if (name := call.get("function", {}).get("name")) in request.tool_names else "unknown"
-                for call in result.tool_calls
+                name if (name := call.get("name")) in request.tool_names else "unknown" for call in result.tool_calls
             ],
         }
 
@@ -144,5 +110,5 @@ class LandingHooks:
         return self.runtime.tape_store
 
     @hookimpl(specname="provide_tape_sidecar")
-    def task_sidecar(self):
-        return self.runtime.tasks
+    def spill_sidecar(self):
+        return self.runtime.spill_store

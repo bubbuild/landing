@@ -13,7 +13,7 @@ Set `LANDING_*` variables or save YAML in `~/.landing/config.yml`. `LANDING_CONF
 | `LANDING_API_BASE` | Optional endpoint; unset uses the provider default. |
 | `LANDING_MODEL_TIMEOUT_SECONDS` | Model request timeout in seconds. |
 | `LANDING_COMPLETION_ARGS` | Provider completion options as a JSON object. |
-| `LANDING_CLIENT_ARGS` | Provider client options as a JSON object, such as `{"max_retries": 0}`. |
+| `LANDING_CLIENT_ARGS` | Provider client options as a JSON object, such as `{"api_format": "chat"}`. |
 | `LANDING_MAX_TOKENS` | Maximum generated tokens, default 16384. |
 | `LANDING_FALLBACK_MODELS` | Fallback identifiers as a JSON list. |
 | `LANDING_CONFIG` | YAML settings path. |
@@ -32,7 +32,7 @@ completion_args:
   temperature: 0.2
 ```
 
-Precedence is environment, Landing YAML, existing Bub YAML, legacy provider-specific environment, then defaults. Corresponding `BUB_*` aliases remain supported; `LANDING_*` wins when both are present. Missing YAML values fall back to `~/.bub/config.yml`. Provider-specific aliases such as `BUB_OPENAI_API_KEY` and `BUB_OPENAI_API_BASE` are lower-priority fallbacks.
+Precedence is environment, Landing YAML, then defaults. Bub loads Landing's YAML and resolves registered component settings. Configure provider protocols and clients through Republic options in `client_args`; for a Chat Completions endpoint, use `api_format: chat`. Model clients use Bub's native provider credential resolution when explicit credentials are absent.
 
 ## Skills
 
@@ -42,7 +42,7 @@ Precedence is environment, Landing YAML, existing Bub YAML, legacy provider-spec
 | `LANDING_SKILL_DIRS` | The same roots as a JSON list. |
 | Global `--skill-dir PATH` | Repeatable per-call or server roots. |
 
-Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, `~/.agents/skills`, then bundled skills. Explicit roots add to configured roots; duplicate skill names select the earlier root. Existing `BUB_SKILL_DIRS` is a fallback alias. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
+Discovery precedence is workspace `.agents/skills`, explicit roots, configured roots, `~/.agents/skills`, then bundled skills. Explicit roots add to configured roots; duplicate skill names select the earlier root. Prepare roots on the executing host; remote clients cannot supply local directories. See [Prepare skills](../make-it-yours.md#prepare-skills).
 
 ## Mode capabilities
 
@@ -72,20 +72,20 @@ modes:
 Same-named skill overrides resolve before filtering. Capabilities follow this rule:
 
 ```text
-Available capabilities ∩ Mode allow list ∩ Per-call allow list − Mode exclusions
+Available capabilities ∩ Mode allow list − Mode exclusions
 ```
 
-Omitted or `null` allow lists are unrestricted; `[]` disables the collection. Exclusions default to empty lists and win over allow lists. Tool lists accept native names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive. Per-call SDK limits can narrow mode settings but cannot expand them.
+Omitted or `null` allow lists are unrestricted; `[]` disables the collection. Exclusions default to empty lists and win over allow lists. Tool lists accept native names or aliases such as `fs.read` and `fs_read`; skill names are case-insensitive.
 
 Each mode automatically uses its permitted `landing-{mode}` skill. Include that name in allow lists to retain its method. Excluding it disables the method while preserving the mode, checks, and publication requirements. A same-named skill in a higher-priority root replaces it. Allowing a skill grants no tools.
 
 Include `skill` to load supplementary skills, `spill.read` for oversized output, `decide` for review recommendations, and `no_update` for quiet issuer completion. GitHub publication normally requires `bash` and authenticated gh; inline replies also require `confirm_reply`.
 
-Filters control method loading and model tool calls across entry points. They do not grant publishing authority, isolate the filesystem, disable required checks, or erase history. Excluded skills may appear in the listing but cannot load. Enforce permissions and isolation in tools and the execution environment.
+Filters control method loading and model tool calls across entry points. They do not grant publishing authority, isolate the filesystem, disable required checks, or erase history. Excluded skills are omitted from the task's skill listing. Enforce permissions and isolation in tools and the execution environment.
 
 ## MCP servers
 
-`LANDING_MCP_CONFIG` or YAML `mcp_config` selects a trusted `mcp.json` file; relative paths resolve from the task workspace. `BUB_MCP_CONFIG_PATH` is a fallback environment alias. An explicit missing file fails the task. Without an explicit path, Landing selects the first existing workspace `.agents/mcp.json`, user `~/.agents/mcp.json`, or native bub-mcp configuration path (normally `~/.bub/mcp.json`). Files replace one another rather than merging; an empty `mcpServers` mapping disables servers. Missing default files leave MCP disabled.
+`LANDING_MCP_CONFIG` or YAML `mcp_config` selects a trusted `mcp.json` file; relative paths resolve from the task workspace. An explicit missing file fails the task. Without an explicit path, Landing selects the first existing workspace `.agents/mcp.json`, user `~/.agents/mcp.json`, or native bub-mcp configuration path (normally `~/.bub/mcp.json`). Files replace one another rather than merging; an empty `mcpServers` mapping disables servers. Missing default files leave MCP disabled.
 
 ```json
 {
@@ -100,7 +100,7 @@ Filters control method loading and model tool calls across entry points. They do
 
 Use the `mcpServers` JSON format shown above. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
 
-Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `allowed_tools` and per-call limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
+Discovered tools use names such as `mcp.playwright_browser_navigate`. Mode tool limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
 
 ## Execution and service
 
@@ -110,11 +110,11 @@ Discovered tools use names such as `mcp.playwright_browser_navigate`. Existing `
 | `LANDING_TOKEN` | Server bearer token; required to listen beyond localhost. |
 | `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. |
 | `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
-| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. `BASE_URL` remains an alias. |
+| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. |
 
-CLI and service settings read their own fields from environment, Landing YAML and existing Bub YAML. YAML keys are `db`, `token`, `replicate`, `github_repository` and `base_url`. CLI options override corresponding settings. SDK calls do not validate CLI settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
+CLI and service settings read their own fields from environment and Landing YAML. YAML keys are `db`, `token`, `replicate`, `github_repository` and `base_url`. CLI options override corresponding settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
 
-Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`. Set `LANDING_REPLICATE=false` when an SDK host supplies the Runtime, and supervise that application externally.
+Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`.
 
 ## GitHub workflows and runner
 

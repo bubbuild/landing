@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from bub.store import InMemoryQueryMixin
-from bub.tape import TapeEntry
+from bub.core.store import InMemoryQueryMixin
+from bub.core.tape import TapeEntry
 from sqlalchemy import Engine
 
 

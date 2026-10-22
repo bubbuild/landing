@@ -6,17 +6,14 @@ from pathlib import Path
 
 from bub import Settings as BubSettings
 from bub import config, ensure_config
-from bub.builtin.agent import Agent
+from bub.core import Agent
 from bub_mcp.config import MCPSettings, read_config
 from bub_mcp.plugin import MCPChannel
-from pydantic import AliasChoices, Field
 from pydantic_settings import SettingsConfigDict
-
-from landing.settings import FileSettings
 
 
 @config()
-class MCPConfiguration(FileSettings, BubSettings):
+class MCPConfiguration(BubSettings):
     """Own the flat file-selection setting; bub-mcp owns the mcp section."""
 
     model_config = SettingsConfigDict(
@@ -25,10 +22,9 @@ class MCPConfiguration(FileSettings, BubSettings):
         populate_by_name=True,
         extra="ignore",
         hide_input_in_errors=True,
+        env_prefix="LANDING_",
     )
-    mcp_config: Path | None = Field(
-        default=None, validation_alias=AliasChoices("LANDING_MCP_CONFIG", "BUB_MCP_CONFIG_PATH")
-    )
+    mcp_config: Path | None = None
 
 
 def configuration(workspace: Path) -> Path:

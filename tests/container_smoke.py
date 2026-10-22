@@ -74,7 +74,7 @@ def service(engine, image, name, storage, replica, *, replica_path=None):
         "--env",
         "LANDING_MODEL_TIMEOUT_SECONDS=3",
         "--env",
-        "BASE_URL=https://landing.example.test",
+        "LANDING_BASE_URL=https://landing.example.test",
         *network,
         image,
     )
@@ -187,12 +187,12 @@ def verify(engine, image):
             )
             assert action["status"] == "interrupted"
             history_query = (
-                "import asyncio\nfrom pathlib import Path\nfrom bub.builtin.context import default_tape_context\n"
-                "from bub.store import AsyncTapeStoreAdapter\nfrom bub.tape import Tape\n"
+                "import asyncio\nfrom pathlib import Path\nfrom bub.core.context import default_tape_context\n"
+                "from bub.core.store import AsyncTapeStoreAdapter\nfrom bub.core.tape import Tape\n"
                 "from landing.database import open_database\n"
                 "from landing.store import SQLiteTapeStore\n"
                 "with open_database(Path('/storage/landing.sqlite3')) as database:\n"
-                "    reader = Tape(Path('/storage/tapes'), AsyncTapeStoreAdapter(SQLiteTapeStore(database)), default_tape_context())\n"
+                "    reader = Tape(AsyncTapeStoreAdapter(SQLiteTapeStore(database)), default_tape_context())\n"
                 f"    tape = reader.session_tape({explained.json()['id']!r}, Path('/storage/workspace'))\n"
                 "    print(bool(asyncio.run(tape.store.fetch_all(tape.query().query('Explain the test failure.')))))"
             )

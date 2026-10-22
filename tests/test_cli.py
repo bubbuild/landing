@@ -1,16 +1,45 @@
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 
 import pytest
-from bub import BubFramework
 from typer.testing import CliRunner
 
 from landing.cli import create_cli_app, main
-from landing.runtime import Runtime
 from tests.conftest import completion
+
+
+@pytest.mark.parametrize("spill_reads", [True, False])
+def test_explain_can_use_evidence_in_a_large_file(tmp_path, model, monkeypatch, capsys, spill_reads):
+    (tmp_path / "report.txt").write_text("log entry\n" * 2000 + "reference=approved\n" + "log entry\n" * 2000)
+    if not spill_reads:
+        monkeypatch.setenv("LANDING_MODES", '{"explainer":{"excluded_tools":["spill.read"]}}')
+
+    async def inspect(**kwargs):
+        evidence = str(kwargs["messages"])
+        if "reference=approved" in evidence:
+            return completion("Deployment reference: approved")
+        if handle := re.search(r"handle: ([a-f0-9]+)", evidence):
+            return completion(tool="spill_read", arguments={"handle": handle[1], "count": 4})
+        return completion("The deployment reference is missing.")
+
+    responses, _ = model
+    responses.extend([completion(tool="fs_read", arguments={"path": "report.txt"}), inspect, inspect])
+    assert (
+        main([
+            "--db",
+            str(tmp_path / "landing.sqlite3"),
+            "explain",
+            "Identify the deployment reference in report.txt.",
+            "--workspace",
+            str(tmp_path),
+        ])
+        == 0
+    )
+    assert capsys.readouterr().out.strip() == "Deployment reference: approved"
 
 
 @pytest.mark.parametrize(
@@ -153,8 +182,7 @@ def test_captured_help_and_diagnostics_remain_plain_in_ci(arguments, status):
         assert "--help" in result.stdout
 
 
-@pytest.mark.parametrize("native_host", [False, True])
-def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch, native_host):
+def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkeypatch):
     responses, _ = model
     caller = tmp_path / "caller"
     candidate = tmp_path / "candidate"
@@ -167,9 +195,9 @@ def test_fix_uses_selected_workspace_for_files_and_shell(tmp_path, model, monkey
         completion("Wrote and checked the candidate's answer."),
     ])
     database = tmp_path / "landing.sqlite3"
-    app = Runtime(database, framework=BubFramework()).framework.create_cli_app() if native_host else create_cli_app()
-    options = ["--workspace", str(candidate)] if native_host else ["--db", str(database)]
-    workspace = [] if native_host else ["--workspace", str(candidate)]
+    app = create_cli_app()
+    options = ["--db", str(database)]
+    workspace = ["--workspace", str(candidate)]
     runner = CliRunner()
     result = runner.invoke(app, [*options, "fix", "Write the answer.", *workspace, "--json"])
     assert result.exit_code == 0, result.output
@@ -252,6 +280,5 @@ def test_malformed_tool_call_leaves_inspectable_diagnostics_without_arguments(tm
     assert action["decision"] is None
     assert main(["--db", database, "action", "logs", action["id"]]) == 0
     diagnostic = capsys.readouterr().out
-    assert "json_invalid" in diagnostic
-    assert "bash" in diagnostic
+    assert "Expected a function tool call with JSON object arguments" in diagnostic
     assert "sensitive-task-value" not in diagnostic

@@ -1,4 +1,4 @@
-"""Bub task sidecar: durable admission and task records in the tape database."""
+"""Durable admission and task records in Landing's SQLite database."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import hashlib
 import json
 from uuid import uuid4
 
-from bub.tape import utc_now
+from bub.core.tape import utc_now
 from sqlalchemy import Connection, Engine, RowMapping
 
 from landing.models import TERMINAL, Action, ActionRequest, Decision, Event, Status
@@ -25,13 +25,11 @@ class ConflictError(ValueError):
 
 
 class NotFoundError(KeyError):
-    """The requested action does not exist; still a KeyError for existing SDK callers."""
+    """The requested action does not exist."""
 
 
 class Tasks:
-    """Sidecar provider owning the relational format, not a second execution engine."""
-
-    name = "tasks"
+    """Store accepted requests, results, and action history."""
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine

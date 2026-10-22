@@ -66,7 +66,7 @@ def create_app(  # noqa: C901 -- route definitions share an application lifespan
         or public_url.fragment
         or public_url.path not in {"", "/"}
     ):
-        message = "BASE_URL must be an HTTP(S) origin without credentials, a path, query, or fragment."
+        message = "LANDING_BASE_URL must be an HTTP(S) origin without credentials, a path, query, or fragment."
         raise ValueError(message)
 
     runtime = (

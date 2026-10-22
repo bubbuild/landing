@@ -14,4 +14,4 @@ Delegate work through the usual command:
 landing review "Check http://127.0.0.1:8000. Reproduce navigation problems and report concise evidence."
 ```
 
-CLI, server, Action, and SDK calls use the same MCP configuration. For a service or CI job, make the configuration and executables available in its execution environment.
+CLI, server, and Action calls use the same MCP configuration. For a service or CI job, make the configuration and executables available in its execution environment.

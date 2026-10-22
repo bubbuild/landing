@@ -3,27 +3,31 @@
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncGenerator, Callable, Collection, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from bub import BubFramework, ensure_config
-from bub.builtin import Agent as BubAgent
+from bub import BubFramework, ensure_config, tool
+from bub.builtin import tools as builtin_tools
 from bub.builtin.environment import environment_from_state
 from bub.builtin.shell_manager import shell_manager
+from bub.builtin.spill import SpillSettings, SpillStore, spill_read
 from bub.builtin.tools import resolve_tool_names
+from bub.core import Agent
+from bub.core.tape import session_tape_name
+from bub.core.tools import ToolContext
 from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
-from bub.skills import discover_skills, iter_skill_roots
-from bub.streaming import AsyncStreamEvents, StreamEvent, StreamState
-from bub.tools import REGISTRY, Tool, ToolContext, tool
+from bub.hooks.agent import AgentPlugins
+from bub.skills import SkillMetadata, discover_skills, iter_skill_roots
 from bub.turn import TurnState
 from pydantic import ValidationError
 
 from landing.database import database_engine
-from landing.hooks import LandingHooks
+from landing.hooks import LandingHooks, skill
 from landing.mcp import connected_tools
-from landing.models import Action, ActionRequest, Decision, Mode
+from landing.models import Action, ActionRequest, Decision
+from landing.prompts import system_prompt
 from landing.settings import ConfigurationFile, ModeSettings, Settings
 from landing.store import SQLiteTapeStore
 from landing.tasks import Tasks
@@ -50,14 +54,14 @@ def checks_failed(checks: list[dict]) -> bool:
     return any(item["exit_code"] != 0 or item["timed_out"] for item in checks)
 
 
-def task_prompt(request: ActionRequest, checks: list[dict]) -> list[dict]:
+def task_prompt(request: ActionRequest, checks: list[dict]) -> str:
     parts = [request.instruction or "Carry out the delegated work using the supplied evidence."]
     parts.extend(item.text if item.type == "text" else f"{item.name}:\n{item.content}" for item in request.input)
     if request.mode == "bumper" and request.checks:
         parts.append("Required final check commands:\n" + json.dumps(request.checks))
     if checks:
         parts.append("Validation results:\n" + json.dumps(checks))
-    return [{"type": "text", "text": "\n\n".join(parts)}]
+    return "\n\n".join(parts)
 
 
 class Runtime:
@@ -70,87 +74,58 @@ class Runtime:
         path: Path,
         *,
         workspaces: Mapping[str, Path] | None = None,
-        tools: Iterable[Tool] = (),
         skill_dirs: Iterable[Path] = (),
-        framework: BubFramework | None = None,
+        plugins: Iterable[object] = (),
         verify: Callable[[Action], None] | None = None,
     ) -> None:
         self.path = path.expanduser().resolve()
         self.workspaces = workspaces
         self.verify = verify
-        self.framework = framework or BubFramework(config_file=ConfigurationFile().config_file.expanduser())
+        self.framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         settings = ensure_config(Settings)
         if workspaces is not None and "default" in workspaces:
             self.framework.workspace = workspaces["default"].expanduser().resolve()
-        manager = self.framework.plugin_manager
-        hooks = manager.get_plugin("landing")
-        if hooks is None:
-            hooks = LandingHooks(self.framework)
-            manager.register(hooks, name="landing")
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
         self.settings = settings
-        self.tools = {**REGISTRY, **{item.name: item for item in tools}}
+        self.tools = [
+            builtin_tools.bash,
+            builtin_tools.bash_output,
+            builtin_tools.kill_bash,
+            builtin_tools.fs_read,
+            builtin_tools.fs_write,
+            builtin_tools.fs_edit,
+            builtin_tools.tape_info,
+            builtin_tools.tape_search,
+            builtin_tools.tape_reset,
+            builtin_tools.tape_handoff,
+            builtin_tools.tape_anchors,
+            builtin_tools.web_fetch,
+            spill_read,
+            skill,
+            decide,
+            no_update,
+        ]
         self.tape_store = SQLiteTapeStore(self.engine)
+        self.spill_store = SpillStore(ensure_config(SpillSettings))
         self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *settings.skill_dirs))
-        hooks.runtime = self
+        self.plugins = AgentPlugins(self.framework, plugins=[LandingHooks(self), *plugins])
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
-    def create_agent(self, workspace: Path) -> BubAgent:
-        skill_dirs = None
-        if self.skill_roots:
-            roots = [root for root, _ in iter_skill_roots(workspace)]
-            skill_dirs = [roots[0], *self.skill_roots, *roots[1:]]
-        agent = BubAgent(
-            self.framework,
-            tools=list(self.tools.values()),
-            tape_store=self.tape_store,
-            skill_dirs=skill_dirs,
-            command_prefix=self.settings.command_prefix,
+    def create_agent(self) -> Agent:
+        return self.plugins.attach(
+            Agent(
+                max_steps=self.settings.max_steps,
+                name="landing",
+                system_prompt=system_prompt(self.settings),
+                **self.plugins.components(),
+            )
         )
-        # Keep the Runtime configuration when another host loads process-wide settings.
-        agent.settings = agent.model_runner.settings = self.settings
-        return agent
 
-    async def run_stream(
-        self,
-        *,
-        session_id: str,
-        prompt: str | list[dict],
-        mode: Mode = "explainer",
-        state: TurnState | None = None,
-        model: str | None = None,
-        allowed_skills: "Collection[str] | None" = None,
-        allowed_tools: "Collection[str] | None" = None,
-        reasoning_effort: str | None = None,
-    ) -> AsyncStreamEvents:
-        workspace = (
-            self.workspace_name(state["_runtime_workspace"]) if state and "_runtime_workspace" in state else None
-        )
-        self.workspace(workspace)
-        request = ActionRequest(
-            mode=mode,
-            instruction=prompt
-            if isinstance(prompt, str)
-            else "Carry out the delegated work using the supplied evidence.",
-            workspace=workspace,
-        )
-        action, _ = self.tasks.create(
-            request,
-            event=(
-                "sdk.invocation",
-                {
-                    "session_id": session_id,
-                    "prompt": [{"type": "text", "text": prompt}] if isinstance(prompt, str) else prompt,
-                    "model": model,
-                    "allowed_skills": list(allowed_skills) if allowed_skills is not None else None,
-                    "allowed_tools": list(allowed_tools) if allowed_tools is not None else None,
-                    "reasoning_effort": reasoning_effort,
-                },
-            ),
-        )
-        return self.stream(action.id, state=state)
+    def skills(self, workspace: Path) -> list[SkillMetadata]:
+        roots = [root for root, _ in iter_skill_roots(workspace)]
+        return discover_skills(workspace, skill_dirs=[roots[0], *self.skill_roots, *roots[1:]])
 
     def workspace(self, selected: str | None = None) -> Path:
         if self.workspaces is None:
@@ -179,7 +154,7 @@ class Runtime:
     @contextlib.asynccontextmanager
     async def running(self, *, background: bool = False) -> AsyncGenerator["Runtime"]:
         """Run work within Bub's resources, stopping execution before they close."""
-        async with self.framework.running():
+        async with self.plugins.running():
             self.worker_task = asyncio.create_task(self.worker()) if background else None
             try:
                 yield self
@@ -193,7 +168,7 @@ class Runtime:
             yield
 
     def submit(
-        self, request: ActionRequest, *, scope: str = "sdk", key: str | None = None, retry_of: str | None = None
+        self, request: ActionRequest, *, scope: str = "local", key: str | None = None, retry_of: str | None = None
     ) -> tuple[Action, bool]:
         """Persist work for a running background host and return its receipt."""
         if self.worker_task is None or self.worker_task.done() or self.worker_task.cancelling():
@@ -210,7 +185,7 @@ class Runtime:
         *,
         retry_of: str | None = None,
         session_id: str | None = None,
-        scope: str = "sdk",
+        scope: str = "local",
         key: str | None = None,
         verify: Callable[[Action], None] | None = None,
     ) -> Action:
@@ -220,15 +195,25 @@ class Runtime:
             scope=scope,
             key=key,
             retry_of=retry_of,
-            event=("sdk.invocation", {"session_id": session_id}) if session_id is not None else None,
+            event=("execution", {"session_id": session_id}) if session_id is not None else None,
         )
         return await self._wait(action.id, verify=verify)
 
-    async def _wait(self, action_id: str, **kwargs) -> Action:
-        async with contextlib.aclosing(self.stream(action_id, **kwargs)) as stream:
-            async for _ in stream:
-                pass
-        return self.tasks.get(action_id)
+    async def _wait(self, action_id: str, *, cancel_on_interrupt: bool = True, **kwargs) -> Action:
+        task = self.active.get(action_id)
+        if task is None:
+            task = asyncio.create_task(self.execute(action_id, **kwargs))
+            self.active[action_id] = task
+            task.add_done_callback(lambda _: self.active.pop(action_id, None))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if cancel_on_interrupt:
+                self.cancel(action_id)
+            else:
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
 
     async def checks(self, action_id: str, request: ActionRequest, environment: Environment) -> list[dict]:
         results = []
@@ -253,51 +238,46 @@ class Runtime:
                 results.append(item)
         return results
 
-    def capabilities(self, mode, invocation, workspace: Path, agent: BubAgent) -> None:
-        """Intersect mode and call selections, then exclude unavailable capabilities."""
+    def capabilities(self, mode, workspace: Path, agent: Agent, state: TurnState) -> None:
+        """Select the mode's tools and skills after runtime discovery."""
         limits = self.settings.modes.get(mode, ModeSettings())
-        if limits.allowed_tools is not None or limits.excluded_tools:
-            available = agent.tools
-            configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)
-            requested = resolve_tool_names(invocation.get("allowed_tools"), all_names=available)
-            invocation["allowed_tools"] = sorted(configured & requested)
-        if limits.allowed_skills is not None or limits.excluded_skills:
-            skills = {item.name.casefold() for item in discover_skills(workspace, skill_dirs=agent.skill_dirs)}
-            for allowed in (limits.allowed_skills, invocation.get("allowed_skills")):
-                if allowed is not None:
-                    skills &= {name.casefold() for name in allowed}
-            invocation["allowed_skills"] = sorted(skills - {name.casefold() for name in limits.excluded_skills})
+        available = agent.tools
+        configured = resolve_tool_names(limits.allowed_tools, exclude=limits.excluded_tools, all_names=available)
+        agent.tools = {name: item for name, item in available.items() if name in configured}
+        skills = {item.name.casefold(): item for item in self.skills(workspace)}
+        if limits.allowed_skills is not None:
+            names = {name.casefold() for name in limits.allowed_skills}
+            skills = {name: item for name, item in skills.items() if name in names}
+        excluded = {name.casefold() for name in limits.excluded_skills}
+        state["landing_skills"] = {name: item for name, item in skills.items() if name not in excluded}
 
     async def execute(  # noqa: C901 -- modes share one execution transaction and shutdown order.
         self,
         action_id: str,
         *,
-        state: TurnState | None = None,
         verify: Callable[[Action], None] | None = None,
-        events: asyncio.Queue,
-        stream_state: StreamState,
     ) -> Action:
+        state: TurnState | None = None
         async with self.execution:
             if not self.tasks.claim(action_id):
                 return self.tasks.get(action_id)
+            default_workspace = self.framework.workspace
             try:
                 request = self.tasks.request(action_id)
                 workspace = self.workspace(request.workspace)
-                invocation = self.tasks.event_data(action_id, "sdk.invocation") or {}
+                self.framework.workspace = workspace
+                invocation = self.tasks.event_data(action_id, "execution") or {}
                 session_id = invocation.pop("session_id", action_id)
-                prompt = invocation.pop("prompt", None)
-                agent = self.create_agent(workspace)
-                if state is None:
-                    state = await self.framework.build_state(
-                        {"_runtime_agent": agent, "_runtime_workspace": str(workspace)}, session_id
-                    )
+                agent = self.create_agent()
+                state = await self.plugins.build_state(
+                    session_id, message={"_runtime_workspace": str(workspace)}, agent=agent
+                )
                 state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
                 for key in (
                     "landing_decision",
                     "landing_llm_call",
                     "landing_no_update",
                     "landing_tool_failed",
-                    "allowed_skills",
                 ):
                     state.pop(key, None)
                 environment = environment_from_state(state)
@@ -305,25 +285,22 @@ class Runtime:
                 # Close model-owned processes and MCP connections before post-edit validation.
                 async with shell_manager.lifespan(), connected_tools(agent, workspace) as channel:
                     state["mcp"] = channel
-                    self.capabilities(request.mode, invocation, workspace, agent)
-                    stream = await agent.run_stream(
-                        session_id=session_id,
-                        prompt=prompt if prompt is not None else task_prompt(request, checks),
-                        state=state,
-                        **invocation,
-                    )
+                    self.capabilities(request.mode, workspace, agent, state)
                     output = ""
-                    try:
-                        async with contextlib.aclosing(stream):
-                            async for event in stream:
-                                events.put_nowait(event)
-                                if event.kind == "final" and "text" in event.data:
-                                    output = str(event.data["text"])
-                                    self.tasks.output(action_id, output)
-                    finally:
-                        stream_state.error, stream_state.usage = stream.error, stream.usage
-                    if stream.error is not None:
-                        raise stream.error  # noqa: TRY301 -- persist the failed task at this boundary.
+                    async with agent.run(
+                        task_prompt(request, checks),
+                        tape=session_tape_name(session_id, workspace),
+                        model=self.settings.chat_model(
+                            state.get("model"), reasoning_effort=state.get("reasoning_effort")
+                        ),
+                        state=state,
+                    ) as stream:
+                        async for event in stream:
+                            if event.kind == "final" and "text" in event.data:
+                                output = str(event.data["text"])
+                                self.tasks.output(action_id, output)
+                        if stream.error is not None:
+                            raise stream.error  # noqa: TRY301 -- persist the failed task at this boundary.
                 state.pop("landing_llm_call", None)
                 decision = None
                 if request.mode == "gatekeeper":
@@ -364,41 +341,13 @@ class Runtime:
                 error = (
                     exc if isinstance(exc, BubError) else BubError(ErrorKind.UNKNOWN, str(exc) or type(exc).__name__)
                 )
-                if stream_state.error is None:
-                    stream_state.error = error
-                    events.put_nowait(StreamEvent("error", error.as_dict()))
                 return self.tasks.finish(
                     action_id, "failed", error={"code": error.kind.value, "message": error.message}
                 )
             else:
                 return self.tasks.finish(action_id, "completed", result=output, decision=decision)
-
-    def stream(self, action_id: str, *, cancel_on_close: bool = True, **kwargs) -> AsyncStreamEvents:
-        """Expose the shared executor's native events, with durable cancellation."""
-        events: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
-        stream_state = StreamState()
-        task: asyncio.Task | None = None
-
-        async def iterate():
-            nonlocal task
-            task = asyncio.create_task(self.execute(action_id, events=events, stream_state=stream_state, **kwargs))
-            self.active[action_id] = task
-            task.add_done_callback(lambda _: self.active.pop(action_id, None))
-            task.add_done_callback(lambda _: events.put_nowait(None))
-            while (event := await events.get()) is not None:
-                yield event
-            await task
-
-        async def close():
-            if task is None or not task.done():
-                if cancel_on_close:
-                    self.cancel(action_id)
-                elif task is not None:
-                    task.cancel()
-            if task is not None:
-                await asyncio.gather(task, return_exceptions=True)
-
-        return AsyncStreamEvents(iterate(), state=stream_state, on_close=close)
+            finally:
+                self.framework.workspace = default_workspace
 
     def cancel(self, action_id: str) -> Action:
         action = self.tasks.cancel(action_id)
@@ -411,7 +360,7 @@ class Runtime:
             self.pending.clear()
             while (action_id := self.tasks.next()) is not None:
                 try:
-                    await self._wait(action_id, cancel_on_close=False)
+                    await self._wait(action_id, cancel_on_interrupt=False)
                 except asyncio.CancelledError:
                     if (parent := asyncio.current_task()) and parent.cancelling():
                         raise

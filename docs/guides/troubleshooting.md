@@ -18,7 +18,7 @@ Replace the ID with the affected action. For service work, use its [HTTP endpoin
 | Review returned nonzero | Read status and decision separately: completed `block` or `inconclusive` is a recommendation. |
 | Another worker owns the database | Use the executing service's HTTP API or select a separate database. |
 | A newer Landing release created this database | Upgrade Landing; older releases leave newer databases unchanged. |
-| Work continues after you stop watching | Stopping `action watch` leaves work running. Cancel through its HTTP/SDK host, or use Ctrl-C on the executing CLI. |
+| Work continues after you stop watching | Stopping `action watch` leaves work running. Cancel through the HTTP service, or use Ctrl-C on the executing CLI. |
 | GitHub task skipped | Check caller permission, trust policy, explicit command prefix, and upstream workflow source. |
 | Review cancelled | Inspect the current PR head and `github.review_stopped`; an unverifiable head also stops tools. |
 | Required publication failed | Inspect gh authorization and the requested destination; reuse the same database and delivery key when retrying delivery. |

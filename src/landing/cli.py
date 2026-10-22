@@ -14,31 +14,38 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import typer
-from bub import BubFramework
-from pydantic import AliasChoices, Field
+from bub import Settings as BubSettings
+from bub import config, ensure_config
+from bub.configure import load
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
 from landing.database import open_database, own_database
-from landing.hooks import LandingHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
-from landing.settings import ConfigurationFile, FileSettings
+from landing.settings import ConfigurationFile
 from landing.tasks import NotFoundError, Tasks
 
 DEFAULT_DATABASE = Path("~/.local/share/landing/landing.sqlite3")
 
 
-class ExecutionSettings(FileSettings):
+@config()
+class ExecutionSettings(BubSettings):
     """CLI and service configuration, independent of SDK model settings."""
 
     model_config = SettingsConfigDict(
-        env_prefix="LANDING_", env_ignore_empty=True, populate_by_name=True, extra="ignore", hide_input_in_errors=True
+        env_prefix="LANDING_",
+        env_ignore_empty=True,
+        populate_by_name=True,
+        extra="ignore",
+        hide_input_in_errors=True,
+        validate_assignment=True,
     )
     db: Path | None = None
     token: str | None = Field(default=None, repr=False)
     github_repository: str | None = None
-    base_url: str | None = Field(default=None, validation_alias=AliasChoices("LANDING_BASE_URL", "BASE_URL"))
+    base_url: str | None = None
     replicate: bool = False
 
 
@@ -66,23 +73,18 @@ class Command(TyperCommand):
 
 
 def execution_settings(ctx: typer.Context) -> ExecutionSettings:
-    parameters = ctx.find_root().params
-    return ExecutionSettings(**{name: value for name, value in parameters.items() if value is not None})
-
-
-def host_runtime(ctx: typer.Context) -> Runtime | None:
-    if (framework := ctx.find_object(BubFramework)) and isinstance(
-        hooks := framework.plugin_manager.get_plugin("landing"), LandingHooks
-    ):
-        return getattr(hooks, "runtime", None)
-    return None
+    load(ConfigurationFile().config_file.expanduser())
+    settings = ensure_config(ExecutionSettings)
+    for name, value in ctx.find_root().params.items():
+        if name in ExecutionSettings.model_fields and value is not None:
+            setattr(settings, name, value)
+    return settings
 
 
 def execution_runtime(ctx: typer.Context, settings: ExecutionSettings, *, database: Path | None = None) -> Runtime:
-    return host_runtime(ctx) or Runtime(
+    return Runtime(
         database or settings.db or DEFAULT_DATABASE,
         skill_dirs=ctx.find_root().params.get("skill_dir") or (),
-        framework=ctx.find_object(BubFramework),
     )
 
 
@@ -105,17 +107,27 @@ def configure(
 
 
 def create_cli_app() -> typer.Typer:
-    framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
-    framework.plugin_manager.register(LandingHooks(framework), name="landing")
+    from landing.adapters.github import register_cli_commands
+
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",
         callback=configure,
         no_args_is_help=True,
         rich_markup_mode=None,
-        context_settings={"obj": framework, "help_option_names": ["-h", "--help"]},
+        context_settings={"help_option_names": ["-h", "--help"]},
     )
-    framework.plugin_manager.hook.register_cli_commands(app=app)
+    for name, help_text in {
+        "triage": "Identify a problem and its acceptance criteria.",
+        "fix": "Repair the delegated problem and validate changes.",
+        "bump": "Update the requested dependencies and validate changes.",
+        "review": "Evaluate a candidate against independent evidence.",
+        "explain": "Explain the supplied question or evidence.",
+    }.items():
+        app.command(name=name, cls=Command, help=help_text)(delegate)
+    app.add_typer(actions, name="action")
+    app.command(cls=Command)(serve)
+    register_cli_commands(app)
     return app
 
 
@@ -191,8 +203,6 @@ def delegate(
 
 
 def action_database(ctx: typer.Context) -> Path:
-    if runtime := host_runtime(ctx):
-        return runtime.path
     return (execution_settings(ctx).db or DEFAULT_DATABASE).expanduser()
 
 
@@ -275,8 +285,7 @@ def serve(
     if host not in {"127.0.0.1", "localhost", "::1"} and not settings.token:
         message = "Set LANDING_TOKEN before listening beyond localhost."
         raise ValueError(message)
-    embedded = host_runtime(ctx)
-    runtime = embedded or execution_runtime(ctx, settings)
+    runtime = execution_runtime(ctx, settings)
     workspaces = dict(runtime.workspaces or {"default": runtime.framework.workspace})
     for value in workspace or []:
         name, separator, path = value.partition("=")
@@ -292,9 +301,6 @@ def serve(
         github_repository=settings.github_repository,
     )
     if settings.replicate:
-        if embedded:
-            message = "Use an external supervisor for an existing SDK host."
-            raise ValueError(message)
         command = [sys.executable, "-m", "landing", "--github-repository", settings.github_repository or ""]
         command.extend(["serve", "--host", host, "--port", str(port)])
         for name, path in workspaces.items():

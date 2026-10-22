@@ -1,4 +1,4 @@
-"""Shared CLI, SDK, and HTTP contracts."""
+"""Shared CLI, HTTP, and GitHub action contracts."""
 
 from __future__ import annotations
 
