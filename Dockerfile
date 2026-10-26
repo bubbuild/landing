@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.10.12 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
 FROM docker.io/litestream/litestream:0.5.17 AS litestream
 FROM python:3.12-slim-bookworm AS builder
 
