@@ -58,7 +58,7 @@ Host exits -> stop and await work -> close environments -> unlock SQLite
 
 Cancellation goes through the executing host. Interrupting a foreground invocation cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
 
-GitHub enables reply confirmation through a native hook and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. `LANDING_REPLICATE` delegates service supervision and backup recovery to Litestream, which starts the same CLI with replication disabled in its child. The container prepares its directory and executes the ordinary CLI. Help, invalid arguments, and non-service commands bypass replication.
+GitHub adds `confirm_reply` for its run and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. `LANDING_REPLICATE` delegates service supervision and backup recovery to Litestream, which starts the same CLI with replication disabled in its child. The container prepares its directory and executes the ordinary CLI. Help, invalid arguments, and non-service commands bypass replication.
 
 ## Instructions and skills
 

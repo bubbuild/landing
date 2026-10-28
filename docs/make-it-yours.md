@@ -46,7 +46,7 @@ Configure roots on the executing host. Use `skill_dirs` or `LANDING_SKILL_DIRS` 
 
 ## Select tools and checks
 
-Each mode can independently select its allowed or excluded tools and skills through [mode capabilities](reference/configuration.md#mode-capabilities). A Python embedding can register additional native tools. Enforce authorization in those tools and the execution environment; a shell tool can expose more than its name suggests.
+Each mode can independently select its allowed or excluded tools and skills through [mode capabilities](reference/configuration.md#mode-capabilities). Enforce authorization in those tools and the execution environment; a shell tool can expose more than its name suggests.
 
 Use your existing checks for the behavior you need to establish:
 
