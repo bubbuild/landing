@@ -7,7 +7,7 @@ readme = "README.md"
 keywords = ['python']
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "bub[app] @ git+https://github.com/bubbuild/bub@a93f5b80cf4b1bb35a248f4108b463f7af44f08d",
+    "bub[app]==0.6.0a3",
     "bub-mcp==0.3.0",
     "fastapi>=0.132",
     "pydantic>=2.12",
@@ -58,9 +58,6 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 fallback-version = "0.0.0"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build]
 exclude = ["/.lody", "/.ci-state", "/.git_archival.txt", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*"]

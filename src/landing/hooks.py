@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from bub import hookimpl, tool
 from bub.builtin.settings import load_session_settings
 from bub.builtin.spill import SPILL_READ_MODEL_NAME, SPILL_SIDECAR_NAME, SpillStore
+from bub.core.context import default_tape_context
 from bub.core.events import LLMCallDecision, ToolCall, ToolCallResult
 from bub.core.tape import session_tape_name
 from bub.core.tools import ToolContext, content_result, result_content
@@ -38,8 +39,8 @@ class LandingHooks:
         self.runtime = runtime
 
     @hookimpl
-    def provide_tools(self):
-        return self.runtime.tools
+    def build_tape_context(self):
+        return default_tape_context()
 
     @hookimpl
     async def load_state(self, message, session_id):

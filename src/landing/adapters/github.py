@@ -306,10 +306,6 @@ class Publication:
     def load_state(self):
         return {"_runtime_github_publication": self}
 
-    @hookimpl
-    def provide_tools(self):
-        return [confirm_reply]
-
     @hookimpl(specname="provide_lifespan")
     async def publication_lifespan(self):
         loop = asyncio.get_running_loop()
@@ -623,6 +619,7 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
     status = "failed"
     manager = landing.framework.plugin_manager
     manager.register(publication, name="github-publication")
+    landing.tools.append(confirm_reply)
     try:
         async with landing.running():
             action = publication.replay(request, key)
@@ -644,6 +641,7 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
         status = "cancelled"
         raise
     finally:
+        landing.tools.remove(confirm_reply)
         manager.unregister(publication)
         if endpoint:
             conclude_reaction(repository, endpoint, progress, status)

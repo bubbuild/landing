@@ -92,10 +92,6 @@ def test_native_plugin_tools_and_continuation_share_task_state(tmp_path, model):
 
     class Context:
         @hookimpl
-        def provide_tools(self):
-            return [identify]
-
-        @hookimpl
         def load_state(self):
             return {"reference": "approved"}
 
@@ -114,7 +110,9 @@ def test_native_plugin_tools_and_continuation_share_task_state(tmp_path, model):
     responses.extend([completion(tool="identify"), report])
 
     async def run():
-        async with Runtime(tmp_path / "landing.sqlite3", plugins=[Context()]).running() as landing:
+        landing = Runtime(tmp_path / "landing.sqlite3", plugins=[Context()])
+        landing.tools.append(identify)
+        async with landing.running():
             action = await landing.run(ActionRequest(mode="explainer", instruction="Identify deployment."))
             assert action.status == "completed"
             assert action.result == "Continued with approved evidence."

@@ -9,16 +9,16 @@ from typing import cast
 
 from bub import BubFramework, ensure_config, tool
 from bub.builtin import tools as builtin_tools
+from bub.builtin.agent import BubAgent
 from bub.builtin.environment import environment_from_state
 from bub.builtin.shell_manager import shell_manager
 from bub.builtin.spill import SpillSettings, SpillStore, spill_read
 from bub.builtin.tools import resolve_tool_names
-from bub.core import Agent
+from bub.core import Agent, PromptContext
 from bub.core.tape import session_tape_name
 from bub.core.tools import ToolContext
 from bub.environment import Environment
 from bub.errors import BubError, ErrorKind
-from bub.hooks.agent import AgentPlugins
 from bub.skills import SkillMetadata, discover_skills, iter_skill_roots
 from bub.turn import TurnState
 from pydantic import ValidationError
@@ -109,19 +109,24 @@ class Runtime:
         self.tape_store = SQLiteTapeStore(self.engine)
         self.spill_store = SpillStore(ensure_config(SpillSettings))
         self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *settings.skill_dirs))
-        self.plugins = AgentPlugins(self.framework, plugins=[LandingHooks(self), *plugins])
+        for plugin in [LandingHooks(self), *plugins]:
+            self.framework.plugin_manager.register(plugin)
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
     def create_agent(self) -> Agent:
-        return self.plugins.attach(
-            Agent(
-                max_steps=self.settings.max_steps,
-                name="landing",
-                system_prompt=system_prompt(self.settings),
-                **self.plugins.components(),
-            )
-        )
+        agent = cast("Agent", BubAgent(self.framework, tools=self.tools, skill_dirs=()))
+        agent.name = "landing"
+        agent.max_steps = self.settings.max_steps
+        # Delegated text remains model input, even when it starts with Bub's command prefix.
+        agent.command_prefix = None
+        agent.system_prompt = system_prompt(self.settings)
+
+        @agent.system_prompt.add
+        def plugin_prompt(context: PromptContext) -> str:
+            return self.framework.get_system_prompt(context.prompt, context.state)
+
+        return agent
 
     def skills(self, workspace: Path) -> list[SkillMetadata]:
         roots = [root for root, _ in iter_skill_roots(workspace)]
@@ -154,7 +159,7 @@ class Runtime:
     @contextlib.asynccontextmanager
     async def running(self, *, background: bool = False) -> AsyncGenerator["Runtime"]:
         """Run work within Bub's resources, stopping execution before they close."""
-        async with self.plugins.running():
+        async with self.framework.running():
             self.worker_task = asyncio.create_task(self.worker()) if background else None
             try:
                 yield self
@@ -269,8 +274,8 @@ class Runtime:
                 invocation = self.tasks.event_data(action_id, "execution") or {}
                 session_id = invocation.pop("session_id", action_id)
                 agent = self.create_agent()
-                state = await self.plugins.build_state(
-                    session_id, message={"_runtime_workspace": str(workspace)}, agent=agent
+                state = await self.framework.build_state(
+                    {"_runtime_workspace": str(workspace), "_runtime_agent": agent}, session_id
                 )
                 state.update(landing_action_id=action_id, landing_mode=request.mode, _runtime_workspace=str(workspace))
                 for key in (

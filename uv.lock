@@ -246,13 +246,17 @@ wheels = [
 
 [[package]]
 name = "bub"
-version = "0.5.2.dev21+ga93f5b80c"
-source = { git = "https://github.com/bubbuild/bub?rev=a93f5b80cf4b1bb35a248f4108b463f7af44f08d#a93f5b80cf4b1bb35a248f4108b463f7af44f08d" }
+version = "0.6.0a3"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
     { name = "pydantic" },
     { name = "republic" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/14/f722950384149513e933f7235a55ef1546d1963e5dda7f6df4dfcc39b3bf/bub-0.6.0a3.tar.gz", hash = "sha256:315355316bd59e21bede98ca6d85558b64bf533cf3b72a2a2711e2de6014ff25", size = 261638, upload-time = "2026-10-18T10:49:28.378Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/44/cc790303944c72c17998a9f7cabc31e9268a053a8f7fe3f580a8249bd2f7/bub-0.6.0a3-py3-none-any.whl", hash = "sha256:1da6ae9c238cf2d94a5e6ec95aaf8f90340c49866d77bb22f79ce34515278e5c", size = 197071, upload-time = "2026-10-18T10:49:26.821Z" },
 ]
 
 [package.optional-dependencies]
@@ -1084,7 +1088,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bub", extras = ["app"], git = "https://github.com/bubbuild/bub?rev=a93f5b80cf4b1bb35a248f4108b463f7af44f08d" },
+    { name = "bub", extras = ["app"], specifier = "==0.6.0a3" },
     { name = "bub-mcp", specifier = "==0.3.0" },
     { name = "fastapi", specifier = ">=0.132" },
     { name = "pydantic", specifier = ">=2.12" },

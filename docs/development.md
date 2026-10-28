@@ -27,25 +27,25 @@ The suite replaces the provider HTTP transport with deterministic responses whil
 
 ## Runtime architecture
 
-Landing is an application with CLI, HTTP, and GitHub entry points. Its internal Runtime composes `bub.core.Agent` with Bub's `AgentPlugins`; Landing does not expose an embedding SDK. The pinned Bub 0.6 development revision supplies the native plugin bridge, which follows the published 0.6.0a3 preview. The `app` dependencies provide reusable hooks and tools; Landing owns its entry points and does not run Bub's message pipeline. Mode selection and accepted SQLite requests drive execution.
+Landing is an application with CLI, HTTP, and GitHub entry points. Its internal Runtime uses `BubAgent`, Bub's core Agent configured with native Framework hooks; Landing does not expose an embedding SDK. Landing pins the published `bub[app]==0.6.0a3` package. The `app` dependencies provide reusable hooks and tools; Landing owns its entry points and does not run Bub's message pipeline. Mode selection and accepted SQLite requests drive execution.
 
 ```text
 CLI / GitHub -> admission -> run -----+
 HTTP -> receipt -> background worker -+-> SQLite -> execute
                                                      |
-                          AgentPlugins -> core.Agent + checks
+                         Framework hooks -> BubAgent + checks
                                 |                    |
                       hooks / state / storage    result / reply
 ```
 
-The CLI registers Landing commands and bundled adapter commands directly. Help and history inspection start no agent. Each execution creates a core Agent inside the plugin lifespan, restores state with `AgentPlugins.build_state()`, attaches plugin tools and interceptors, then consumes the native stream inside `Agent.run()`. Agent and tool resources close before post-edit checks and delivery verification.
+The CLI registers Landing commands and bundled adapter commands directly. Help and history inspection start no agent. Each execution creates a BubAgent inside the Framework lifespan, restores state with `Framework.build_state()`, selects tools, then consumes the native stream inside `Agent.run()`. BubAgent subscribes native interception hooks and supplies continuations and steering. Landing supplies its SystemPrompt and disables command parsing so delegated text remains model input. Agent and tool resources close before post-edit checks and delivery verification.
 
 HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. The CLI and worker await the same owned execution task, which consumes the native Agent stream. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
 
 Landing task records and Bub tapes share one SQLite database. Resetting a session's tape clears its model history without deleting action records.
 
 ```text
-Host starts -> AgentPlugins lifespan -> lock + SQLite recovery
+Host starts -> Framework lifespan -> lock + SQLite recovery
       |
       +--> action scopes: environment + shell + MCP
       |          |
@@ -62,9 +62,9 @@ GitHub enables reply confirmation through a native hook and verifies publication
 
 ## Instructions and skills
 
-`Runtime` explicitly selects native filesystem, shell, web, tape, and spill tools and adds Landing tools. `LandingHooks` supplies state, storage, execution policy, and the selected tools through native hooks. `AgentPlugins` registers supplied plugins and connects their hooks to the Agent's EventBus, including interception, continuation, and steering. Additional tools use Bub's `@tool` and `provide_tools` hook. Landing depends on `bub[app]` to reuse these components and uses the core Agent's default Tape context and message prompt handling. A result hook bounds oversized text through Bub's `SpillStore` and content helpers, preserves media, and leaves output inline when the mode disables `spill.read`. Full output stays in SQLite for later runs in the same session. Unknown or unavailable tools follow core tool error handling.
+`Runtime` explicitly selects native filesystem, shell, web, tape, and spill tools and adds Landing tools. `LandingHooks` supplies state, storage, and execution policy through native hooks. BubAgent connects Framework interception hooks to the Agent's EventBus and uses native continuation and steering support. Additional tools use Bub's `@tool` and join the instance's tool collection before execution. Landing depends on `bub[app]` to reuse these components and supplies the core Agent's default Tape context. A result hook bounds oversized text through Bub's `SpillStore` and content helpers, preserves media, and leaves output inline when the mode disables `spill.read`. Full output stays in SQLite for later runs in the same session. Unknown or unavailable tools follow core tool error handling.
 
-The task skill tool uses Bub's discovery and rendering with Landing's mode selection; Bub's app-specific skill and subagent tools require `BubAgent` and are not provided. Bub's `SystemPrompt` and `@prompt.add` compose the common behavior and dynamic sections from `PromptContext`. These sections place the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path, followed by the selected skill index.
+The task skill tool uses Bub's discovery and rendering with Landing's mode selection; Bub's app-specific skill and subagent tools are not selected. Bub's `SystemPrompt` and `@prompt.add` compose the common behavior and dynamic sections from `PromptContext`. These sections place the selected mode's permitted skill, configured additions, and root `AGENTS.md` before the workspace path, followed by the selected skill index and any Framework system-prompt hook contributions.
 
 Task instructions and evidence stay in task inputs. GitHub adaptation owns destination and platform guidance. Owned templates substitute named values once and keep inserted text literal. Bundled methods ship in the native `src/skills` namespace; project overrides and capability limits use the normal [skills and mode settings](reference/configuration.md#mode-capabilities).
 
