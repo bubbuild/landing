@@ -15,7 +15,7 @@ Run affected behavior tests, for example `uv run python -m pytest tests/test_cli
 
 ## Design
 
-Read the affected contract in `docs/reference/`. Keep action semantics consistent across entry points while preserving intentional transport and delivery differences. Use Bub 0.6.0a3's native BubAgent and Framework hooks for execution, state, and storage. Landing is an application; use Bub directly for embedding. Declare owned tools with `@tool`, adapter commands with Typer, and component settings with Pydantic Settings. Integrations own their configuration and platform rules; the prepared environment owns extension installation.
+Read the affected contract in `docs/reference/`. Keep action semantics consistent across entry points while preserving intentional transport and delivery differences. Use Bub 0.6.0's native BubAgent and Framework hooks for execution, state, and storage. Landing is an application; use Bub directly for embedding. Declare owned tools with `@tool`, adapter commands with Typer, and component settings with Pydantic Settings. Integrations own their configuration and platform rules; the prepared environment owns extension installation.
 
 Repair the owning layer. Prefer public upstream APIs, existing dependencies, and the standard library. Extract helpers only for cohesive responsibilities with matching contracts and reasons to change. Avoid forwarding wrappers, unnecessary adapter splits, and compatibility branches for unreleased intermediate designs. Preserve released public behavior and stored data unless the task authorizes a change. Keep patches focused and lockfile changes intentional.
 

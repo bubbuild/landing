@@ -7,7 +7,7 @@ readme = "README.md"
 keywords = ['python']
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "bub[app]==0.6.0a3",
+    "bub[app]==0.6.0",
     "bub-mcp==0.3.0",
     "fastapi>=0.132",
     "pydantic>=2.12",
