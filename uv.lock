@@ -246,7 +246,7 @@ wheels = [
 
 [[package]]
 name = "bub"
-version = "0.6.0"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
@@ -254,9 +254,9 @@ dependencies = [
     { name = "republic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/d8/3be714c0b328e0371da651697037de66bf4345cbddeda402b62d25a0a1c8/bub-0.6.0.tar.gz", hash = "sha256:90de84f786d8f1de260c3ba9d3ab020e4f72e5f9f9924f8f369de166b7cd819e", size = 276952, upload-time = "2026-10-31T08:58:30.358Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/17/785546ff2ffb8d3fc54ee1d526d909a92616a3192b0ce74116e7e8220263/bub-0.6.1.tar.gz", hash = "sha256:f64d410564ddeeb5d65c6c6dfa4eb255a4cceb4c7d22ce0bb4852c42c4ba6359", size = 290012, upload-time = "2026-11-04T04:02:47.406Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/f6/c47287439f5994688b1e6fecec36395af5868bf09c0f2a22f595f6ffb5a2/bub-0.6.0-py3-none-any.whl", hash = "sha256:dbb3a0140fd7d5749befa6ea5f53beab52a3d0010f3aad10f31818104615286d", size = 206966, upload-time = "2026-10-31T08:58:28.967Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/3c/39be7c0b0023977208aeba3e98fedb5403297df84d29cc6a361bf3af946b/bub-0.6.1-py3-none-any.whl", hash = "sha256:3a4d56281cf9d3125ff25060aed1374c15a93bf624c36cc52175e1c40c89d88c", size = 217324, upload-time = "2026-11-04T04:02:45.805Z" },
 ]
 
 [package.optional-dependencies]
@@ -1090,7 +1090,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bub", extras = ["app"], specifier = "==0.6.0" },
+    { name = "bub", extras = ["app"], specifier = "==0.6.1" },
     { name = "bub-mcp", specifier = "==0.3.0" },
     { name = "fastapi", specifier = ">=0.132" },
     { name = "pydantic", specifier = ">=2.12" },
