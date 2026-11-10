@@ -276,15 +276,20 @@ app = [
 
 [[package]]
 name = "bub-mcp"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "bub", extra = ["app"] },
     { name = "fastmcp" },
+    { name = "loguru" },
+    { name = "mcp" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/ae/57392a3274fc67f1bf52d65f4de3317081262a9525ebe4e9e7e2bf37f6b2/bub_mcp-0.3.0.tar.gz", hash = "sha256:429b2301de195848268d2768a58f38c7b78c4bb06e1ac70ba05b3a6f6abfb4ed", size = 8756, upload-time = "2026-09-30T12:02:02.969Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/65/138ca58b7321dbf4c54d490d9dc174637b0b724c1231bbbc487c80fbd7f7/bub_mcp-0.4.0.tar.gz", hash = "sha256:8cc58c6805cd7d11c1f7f9e77af1afbf83ef36e051e25285c1825721ec3ea642", size = 9691, upload-time = "2026-11-06T05:42:20.34Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/9b/ec9dcb508fa260f35512f45eeaeb3850d7218e58b404be595020e8178c0a/bub_mcp-0.3.0-py3-none-any.whl", hash = "sha256:68d5b8707d9b9e7bc7199855398257364615d349df25a86adee24d459db5c0b3", size = 10749, upload-time = "2026-09-30T12:02:02.092Z" },
+    { url = "https://files.pythonhosted.org/packages/01/8d/f721617cd5fca7f95ace22d37804332a321d751293d0a44662fa3ea6cadb/bub_mcp-0.4.0-py3-none-any.whl", hash = "sha256:22920cf2a6e7047709f04b57640188d492f6fa1c6ef9cce2908703cdf9df86da", size = 11199, upload-time = "2026-11-06T05:42:19.023Z" },
 ]
 
 [[package]]
@@ -1082,7 +1087,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bub", extras = ["app"], specifier = "==0.6.1" },
-    { name = "bub-mcp", specifier = "==0.3.0" },
+    { name = "bub-mcp", specifier = "==0.4.0" },
     { name = "fastapi", specifier = ">=0.132" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-settings", specifier = ">=2.12" },

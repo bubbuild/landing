@@ -14,4 +14,4 @@ Delegate work through the usual command:
 landing review "Check http://127.0.0.1:8000. Reproduce navigation problems and report concise evidence."
 ```
 
-CLI, server, and Action calls use the same MCP configuration. For a service or CI job, make the configuration and executables available in its execution environment.
+CLI, server, and Action calls use the same MCP configuration. For a service or CI job, make the configuration and executables available in its execution environment. A configured server's tools do not appear in the model's tool list directly; the task prompt lists them and the model loads the ones it needs before calling them, so a review that depends on a browser tool spends a step on discovery.

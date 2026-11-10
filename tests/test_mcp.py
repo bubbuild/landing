@@ -14,6 +14,15 @@ from landing.runtime import Runtime
 from tests.conftest import completion
 
 
+def load_tool(name):
+    """Load a deferred MCP tool the way a model does before calling it."""
+    return completion(tool="tool_describe", arguments={"names": [name]})
+
+
+def invoke_tool(name, arguments):
+    return completion(tool=name.replace(".", "_"), arguments=arguments)
+
+
 @pytest.fixture
 def mcp_server(tmp_path, monkeypatch):
     monkeypatch.delenv("LANDING_MCP_CONFIG")
@@ -72,7 +81,8 @@ def test_cli_uses_selected_mcp_configuration(tmp_path, mcp_server, model, monkey
             monkeypatch.setenv("LANDING_MCP_CONFIG", "custom.json")
     responses, _ = model
     responses.extend([
-        completion(tool="mcp_evidence_record", arguments={"text": "candidate"}),
+        load_tool("mcp.evidence_record"),
+        invoke_tool("mcp.evidence_record", {"text": "candidate"}),
         completion("Recorded candidate."),
     ])
     assert (
@@ -108,7 +118,11 @@ def test_mcp_tools_follow_mode_permissions(tmp_path, mcp_server, model, monkeypa
     )
     responses, _ = model
     for text in ("denied", "allowed"):
-        responses.extend([completion(tool="mcp_evidence_record", arguments={"text": text}), completion(text)])
+        responses.extend([
+            load_tool("mcp.evidence_record"),
+            invoke_tool("mcp.evidence_record", {"text": text}),
+            completion(text),
+        ])
 
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}).running() as landing:
@@ -129,7 +143,11 @@ def test_workspace_switch_does_not_reuse_previous_mcp_server(tmp_path, mcp_serve
     configure(first / ".agents/mcp.json", receipt)
     responses, _ = model
     for text in ("first", "second"):
-        responses.extend([completion(tool="mcp_evidence_record", arguments={"text": text}), completion(text)])
+        responses.extend([
+            load_tool("mcp.evidence_record"),
+            invoke_tool("mcp.evidence_record", {"text": text}),
+            completion(text),
+        ])
 
     async def run():
         async with Runtime(
@@ -150,7 +168,10 @@ def test_cancellation_closes_mcp_subprocess(tmp_path, mcp_server, model):
     receipt = tmp_path / "record.txt"
     configure(tmp_path / ".agents/mcp.json", receipt)
     responses, _ = model
-    responses.append(completion(tool="mcp_evidence_record", arguments={"text": "pending", "wait": True}))
+    responses.extend([
+        load_tool("mcp.evidence_record"),
+        invoke_tool("mcp.evidence_record", {"text": "pending", "wait": True}),
+    ])
 
     async def run():
         async with Runtime(tmp_path / "landing.sqlite3").running() as landing:

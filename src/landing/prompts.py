@@ -2,6 +2,7 @@
 
 import re
 
+from bub.builtin.tools import render_deferred_tools_prompt
 from bub.core import PromptContext, SystemPrompt
 from bub.prompt import prompt_text
 from bub.skills import render_skills_prompt
@@ -41,6 +42,12 @@ def system_prompt(settings: Settings) -> SystemPrompt:
     @prompt.add
     def workspace(context: PromptContext) -> str:
         return f"Task workspace: {workspace_from_state(context.state)}"
+
+    @prompt.add
+    def deferred_tools(context: PromptContext) -> str:
+        # Landing owns its sections, so the list of tools the model can load needs its own section.
+        tools = [tool for tool in context.available_tools if tool.deferred and tool.exposure in ("auto", "direct")]
+        return render_deferred_tools_prompt(tools)
 
     @prompt.add
     def skills(context: PromptContext) -> str:

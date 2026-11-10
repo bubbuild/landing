@@ -6,9 +6,9 @@ from pathlib import Path
 
 from bub import Settings as BubSettings
 from bub import config, ensure_config
-from bub.core import Agent
+from bub.builtin.agent import BubAgent
 from bub_mcp.config import MCPSettings, read_config
-from bub_mcp.plugin import MCPChannel
+from bub_mcp.plugin import MCPManager
 from pydantic_settings import SettingsConfigDict
 
 
@@ -43,15 +43,15 @@ def configuration(workspace: Path) -> Path:
 
 
 @asynccontextmanager
-async def connected_tools(agent: Agent, workspace: Path) -> AsyncGenerator[MCPChannel]:
-    channel = MCPChannel.from_server_configs(read_config(configuration(workspace)))
+async def connected_tools(agent: BubAgent, workspace: Path) -> AsyncGenerator[MCPManager]:
+    manager = MCPManager.from_server_configs(read_config(configuration(workspace)))
     try:
-        await channel.connect()
-        failed = [name for name, server in channel.list().items() if not server.connected]
+        await manager.connect()
+        failed = [name for name, server in manager.list().items() if not server.connected]
         if failed:
             message = "Could not connect configured MCP servers: " + ", ".join(failed)
             raise RuntimeError(message)
-        channel.bind_agent(agent)
-        yield channel
+        manager.bind_agent(agent)
+        yield manager
     finally:
-        await channel.stop()
+        await manager.stop()
