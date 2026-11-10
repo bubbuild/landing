@@ -114,12 +114,13 @@ class Runtime:
         self.active: dict[str, asyncio.Task[Action]] = {}
         self.worker_task: asyncio.Task[None] | None = None
 
-    def create_agent(self) -> Agent:
-        agent = cast("Agent", BubAgent(self.framework, tools=self.tools, skill_dirs=()))
+    def create_agent(self) -> BubAgent:
+        agent = BubAgent(self.framework, tools=self.tools, skill_dirs=())
         agent.name = "landing"
         agent.max_steps = self.settings.max_steps
         # Delegated text remains model input, even when it starts with Bub's command prefix.
-        agent.command_prefix = None
+        # Core `Agent` accepts None to disable commands; `BubAgent` narrows the annotation to str.
+        cast("Agent", agent).command_prefix = None
         agent.system_prompt = system_prompt(self.settings)
 
         @agent.system_prompt.add

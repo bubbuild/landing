@@ -98,9 +98,9 @@ Filters control method loading and model tool calls across entry points. They do
 }
 ```
 
-Use the `mcpServers` JSON format shown above. Native YAML `mcp.config_path` configures the final fallback and `mcp.init_timeout_seconds` controls connection startup. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
+Use the `mcpServers` JSON format shown above. Native YAML `mcp.config_path` configures the final fallback, `mcp.init_timeout_seconds` controls connection startup, and `mcp.deferred_tools: false` offers server tools directly instead of loading them on demand. Server commands run in their prepared environment; use absolute command, argument, and output paths when working across repositories.
 
-Discovered tools use names such as `mcp.playwright_browser_navigate`. Mode tool limits apply after discovery. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
+Discovered tools use names such as `mcp.playwright_browser_navigate` and load on demand: the task prompt lists the names its mode allows, the model calls `tool_describe` with one, and the tool stays callable by name for the rest of the session. The SDK supplies `tool_describe` alongside a deferred list, so mode tool limits apply before loading and excluded tools never reach the model. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
 
 ## Execution and service
 
