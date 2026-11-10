@@ -75,8 +75,9 @@ AUTOMATIC_REVIEW_GUIDANCE = (
     "does not warrant a reply. Do not restate unchanged findings. "
     "Read back any findings or replies you publish. "
     "Record your recommendation with decide. Your final response is the current status, not a work report: "
-    "one short sentence when clean; otherwise link the outstanding findings or state the unresolved acceptance "
-    "condition. Omit the verdict heading and candidate hash; Landing supplies them. "
+    "one short sentence when clean; otherwise use only short labels and links for outstanding findings, "
+    "or state an unresolved acceptance condition without an existing finding. Do not repeat a linked finding's "
+    "explanation or repair. Omit the verdict heading and candidate hash; Landing supplies them. "
     "Keep scripts, check inventories and unchanged evidence in execution history, not the status comment. "
     "Native check jobs are independent of Landing feedback; do not wait for this job or the enclosing workflow."
 )
