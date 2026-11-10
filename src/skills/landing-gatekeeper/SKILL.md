@@ -24,11 +24,11 @@ Call a failure a regression only when source comparison or a focused replay esta
 
 Before publication, verify findings against actual results. Withdraw contradicted or repaired claims, combine findings with the same cause, and prioritize by impact. A proposed patch is not an executed comparison.
 
-For a new review, put the verdict in the overview. Answer a specific acceptance question when one was asked. Otherwise, when there are no findings or unresolved acceptance questions, the verdict is the complete body. With findings, summarize their impact and place each at its affected location when supported; use the overview for detail only when no suitable location exists. Do not recap the diff, verification of settled findings or successful checks.
+Deliver the current conclusion through the adapter's required destination. Answer a specific acceptance question when one was asked. Otherwise, a clean result is one short sentence. Link outstanding findings instead of repeating their explanations; publish a new finding at its affected location when supported. Do not recap the diff, verification of settled findings or successful checks. A new candidate requires assessment, not a new narrative.
 
 For each finding, describe the supported trigger and observable consequence, then give a useful repair direction. Keep decisive evidence visible; link or fold longer reproductions when they help someone verify or repair the finding. Keep the decisive observation outside transcripts and distinguish speculative replacements from verified suggestions.
 
-In an existing finding thread, answer its current question using the relevant evidence. A thread reply does not need a new review overview. Recheck related behavior only where the new change affects the conclusion.
+In an existing finding thread, report only what changes the conclusion, impact or required repair, or answer its current question. Confirm a fix or explicitly withdraw a mistaken claim once; a new SHA, moved line or repeated reproduction alone needs no reply. A thread reply does not need a new review overview. Recheck related behavior only where the new change affects the conclusion.
 
 Record the review recommendation with `decide` before completing the requested delivery: `allow`, `block` or `inconclusive`. `allow` recommends the inspected revision; `inconclusive` requires a concrete, material acceptance condition that remains unresolved. Return the requested answer, or point to a published reply that has already been read back.
 

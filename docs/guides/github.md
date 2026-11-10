@@ -30,7 +30,11 @@ In Actions, Landing supplies the trigger, target, and relevant revisions. The ag
 
 ## Publish native results
 
-PR review publishes a native [GitHub Review](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request) for the requested commit, with findings attached to the affected lines. A clean review needs no code comments. Follow-up reviews on new commits read the PR's existing review threads: findings that still apply stay in their original threads and are referenced from the review body rather than posted again, and resolved threads stay settled unless new evidence changes their conclusion. Reviews comment by default; approvals and change requests require explicit authorization. The gate recommendation remains separate.
+Automatic PR and candidate `workflow_dispatch` reviews maintain one status comment per PR and publishing account. Each completed assessment updates that comment with the candidate, advisory decision, and a short result or links to outstanding findings. A new commit does not require a new overview review. The Action outputs and task records retain each execution's result; the comment shows only the latest published assessment.
+
+New findings use native [GitHub Reviews](https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request), attached to affected lines where possible. Existing findings stay in their original threads. Follow-ups report changed conclusions, impact or required repairs, confirm fixes, withdraw mistaken claims, or answer questions. A new SHA, moved line or repeated reproduction alone needs no reply. Resolved threads stay settled unless new evidence changes their conclusion. Reviews comment by default; approvals and change requests require explicit authorization.
+
+Explicit PR review commands still require a native review for the requested commit; inline commands require a reply in the original thread. Status updates do not replace those replies.
 
 While admitted work runs, Landing adds an eyes reaction to the triggering PR or command comment. When the work finishes, a rocket replaces it for completed work and a confused reaction for failed work; cancelled or superseded runs only remove it. A delegation for a head that is no longer current is rejected before it starts and leaves existing reactions unchanged. A hard-killed runner cannot clean up, so its eyes reaction stays until the next run on that subject replaces it. Reactions are best effort: a token without reaction permission leaves the work and its publication unaffected.
 
@@ -38,7 +42,9 @@ Explicit delegations require a reply to their selected issue or PR; inline follo
 
 Automatic issuer follow-up publishes only useful new evidence, changed conditions, or verified progress. Unchanged conditions complete quietly through `no_update`, retaining the reason in SQLite. Failed tool execution cannot waive required publication. Explicit questions still require replies.
 
-The same database and delivery key reuse a completed delivery without another model call. A new delegation needs a new key. Missing or mismatched required publication fails the task. The Action fails for execution or delivery failure, while `block` and `inconclusive` remain advisory; [ordinary CLI review](../reference/cli.md#exit-codes-and-interruption) has stricter exit semantics.
+The same database and delivery key reuse a completed delivery without another model call while its publication receipt remains available. A new delegation needs a new key. A fresh runner can recover an automatic review's decision and result from the matching latest status receipt, but not its execution or validation history. Once a later delivery replaces that receipt, replay of the older local record fails rather than rolling back the status; use a new key for another assessment. Missing or mismatched required publication fails the task.
+
+Status publication is read back and the candidate head is checked before and after delivery. Serialize review jobs per PR with workflow concurrency: GitHub comment writes and head checks are not atomic, and concurrent initial runs can create duplicate status comments. The Action fails for execution or delivery failure, while `block` and `inconclusive` remain advisory; [ordinary CLI review](../reference/cli.md#exit-codes-and-interruption) has stricter exit semantics.
 
 Use GitHub conversation references such as #42 or owner/repo#42, and link commits with short, unambiguous hashes. Other destinations need explicit links. Full identities remain in API calls and verification.
 

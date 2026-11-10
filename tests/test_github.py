@@ -47,6 +47,28 @@ if "/reactions" in endpoint:
     else:
         print(json.dumps([reactions.get(subject, [])]))
     path.write_text(json.dumps(state))
+elif "-f" in args and args[args.index("-f") + 1].startswith("body="):
+    if state.get("status_write_fails"):
+        raise SystemExit("Status publication denied")
+    body = args[args.index("-f") + 1].split("=", 1)[1]
+    if "PATCH" in args:
+        number = int(endpoint.rsplit("/", 1)[-1])
+        record = next(item for item in state["comments"] if item["id"] == number)
+        record["body"] = body
+    else:
+        record = {
+            "id": len(state["comments"]) + 1, "body": body, "user": state["publisher"],
+            "html_url": "https://example.test/comments/status",
+            "issue_url": "https://api.github.com/repos/example/landing/issues/42",
+        }
+        state["comments"].append(record)
+    state["status_writes"] = state.get("status_writes", 0) + 1
+    if state.get("status_readback_mismatch"):
+        record["body"] = "Changed after publication"
+    if state.get("status_head_changes"):
+        state["head"] = "next-candidate"
+    path.write_text(json.dumps(state))
+    print(json.dumps(record))
 elif "--input" in args:
     source = args[args.index("--input") + 1]
     body = json.loads(sys.stdin.read() if source == "-" else Path(source).read_text())
@@ -541,6 +563,135 @@ def test_delegated_inline_reply_is_confirmed_and_replay_does_not_publish_twice(p
     assert invoke(event, key="status-update") is None
 
 
+@pytest.mark.parametrize("source", ["pull_request", "workflow_dispatch"])
+def test_automatic_review_updates_one_status_across_candidates_and_fresh_runners(
+    tmp_path, platform, invoke, model, monkeypatch, source
+):
+    responses, requests = model
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+    }
+    monkeypatch.setenv("GITHUB_EVENT_NAME", source)
+    summary_id = None
+    for index, (head, decision, result) in enumerate([
+        ("first-candidate", "block", "One outstanding [retry finding](https://example.test/finding)."),
+        ("second-candidate", "block", "One outstanding [retry finding](https://example.test/finding)."),
+        ("second-candidate", "allow", "No blocking findings."),
+    ]):
+        state = json.loads(platform.read_text())
+        state["head"] = head
+        state["target"] = {"pull_request": {}}
+        platform.write_text(json.dumps(state))
+        if source == "pull_request":
+            event["pull_request"] = {"number": 42, "head": {"sha": head}}
+        responses.extend([completion(tool="decide", arguments={"decision": decision}), completion(result)])
+        key = f"candidate-{index}"
+        database = tmp_path / f"runner-{index}.sqlite3"
+        action = invoke(event, key=key, number=42, database=database)
+        assert (action.status, action.decision, action.result) == ("completed", decision, result)
+        state = json.loads(platform.read_text())
+        assert not state["reviews"]
+        assert len(state["comments"]) == 1
+        summary = state["comments"][0]
+        summary_id = summary_id or summary["id"]
+        assert summary["id"] == summary_id
+        assert f"**Landing: {decision}**" in summary["body"]
+        assert head in summary["body"]
+        assert summary["body"].endswith(result)
+        calls = len(requests)
+        writes = state["status_writes"]
+        for replay_database in (database, tmp_path / f"replay-{index}.sqlite3"):
+            replay = invoke(event, key=key, number=42, database=replay_database)
+            assert (replay.status, replay.decision, replay.result) == ("completed", decision, result)
+        assert len(requests) == calls
+        assert json.loads(platform.read_text())["status_writes"] == writes
+
+    # A replaced receipt cannot roll the current status back to an earlier same-head assessment.
+    invoke(event, key="candidate-1", number=42, database=tmp_path / "runner-1.sqlite3", error="confirmed publication")
+    assert len(requests) == calls
+    assert json.loads(platform.read_text())["comments"] == state["comments"]
+
+
+@pytest.mark.parametrize("change", ["deleted", "publisher", "destination", "result", "candidate"])
+def test_status_replay_requires_the_original_published_result(platform, invoke, model, change):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    }
+    model[0].extend([
+        completion(tool="decide", arguments={"decision": "allow"}),
+        completion("No blocking findings."),
+    ])
+    assert invoke(event).status == "completed"
+    calls = len(model[1])
+    state = json.loads(platform.read_text())
+    receipt = state["comments"][0]
+    if change == "deleted":
+        state["comments"] = []
+    elif change == "publisher":
+        receipt["user"] = {"id": 999}
+    elif change == "destination":
+        receipt["issue_url"] = "https://api.github.com/repos/example/landing/issues/99"
+    elif change == "result":
+        receipt["body"] = receipt["body"].replace("No blocking findings.", "An edited result.")
+    else:
+        receipt["body"] = receipt["body"].replace("candidate-head", "another-head")
+    platform.write_text(json.dumps(state))
+    diagnostic = (
+        "not a reply"
+        if change == "destination"
+        else "no longer matches"
+        if change == "result"
+        else "confirmed publication"
+    )
+    invoke(event, error=diagnostic)
+    assert len(model[1]) == calls
+    assert json.loads(platform.read_text())["comments"] == state["comments"]
+
+
+def test_automatic_status_keeps_required_check_failure_authoritative(platform, invoke, model, monkeypatch):
+    monkeypatch.setenv("INPUT_CHECKS", "false")
+    model[0].extend([
+        completion(tool="decide", arguments={"decision": "allow"}),
+        completion("No blocking code findings."),
+    ])
+    action = invoke({
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    })
+    assert (action.status, action.decision) == ("completed", "block")
+    summary = json.loads(platform.read_text())["comments"][0]["body"]
+    assert "**Landing: block**" in summary
+    assert "Required validation failed" in summary
+
+
+@pytest.mark.parametrize(
+    "failure", ["status_write_fails", "status_readback_mismatch", "status_head_changes", "final_head_changes"]
+)
+def test_automatic_status_fails_on_unconfirmed_or_stale_publication(platform, invoke, model, failure):
+    async def finish(**kwargs):
+        state = json.loads(platform.read_text())
+        if failure == "final_head_changes":
+            state["head"] = "next-candidate"
+        else:
+            state[failure] = True
+        platform.write_text(json.dumps(state))
+        return completion("No blocking findings.")
+
+    model[0].extend([completion(tool="decide", arguments={"decision": "allow"}), finish])
+    action = invoke({
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    })
+    assert action.status == "failed"
+    if failure in {"status_write_fails", "final_head_changes"}:
+        assert not json.loads(platform.read_text())["comments"]
+
+
 def test_text_without_required_publication_is_failed_work(platform, invoke, model):
     state = json.loads(platform.read_text())
     state["reviews"].append({
@@ -557,7 +708,8 @@ def test_text_without_required_publication_is_failed_work(platform, invoke, mode
     event = {
         "repository": {"full_name": "example/landing"},
         "sender": {"type": "User", "login": "maintainer"},
-        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+        "issue": {"number": 42, "pull_request": {}},
+        "comment": {"id": 81, "body": "/landing review Inspect retry behavior.", "user": {"login": "maintainer"}},
     }
     action = invoke(event, key="missing-review")
     assert action.status == "failed"
@@ -565,7 +717,8 @@ def test_text_without_required_publication_is_failed_work(platform, invoke, mode
     assert action.error is not None
     assert "confirmed publication" in action.error["message"]
     assert [
-        item["content"] for item in json.loads(platform.read_text())["reactions"]["repos/example/landing/issues/42"]
+        item["content"]
+        for item in json.loads(platform.read_text())["reactions"]["repos/example/landing/issues/comments/81"]
     ] == ["confused"]
     assert json.loads(platform.read_text())["reviews"] == state["reviews"]
 
