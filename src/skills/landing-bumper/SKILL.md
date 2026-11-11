@@ -18,16 +18,16 @@ For repository-wide GitHub work, inspect open Dependabot alerts; unavailable acc
 
 Update manifests, locks, hashes and Action references consistently. Inspect transitive changes and upstream compatibility notes. Run affected checks, including supplied required commands. Local work leaves a diff and results without committing or publishing unless authorized. Explicit work without CI may repair demonstrated check failures in the same invocation. Preparation-only work stops at the candidate.
 
-For new GitHub work, publish an authorized draft with versions and check results, then start independent CI following repository procedures. Failing local checks leave an unvalidated draft; compatibility repair waits for current candidate CI failure. Resolver failure is not a prepared candidate; unchanged resolution needs no PR.
+For new GitHub work, publish an authorized draft with versions and check results, then ensure independent CI covers the candidate following repository procedures; do not duplicate a run already started by the push. Failing local checks leave an unvalidated draft; compatibility repair waits for current candidate CI failure. Resolver failure is not a prepared candidate; unchanged resolution needs no PR.
 
 ## Repair demonstrated failures
 
 For an existing PR, refresh its head and CI results before editing; verify the dependency diff, target and failure logs. An approved author or an old failure event does not establish a current regression. Repair requires relevant, completed, failed CI for the inspected candidate.
 
-Use the fixer's method for the smallest repair, preserving the target and security fix. Append authorized repairs to the original PR branch, preserving draft status. Refresh the remote head before publishing; stop if another actor supersedes the candidate. Do not force-push or bypass missing access with a replacement PR. Mention changes to the bot's automatic maintenance behavior. If prior automatic repair left the same failure unresolved, report the blocker instead of repeating speculative edits. Validate repairs and start required independent CI within delegated authority; do not wait for the feedback job itself.
+Use the fixer's method for the smallest repair, preserving the target and security fix. Append authorized repairs to the original PR branch, preserving draft status. Refresh the remote head before publishing; stop if another actor supersedes the candidate. Do not force-push or bypass missing access with a replacement PR. Mention changes to the bot's automatic maintenance behavior. If prior automatic repair left the same failure unresolved, report the blocker instead of repeating speculative edits. Validate repairs and ensure required independent CI covers the candidate within delegated authority; do not wait for the feedback job itself.
 
 ## Deliver
 
-Reply to the delegation with requested and actual versions, changes, validation and blockers. Distinguish local checks from CI, alert closure and merge authority.
+Keep the existing update PR as the tracking location for the target, compatibility results and remaining blocker. Reply to the delegation with what changes its next decision, linking the candidate rather than repeating its version and validation inventory. Distinguish local checks, CI, alert closure, merge and release when the requested outcome depends on that distinction; do not append every lifecycle caveat to every reply.
 
 Use the issuer's method for confirmed exposure or blockers needing tracking, such as no patched version, policy conflicts or unresolved compatibility failures. When authorized, reuse or create an issue with the alert or candidate, dependency path, blocker and acceptance criteria; link it from the reply. Routine PRs need no extra issue; unchanged evidence needs no issue update. Dismissal does not prove repair.

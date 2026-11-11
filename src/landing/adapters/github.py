@@ -17,10 +17,10 @@ import typer
 from bub import hookimpl, tool
 from bub.core.events import ToolCallDecision
 from bub.core.tools import ToolContext
-from pydantic import AliasChoices, Field, FilePath, field_validator
+from pydantic import AliasChoices, BaseModel, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from landing.models import COMMANDS, Action, ActionRequest, FileInput, Mode
+from landing.models import COMMANDS, Action, ActionRequest, Decision, FileInput, Mode
 from landing.runtime import Runtime
 
 REPOSITORY_GUIDANCE = (
@@ -53,10 +53,36 @@ REVIEW_GUIDANCE = (
     "Before publishing, read the PR's existing review threads, including their resolved and outdated state, through the "
     "GraphQL reviewThreads connection. Add inline comments only for findings that no existing thread raises. "
     "Leave a still-applicable open finding in its thread and refer to it from the review body by link; "
-    "reply in that thread only when the candidate changes its conclusion or affected location. "
+    "reply in that thread only when evidence changes the conclusion, impact or required repair, or answers a question. "
+    "A new SHA, moved line or repeated successful reproduction alone is not a discussion update. "
     "Resolved threads stay settled unless new evidence changes their conclusion. "
     "Native check jobs are independent of Landing feedback; do not wait for this feedback job or the enclosing workflow "
     "to complete."
+)
+
+REVIEW_STATUS_MARKER = "<!-- landing:review-status "
+
+AUTOMATIC_REVIEW_GUIDANCE = (
+    "This is an automatic candidate review. Landing publishes your final response in one reusable PR status comment. "
+    "Do not submit a native review just to announce an unchanged or clean verdict, or edit the status comment yourself. "
+    "Read the current Landing status and existing GraphQL reviewThreads, including resolved and outdated state, "
+    "before deciding what changed. Resolved findings stay settled unless new evidence changes their conclusion. "
+    "Group new findings in one native COMMENT review, with an inline thread for each independent finding "
+    "where the diff supports it. Keep the parent review brief; do not repeat the inline explanations. "
+    "A finding without a suitable diff location may use that review's body. "
+    "APPROVE and REQUEST_CHANGES require separate explicit authorization. "
+    "Reuse existing finding threads. Reply only to report a changed conclusion, impact or required repair, "
+    "confirm a fix, withdraw a claim, or answer a question. A new SHA, moved line or repeated reproduction "
+    "does not warrant a reply. Do not restate unchanged findings. "
+    "Read back findings and inline replies through the native reviews/comments API; confirm_reply here targets "
+    "the PR conversation, not those inline threads. "
+    "Record your recommendation with decide. Your final response is the current status, not a work report: "
+    "one short sentence when clean; otherwise use only short labels and links for outstanding findings, "
+    "or state an unresolved acceptance condition without an existing finding. Do not repeat a linked finding's "
+    "explanation or repair. Omit the verdict heading, candidate hash and delivery marker from the final response; "
+    "Landing supplies them. "
+    "Keep scripts, check inventories and unchanged evidence in execution history, not the status comment. "
+    "Native check jobs are independent of Landing feedback; do not wait for this job or the enclosing workflow."
 )
 
 AUTOMATIC_GUIDANCE = "This is automatic follow-up; no_update is available when there is no useful change."
@@ -64,7 +90,8 @@ AUTOMATIC_GUIDANCE = "This is automatic follow-up; no_update is available when t
 CONVERSATION_GUIDANCE = (
     "Answer the delegation in issue or PR #$number. Link a repair or supporting evidence when needed; "
     "do not repeat an explanation already published in the linked issue, PR or review. "
-    "Call confirm_reply with the returned conversation comment ID to read back the published body."
+    "Call confirm_reply with the returned conversation comment ID to read back the published body. "
+    "After successful delivery, return a short link to that reply rather than repeating its body in the final response."
 )
 
 
@@ -283,6 +310,13 @@ def marker(mode: Mode, key: str) -> str:
     return f"<!-- landing:{mode}:{digest} -->"
 
 
+class ReviewStatus(BaseModel):
+    """Candidate and advisory decision carried by the mutable PR status."""
+
+    head: str
+    decision: Decision
+
+
 @dataclass
 class Publication:
     """Bind publication receipts and candidate checks to one GitHub delegation."""
@@ -295,6 +329,7 @@ class Publication:
     thread: int
     head: str
     reply_required: bool
+    automatic_review: bool = False
     publisher: int = field(default=0, init=False)
     previous_replies: set[int] = field(default_factory=set, init=False)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
@@ -331,14 +366,18 @@ class Publication:
     def find(self) -> dict | None:
         if not self.number:
             return None
-        kind = "pulls" if self.thread or self.review else "issues"
-        resource = "reviews" if self.review and not self.thread else "comments"
+        kind = "pulls" if self.thread or (self.review and not self.automatic_review) else "issues"
+        resource = "reviews" if self.review and not self.thread and not self.automatic_review else "comments"
         for item in rows(f"repos/{self.repository}/{kind}/{self.number}/{resource}", self.repository):
             if (
                 self.stamp in (item.get("body") or "")
                 and item.get("user", {}).get("id") == self.publisher
                 and item.get("state") != "PENDING"
                 and (not self.thread or item.get("in_reply_to_id") == self.thread)
+                and (
+                    not self.automatic_review
+                    or ((status := self.status_metadata(item)) is not None and status.head == self.head)
+                )
             ):
                 return item
         return None
@@ -357,11 +396,76 @@ class Publication:
             raise ValueError(message)
         return receipt
 
+    def status_metadata(self, receipt: dict) -> ReviewStatus | None:
+        header = (receipt.get("body") or "").split("\n", 1)[0]
+        if header.startswith(REVIEW_STATUS_MARKER) and header.endswith(" -->"):
+            return ReviewStatus.model_validate_json(header[len(REVIEW_STATUS_MARKER) : -4])
+        return None
+
+    def check_head(self) -> None:
+        if self.review and self.head:
+            current = json.loads(gh(["api", f"repos/{self.repository}/pulls/{self.number}"], self.repository))
+            if current["head"]["sha"] != self.head:
+                message = "The PR head changed; delegate a new review for the current candidate."
+                raise RuntimeError(message)
+
+    def publish_status(self, action: Action) -> None:
+        metadata = ReviewStatus(head=self.head, decision=action.decision or "inconclusive")
+        body = (
+            f"{REVIEW_STATUS_MARKER}{metadata.model_dump_json()} -->\n{self.stamp}\n"
+            f"**Landing: {metadata.decision}** · [{self.head[:7]}]"
+            f"(https://github.com/{self.repository}/commit/{self.head})\n\n{action.result}"
+        )
+        previous = next(
+            (
+                item
+                for item in rows(f"repos/{self.repository}/issues/{self.number}/comments", self.repository)
+                if item.get("user", {}).get("id") == self.publisher and self.status_metadata(item) is not None
+            ),
+            None,
+        )
+        self.check_head()
+        if previous and previous["body"] == body:
+            receipt = previous
+        else:
+            endpoint = (
+                f"repos/{self.repository}/issues/comments/{previous['id']}"
+                if previous
+                else f"repos/{self.repository}/issues/{self.number}/comments"
+            )
+            written = json.loads(
+                gh(["api", endpoint, "-X", "PATCH" if previous else "POST", "-f", f"body={body}"], self.repository)
+            )
+            receipt = self.read_reply(written["id"])
+        if receipt.get("body") != body:
+            message = "The review status could not be confirmed."
+            raise RuntimeError(message)
+
+    def complete(self, action: Action) -> None:
+        if self.automatic_review:
+            self.publish_status(action)
+        self.verify(action)
+
     def verify(self, action: Action) -> None:
         tasks = self.runtime.tasks
         if not self.number:
             return
+        self.check_head()
         receipt = self.find()
+        if receipt is not None and self.automatic_review:
+            receipt = self.read_reply(receipt["id"])
+            metadata = self.status_metadata(receipt)
+            if (
+                metadata is None
+                or metadata.head != self.head
+                or self.stamp not in receipt["body"]
+                or (
+                    action.decision is not None
+                    and (metadata.decision != action.decision or receipt["body"].partition("\n\n")[2] != action.result)
+                )
+            ):
+                message = "The review status no longer matches this delivery."
+                raise RuntimeError(message)
         if receipt is None and self.thread:
             saved = tasks.event_data(action.id, "github.reply_confirmed")
             if saved:
@@ -373,14 +477,12 @@ class Publication:
             and tasks.event_data(action.id, "issue.unchanged") is not None
         ):
             return
-        if receipt is None or (self.review and self.head and receipt.get("commit_id") != self.head):
+        if receipt is None or (
+            self.review and not self.automatic_review and self.head and receipt.get("commit_id") != self.head
+        ):
             message = "The agent completed without a confirmed publication at the requested destination."
             raise RuntimeError(message)
-        if self.review and self.head:
-            current = json.loads(gh(["api", f"repos/{self.repository}/pulls/{self.number}"], self.repository))
-            if current["head"]["sha"] != self.head:
-                message = "The PR head changed; delegate a new review for the current candidate."
-                raise RuntimeError(message)
+        self.check_head()
         tasks.event(action.id, "github.published", {"id": receipt["id"], "url": receipt["html_url"]})
 
     def replay(self, request: ActionRequest, key: str) -> Action | None:
@@ -409,6 +511,10 @@ class Publication:
                 },
             )
         self.verify(action)
+        if self.automatic_review and (status := self.status_metadata(receipt)):
+            return tasks.finish(
+                action.id, "completed", result=receipt["body"].partition("\n\n")[2], decision=status.decision
+            )
         return tasks.finish(action.id, "completed", result=f"Already published: {receipt['html_url']}")
 
     @hookimpl
@@ -559,7 +665,15 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
         repository, number, head, event, review=mode == "gatekeeper", current=mode == "bumper"
     )
     expected_review = is_pr and mode == "gatekeeper" and not thread
-    publication = Publication(landing, repository, number, stamp, expected_review, thread, head, reply_required)
+    automatic_review = bool(
+        expected_review
+        and event
+        and not event.get("comment")
+        and ("pull_request" in event or GitHubEnvironment().event_name == "workflow_dispatch")
+    )
+    publication = Publication(
+        landing, repository, number, stamp, expected_review, thread, head, reply_required, automatic_review
+    )
     # Automatic notifications can repeat on fresh runners without the original validation record.
     if mode == "bumper" and event and "workflow_run" in event and publication.find():
         return None
@@ -598,7 +712,7 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
     if thread:
         destination = THREAD_GUIDANCE
     elif expected_review:
-        destination = REVIEW_GUIDANCE
+        destination = AUTOMATIC_REVIEW_GUIDANCE if automatic_review else REVIEW_GUIDANCE
     elif mode == "issuer" and not reply_required:
         destination = AUTOMATIC_GUIDANCE
     guidance = Template(f"{PUBLICATION_GUIDANCE}\n\n{destination}").substitute(
@@ -630,7 +744,7 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
                         session_id=f"github:{number or key}",
                         scope=repository,
                         key=key,
-                        verify=publication.verify,
+                        verify=publication.complete,
                     )
                 except asyncio.CancelledError:
                     if not publication.action_id:

@@ -60,11 +60,11 @@ Ubuntu's runner provides gh; prepare [a supported version](guides/github.md) wit
 
 ## Open a PR and read the result
 
-Put the workflow on your trusted branch, then open a same-repository PR with a small change. When the native checks pass, Landing reads the candidate and publishes advisory feedback through a native GitHub `COMMENT` review. Findings appear at the relevant code locations. A clean review can say `No blocking findings.` without adding code comments.
+Put the workflow on your trusted branch, then open a same-repository PR with a small change. When the native checks pass, Landing reads the candidate and publishes an advisory status comment, updating the same comment on later candidates. New findings appear at the relevant code locations through native GitHub `COMMENT` reviews. A clean status can say `No blocking findings.` without adding code comments.
 
 Check the workflow and PR together. `status: completed` means the task finished and its required publication was verified; `decision` records `allow`, `block`, or `inconclusive`. Your team reviews the findings and independent checks to decide what to accept. Review guidance asks the agent to leave the candidate unchanged.
 
-Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs run the native checks and skip the Landing step. Execution or required publication failure still gives the Action a failed outcome; this workflow reports it as a warning and continues. A successful workflow does not prove that Landing delivered a review. If you see no review, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
+Unauthorized or unrelated events return `status: skipped` without invoking the model. Fork PRs run the native checks and skip the Landing step. Execution or required publication failure still gives the Action a failed outcome; this workflow reports it as a warning and continues. A successful workflow does not prove that Landing delivered feedback. If you see no status comment, start with the workflow logs and [Troubleshooting](guides/troubleshooting.md).
 
 Continue with [CI integration](guides/ci.md) for scope and concurrency, or [GitHub integration](guides/github.md#wire-commands-and-follow-ups) to delegate `/landing fix` and `/landing explain` from comments.
 

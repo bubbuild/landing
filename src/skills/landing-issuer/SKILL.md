@@ -16,7 +16,7 @@ Open an issue only for a confirmed problem worth tracking. State the observed be
 
 ## Maintain the existing issue
 
-Before creating an issue, search for a matching one and reuse its established evidence. Update only for new evidence, changed conditions or impact, or verified progress. A new run ID, unrelated commit, repeated known failure or still-missing evidence does not justify another update.
+Before creating an issue, search for a matching one and reuse its established evidence. Keep that issue as the current account of the problem, acceptance conditions and recovery state; do not create a parallel progress report for each run. Update content only within the delegated authority, preserving contributor context. Update only for new evidence, changed conditions or impact, or verified progress. A new run ID, unrelated commit, repeated known failure or still-missing evidence does not justify another update.
 
 Reopen only a demonstrated recurrence and close only when current evidence verifies acceptance. Resolved historical defects and unrelated green checks do not establish a current problem or recovery.
 
@@ -24,7 +24,7 @@ For automatic follow-up with no useful change, call `no_update` with the reason 
 
 ## Example
 
-Anonymized issue:
+Adapted from Xuanwo's OpenDAL issue: a supported operation fails after conversion, with a small reproduction and clear acceptance condition ([source](https://github.com/apache/opendal/issues/5235)):
 
 After converting an in-memory operator through the compatibility layer, writing a file fails with Unsupported even though the original operator supports writes.
 
