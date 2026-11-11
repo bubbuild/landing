@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from landing.server import create_app
+from landing.server import ServerSettings, create_app
 
 
 @pytest.fixture
@@ -153,6 +153,19 @@ def test_github_acceptance_does_not_require_run_metadata(receiver):
         response = post(client, event())
         assert response.status_code == 202
         assert response.json() == {}
+
+
+def test_dispatch_only_relay_never_builds_execution_framework(receiver, monkeypatch):
+    def refuse(*args, **kwargs):
+        message = "A dispatch-only relay must not construct the execution framework."
+        raise AssertionError(message)
+
+    monkeypatch.setattr("landing.server.BubFramework", refuse)
+    app = create_app(options=ServerSettings(runner="gha"))
+    with TestClient(app) as client:
+        assert post(client, event()).status_code == 202
+        assert client.get("/up").status_code == 200
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 1
 
 
 def test_ping_needs_no_repository_identity(receiver):

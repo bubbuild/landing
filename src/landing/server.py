@@ -30,13 +30,18 @@ def create_app(  # noqa: C901 -- routes share the selected execution lifespan.
 ) -> FastAPI:
     options, settings = options or ServerSettings(), WebhookSettings()
     local = None
-    framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
+    framework = None
+    # A GHA relay only verifies and dispatches; execution resources belong to the runner it starts.
     if options.runner == "local":
+        framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
         local = LocalRunner(framework, options.db, options.workspace, skill_dirs)
         framework.plugin_manager.register(local)
 
     @asynccontextmanager
     async def lifespan(app):
+        if framework is None:
+            yield
+            return
         async with framework.running():
             yield
 
