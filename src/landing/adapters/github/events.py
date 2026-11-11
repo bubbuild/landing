@@ -1,11 +1,25 @@
 """One event-selection and caller-admission decision for every GitHub entry point."""
 
 import json
+from dataclasses import dataclass
 
 from landing.models import COMMANDS
 
 from .api import gh, identity, required, rows
 from .settings import GitHubEnvironment, GitHubSettings
+
+
+@dataclass(frozen=True)
+class Delegation:
+    """The admitted work one event hands to execution, independent of entry point."""
+
+    command: str
+    instruction: str
+    event: dict | None = None
+    number: int = 0
+    head: str = ""
+    run_id: str = ""
+    delivery_key: str = ""
 
 
 def command_matches(event: dict, prefix: str) -> bool:
@@ -163,16 +177,49 @@ def dependency_pull(options: GitHubSettings, event: dict) -> dict | None:
     return pull
 
 
-def dependency_alert(options: GitHubSettings, event: dict) -> dict:
+def dependency_alert(options: GitHubSettings, event: dict) -> tuple[str, str, dict]:
     """Resolve a dispatched alert reference against its current repository state."""
     number = required(event, "alert", "number")
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
         message = "alert.number must be a positive integer."
         raise ValueError(message)
     alert = json.loads(gh(["api", f"repos/{options.repository}/dependabot/alerts/{number}"], options.repository))
-    options.delegated_command = "bump" if required(alert, "state") == "open" else "triage"
-    options.instruction = f"Follow Dependabot alert {number} using its current API state. " + options.instruction
-    return {**event, "dependabot_alert": alert}
+    command = "bump" if required(alert, "state") == "open" else "triage"
+    instruction = f"Follow Dependabot alert {number} using its current API state. " + options.instruction
+    return command, instruction, {**event, "dependabot_alert": alert}
+
+
+def route_event(options: GitHubSettings, event: dict | None) -> Delegation:
+    """Turn an admitted event into the delegation execution needs, without touching inputs."""
+    command, instruction = options.delegated_command, options.instruction
+    number, head, run_id, key = options.number, options.head, options.run_id, options.delivery_key or ""
+    if event and "comment" in event:
+        lines = required(event, "comment", "body").strip().splitlines()
+        parts = lines[0].split(maxsplit=2)
+        if len(parts) < 2 or parts[1] not in COMMANDS:
+            message = "Choose triage, fix, review, explain, or bump after the command prefix."
+            raise ValueError(message)
+        command = parts[1]
+        instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
+        target = event.get("issue") or required(event, "pull_request")
+        # pull_target reads the current head for a PR; the comment event does not carry it.
+        number = required(target, "number")
+    elif event and "alert" in event:
+        command, instruction, event = dependency_alert(options, event)
+    elif event and "workflow_run" in event:
+        run = required(event, "workflow_run")
+        command, run_id = "triage", str(required(run, "id"))
+        if "pull_request" in event:
+            pull = required(event, "pull_request")
+            command = "bump"
+            instruction = "Help this existing dependency update after candidate CI failed. " + instruction
+            number, head = required(pull, "number"), required(pull, "head", "sha")
+            key = key or f"bump:{number}:{head}"
+    elif event and not number:
+        pull = event.get("pull_request")
+        if pull:
+            number, head = required(pull, "number"), required(pull, "head", "sha")
+    return Delegation(command, instruction, event, number, head, run_id, key)
 
 
 def prepare_event(
@@ -181,7 +228,7 @@ def prepare_event(
     *,
     authenticated_event: str | None = None,
     context: GitHubEnvironment | None = None,
-) -> tuple[bool, dict | None]:
+) -> tuple[bool, Delegation | None]:
     """Apply the same caller policy and routing to native Actions and verified webhooks."""
     if not admitted(
         options.repository,
@@ -193,7 +240,7 @@ def prepare_event(
         authenticated_event=authenticated_event,
         context=context,
     ):
-        return False, payload
+        return False, None
     upstream_run = (payload or {}).get("workflow_run", {})
     if payload and (
         upstream_run.get("event") == "pull_request"
@@ -204,38 +251,6 @@ def prepare_event(
     ):
         pull = dependency_pull(options, payload)
         if pull is None:
-            return False, payload
+            return False, None
         payload = {**payload, "pull_request": pull}
     return True, route_event(options, payload)
-
-
-def route_event(args: GitHubSettings, event: dict | None) -> dict | None:
-    if event and "comment" in event:
-        lines = required(event, "comment", "body").strip().splitlines()
-        parts = lines[0].split(maxsplit=2)
-        if len(parts) < 2 or parts[1] not in COMMANDS:
-            message = "Choose triage, fix, review, explain, or bump after the command prefix."
-            raise ValueError(message)
-        args.delegated_command = parts[1]
-        args.instruction = "\n".join([parts[2] if len(parts) > 2 else "", *lines[1:]]).strip()
-        target = event.get("issue") or required(event, "pull_request")
-        # pull_target reads the current head for a PR; the comment event does not carry it.
-        args.number = required(target, "number")
-    elif event and "alert" in event:
-        return dependency_alert(args, event)
-    elif event and "workflow_run" in event:
-        run = required(event, "workflow_run")
-        args.delegated_command, args.run_id = "triage", str(required(run, "id"))
-        if "pull_request" in event:
-            pull = required(event, "pull_request")
-            args.delegated_command = "bump"
-            args.instruction = "Help this existing dependency update after candidate CI failed. " + args.instruction
-            args.number, args.head = required(pull, "number"), required(pull, "head", "sha")
-            if not args.delivery_key:
-                args.delivery_key = f"bump:{args.number}:{args.head}"
-    elif event and not args.number:
-        pull = event.get("pull_request")
-        if pull:
-            args.number, args.head = required(pull, "number"), required(pull, "head", "sha")
-
-    return event

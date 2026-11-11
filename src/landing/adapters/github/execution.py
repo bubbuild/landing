@@ -5,15 +5,15 @@ import json
 import shutil
 import subprocess
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from string import Template
-from typing import cast
 
 from landing.models import COMMANDS, Action, ActionRequest, FileInput
 from landing.runtime import Runtime
 
 from .api import gh, required
-from .events import prepare_event
+from .events import Delegation, prepare_event
 from .publication import (
     AUTOMATIC_GUIDANCE,
     AUTOMATIC_REVIEW_GUIDANCE,
@@ -85,10 +85,11 @@ def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool
 
 
 async def _run(
-    landing: Runtime, options: GitHubSettings, event: dict | None = None, *, event_name: str | None = None
+    landing: Runtime, options: GitHubSettings, delegation: Delegation, *, event_name: str | None = None
 ) -> Action | None:
-    repository, command = options.repository, options.delegated_command
-    number, head, key = options.number, options.head, cast(str, options.delivery_key)
+    event = delegation.event
+    repository, command = options.repository, delegation.command
+    number, head, key = delegation.number, delegation.head, delegation.delivery_key
     reply_required = not bool(event and ("workflow_run" in event or "dependabot_alert" in event))
     workspace = landing.framework.workspace
     mode = COMMANDS[command]
@@ -153,7 +154,7 @@ async def _run(
     source_input = FileInput(name="github-context.json", content=json.dumps(source))
     request = ActionRequest(
         mode=mode,
-        instruction=options.instruction or "Carry out the delegated work.",
+        instruction=delegation.instruction or "Carry out the delegated work.",
         workspace=str(workspace),
         input=[repository_context(repository), source_input, FileInput(name="github-guidance.txt", content=guidance)],
         checks=options.check if mode in {"fixer", "gatekeeper", "bumper"} else [],
@@ -207,15 +208,15 @@ async def execute(
     source: str | None = None,
     fallback_key: str | None = None,
 ) -> Action | None:
-    accepted, payload = prepare_event(options, payload, authenticated_event=source, context=context)
-    if not accepted:
+    accepted, delegation = prepare_event(options, payload, authenticated_event=source, context=context)
+    if not accepted or delegation is None:
         return None
-    if not options.delivery_key:
+    if not delegation.delivery_key:
         if not fallback_key:
             message = "Set LANDING_GITHUB_DELIVERY_KEY outside a GitHub workflow."
             raise ValueError(message)
-        options.delivery_key = fallback_key
+        delegation = replace(delegation, delivery_key=fallback_key)
     if options.checked_revision is None:
         options.checked_revision = context.checked_revision if context else ""
     runtime = Runtime(database, workspace=workspace, config_file=config_file, skill_dirs=skill_dirs, plugins=plugins)
-    return await _run(runtime, options, payload, event_name=source or (context.event_name if context else ""))
+    return await _run(runtime, options, delegation, event_name=source or (context.event_name if context else ""))

@@ -9,6 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 from landing.adapters.github import publication as github
+from landing.adapters.github.events import route_event
+from landing.adapters.github.settings import GitHubSettings
 from landing.cli import create_cli_app
 from landing.models import Action
 from tests.conftest import completion
@@ -1239,6 +1241,27 @@ def test_forwarded_headers_cannot_grant_native_dispatch_authority(platform, mode
     assert result.exit_code == 0, result.stderr
     assert not result.stdout
     assert not model[1]
+
+
+def test_routing_one_event_repeatedly_gives_the_same_delegation(monkeypatch):
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
+    options = GitHubSettings()
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {
+            "body": "/landing fix Repair retry behavior.\nPreserve the public CLI.",
+            "user": {"login": "writer"},
+        },
+    }
+    first, second = route_event(options, event), route_event(options, dict(event))
+    assert (first.command, first.instruction, first.number) == (
+        "fix",
+        "Repair retry behavior.\nPreserve the public CLI.",
+        42,
+    )
+    assert first == second
+    assert options.instruction == GitHubSettings.model_fields["instruction"].default
 
 
 def test_repositories_do_not_share_model_history_in_the_same_workspace(platform, model, monkeypatch, tmp_path):
