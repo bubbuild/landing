@@ -155,6 +155,31 @@ def test_github_acceptance_does_not_require_run_metadata(receiver):
         assert response.json() == {}
 
 
+def test_candidate_prs_need_a_same_repository_non_draft_head(receiver):
+    payload = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "action": "opened",
+        "pull_request": {"number": 42, "draft": False, "head": {"repo": {"full_name": "outside/landing"}}},
+    }
+    with TestClient(create_app()) as client:
+        assert post(client, payload, name="pull_request").status_code == 204
+        payload["pull_request"]["head"]["repo"]["full_name"] = "example/landing"
+        payload["pull_request"]["draft"] = True
+        assert post(client, payload, name="pull_request").status_code == 204
+        payload["pull_request"]["draft"] = False
+        assert post(client, payload, name="pull_request").status_code == 202
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 1
+
+
+def test_review_comment_delegation_is_selected_with_the_same_prefix_rule(receiver):
+    payload = event("/landing review Does this change the initial attempt?")
+    payload["comment"]["path"], payload["comment"]["pull_request_review_id"] = "retry.py", 9
+    with TestClient(create_app()) as client:
+        assert post(client, payload, name="pull_request_review_comment").status_code == 202
+        assert post(client, event("Handled the task."), name="issue_comment").status_code == 204
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 1
+
+
 def test_dispatch_only_relay_never_builds_execution_framework(receiver, monkeypatch):
     def refuse(*args, **kwargs):
         message = "A dispatch-only relay must not construct the execution framework."

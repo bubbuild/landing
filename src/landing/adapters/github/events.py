@@ -1,4 +1,4 @@
-"""Caller admission and event-to-mode routing, independent of CLI and HTTP."""
+"""One event-selection and caller-admission decision for every GitHub entry point."""
 
 import json
 
@@ -6,6 +6,40 @@ from landing.models import COMMANDS
 
 from .api import gh, identity, required, rows
 from .settings import GitHubEnvironment, GitHubSettings
+
+
+def command_matches(event: dict, prefix: str) -> bool:
+    """Whether the event's comment begins with the delegation prefix."""
+    comment = event.get("comment") or {}
+    first = (comment.get("body") or "").strip().split(maxsplit=1) if comment else []
+    return bool(first) and first[0] == prefix
+
+
+def selected_event(name: str, event: dict, *, workflow: str, prefix: str) -> bool:
+    """Whether an event kind can carry delegated work; caller authority stays separate."""
+    action = event.get("action")
+    if name in {"issue_comment", "pull_request_review_comment"}:
+        if action != "created":
+            return False
+        # Keep an unusable comment payload an invalid request rather than unrelated work.
+        required(event, "comment", "body")
+        return command_matches(event, prefix)
+    if name == "pull_request" and action in {"opened", "reopened", "synchronize", "ready_for_review"}:
+        pull = required(event, "pull_request")
+        head_repository = pull.get("head", {}).get("repo") or {}
+        return (
+            not pull.get("draft", True)
+            and head_repository.get("full_name", "").casefold() == required(event, "repository", "full_name").casefold()
+        )
+    if name == "workflow_run" and action == "completed":
+        run = required(event, "workflow_run")
+        path = (run.get("path") or "").split("@", 1)[0]
+        # The executor's result must not generate another delegation to itself.
+        return run.get("conclusion") == "failure" and workflow not in {
+            str(run.get("workflow_id")),
+            path.rsplit("/", 1)[-1],
+        }
+    return name == "dependabot_alert" and action in {"created", "reopened", "auto_reopened"}
 
 
 def permitted(repository: str, user: dict, trust: str, owner: dict) -> bool:
@@ -67,8 +101,7 @@ def admitted(  # noqa: C901 -- platform authority and original caller checks sha
         return False
     comment = event.get("comment")
     body = (comment.get("body") or "").strip() if comment else ""
-    first = body.split(maxsplit=1)
-    if comment and (body.startswith("<!-- landing:") or not first or first[0] != prefix):
+    if comment and (not command_matches(event, prefix) or body.startswith("<!-- landing:")):
         return False
     # Only native Actions context authenticates writes and dispatch; forwarded headers cannot grant that authority.
     # workflow_run is covered only after validating its originating workflow above.

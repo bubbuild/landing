@@ -13,7 +13,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
-from landing.adapters.github.webhook import WebhookSettings, dispatch, read_webhook, supported_event
+from landing.adapters.github.events import selected_event
+from landing.adapters.github.webhook import WebhookSettings, dispatch, read_webhook
 from landing.local import LocalRunner
 from landing.settings import DEFAULT_DATABASE, ConfigurationFile
 
@@ -57,7 +58,7 @@ def create_app(  # noqa: C901 -- routes share the selected execution lifespan.
         body = await request.body()
         try:
             event = read_webhook(body, x_hub_signature_256, settings.webhook_secret)
-            if not supported_event(x_github_event, event, settings.workflow, settings.command_prefix):
+            if not selected_event(x_github_event, event, workflow=settings.workflow, prefix=settings.command_prefix):
                 return Response(status_code=204)
             inputs = {
                 "event": body.decode(),
