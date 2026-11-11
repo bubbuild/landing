@@ -1,18 +1,23 @@
 """Native agent publication and event admission through a prepared gh executable."""
 
+import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
 import os
+from typing import cast
 
 import pytest
 from typer.testing import CliRunner
 
+from landing.adapters.github import execution
 from landing.adapters.github import publication as github
 from landing.adapters.github.events import route_event
 from landing.adapters.github.settings import GitHubSettings
 from landing.cli import create_cli_app
 from landing.models import Action
+from landing.runtime import Runtime
 from tests.conftest import completion
 
 
@@ -1262,6 +1267,83 @@ def test_routing_one_event_repeatedly_gives_the_same_delegation(monkeypatch):
     )
     assert first == second
     assert options.instruction == GitHubSettings.model_fields["instruction"].default
+
+
+class StubPublication:
+    """Stand in for receipts so execution reaches context construction."""
+
+    action_id = None
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def find(self):
+        return None
+
+    def replay(self, request, key):
+        return None
+
+    def complete(self, action):
+        return None
+
+
+class StubPluginManager:
+    def register(self, *args, **kwargs):
+        pass
+
+    def unregister(self, *args, **kwargs):
+        pass
+
+
+class StubLanding:
+    """Capture the request execution would hand to the agent."""
+
+    def __init__(self, workspace):
+        self.framework = type("Framework", (), {"workspace": workspace, "plugin_manager": StubPluginManager()})()
+        self.tools = []
+        self.tasks = None
+        self.request = None
+
+    @contextlib.asynccontextmanager
+    async def running(self):
+        yield self
+
+    async def run(self, request, **kwargs):
+        self.request = request
+        return Action(
+            id="stub",
+            mode=request.mode,
+            instruction=request.instruction,
+            workspace=str(self.framework.workspace),
+            status="completed",
+            created_at="now",
+            updated_at="now",
+        )
+
+
+def test_execution_context_names_the_failed_run_from_the_admitted_delegation(monkeypatch, tmp_path):
+    """Triage must cite the failed workflow the event names, not the dispatching run."""
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {
+            "id": 1234,
+            "event": "push",
+            "head_branch": "main",
+            "name": "release-main",
+            "head_repository": {"full_name": "example/landing"},
+        },
+    }
+    options = GitHubSettings(run_id="dispatch-run-900", upstream_workflow=["release-main"])
+    accepted, delegation = execution.prepare_event(options, event, authenticated_event="workflow_run")
+    assert accepted and delegation is not None and delegation.run_id == "1234"
+    landing = StubLanding(tmp_path)
+    monkeypatch.setattr(execution, "Publication", StubPublication)
+    monkeypatch.setattr(execution, "pull_target", lambda *args, **kwargs: (False, 0, ""))
+    asyncio.run(execution._run(cast("Runtime", landing), options, delegation, checked_revision=""))
+    assert landing.request is not None
+    context = next(item for item in landing.request.input if item.name == "github-context.json")
+    assert json.loads(context.content)["native_run_id"] == "1234"
 
 
 def test_repositories_do_not_share_model_history_in_the_same_workspace(platform, model, monkeypatch, tmp_path):

@@ -85,7 +85,12 @@ def checkout_contains(workspace: Path, head: str, checked_revision: str) -> bool
 
 
 async def _run(
-    landing: Runtime, options: GitHubSettings, delegation: Delegation, *, event_name: str | None = None
+    landing: Runtime,
+    options: GitHubSettings,
+    delegation: Delegation,
+    *,
+    checked_revision: str,
+    event_name: str | None = None,
 ) -> Action | None:
     event = delegation.event
     repository, command = options.repository, delegation.command
@@ -114,9 +119,9 @@ async def _run(
         "repository": repository,
         "number": number,
         "candidate_head": head,
-        "ci_checkout": options.checked_revision,
-        "ci_checkout_contains_candidate": checkout_contains(workspace, head, options.checked_revision or ""),
-        "native_run_id": options.run_id,
+        "ci_checkout": checked_revision,
+        "ci_checkout_contains_candidate": checkout_contains(workspace, head, checked_revision),
+        "native_run_id": delegation.run_id,
         "thread_comment_id": thread,
         "publication_marker": stamp,
         "target_url": f"https://github.com/{repository}/{'pull' if is_pr else 'issues'}/{number}" if number else "",
@@ -216,7 +221,14 @@ async def execute(
             message = "Set LANDING_GITHUB_DELIVERY_KEY outside a GitHub workflow."
             raise ValueError(message)
         delegation = replace(delegation, delivery_key=fallback_key)
-    if options.checked_revision is None:
-        options.checked_revision = context.checked_revision if context else ""
+    checked_revision = options.checked_revision
+    if checked_revision is None:
+        checked_revision = context.checked_revision if context else ""
     runtime = Runtime(database, workspace=workspace, config_file=config_file, skill_dirs=skill_dirs, plugins=plugins)
-    return await _run(runtime, options, delegation, event_name=source or (context.event_name if context else ""))
+    return await _run(
+        runtime,
+        options,
+        delegation,
+        checked_revision=checked_revision,
+        event_name=source or (context.event_name if context else ""),
+    )
