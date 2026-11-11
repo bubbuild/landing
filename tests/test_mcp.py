@@ -125,9 +125,11 @@ def test_mcp_tools_follow_mode_permissions(tmp_path, mcp_server, model, monkeypa
         ])
 
     async def run():
-        async with Runtime(tmp_path / "landing.sqlite3", workspaces={"default": tmp_path}).running() as landing:
+        async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             for mode in ("explainer", "fixer"):
-                action = await landing.run(ActionRequest(mode=mode, instruction="Record evidence."))
+                action = await landing.run(
+                    ActionRequest(mode=mode, workspace=str(tmp_path), instruction="Record evidence.")
+                )
                 assert action.status == "completed"
         assert [json.loads(line)["text"] for line in receipt.read_text().splitlines()] == ["allowed"]
 
@@ -150,12 +152,10 @@ def test_workspace_switch_does_not_reuse_previous_mcp_server(tmp_path, mcp_serve
         ])
 
     async def run():
-        async with Runtime(
-            tmp_path / "landing.sqlite3", workspaces={"first": first, "second": second}
-        ).running() as landing:
+        async with Runtime(tmp_path / "landing.sqlite3").running() as landing:
             for name in ("first", "second"):
                 action = await landing.run(
-                    ActionRequest(mode="explainer", workspace=name, instruction="Record evidence.")
+                    ActionRequest(mode="explainer", workspace=str(tmp_path / name), instruction="Record evidence.")
                 )
                 assert action.status == "completed"
         assert [json.loads(line)["text"] for line in receipt.read_text().splitlines()] == ["first"]

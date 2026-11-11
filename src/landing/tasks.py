@@ -159,16 +159,6 @@ class Tasks:
                 self._event(connection, action_id, "action.running", {})
         return bool(changed)
 
-    def next(self) -> str | None:
-        with self.engine.connect() as connection:
-            row = (
-                connection
-                .exec_driver_sql("SELECT id FROM actions WHERE status = 'queued' ORDER BY created_at, id LIMIT 1")
-                .mappings()
-                .first()
-            )
-            return row["id"] if row else None
-
     def finish(
         self,
         action_id: str,

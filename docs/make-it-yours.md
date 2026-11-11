@@ -1,6 +1,6 @@
 # Make Landing work for you
 
-You choose the model, environment, instructions, tools, and acceptance checks. Start with the built-in commands and adapt the parts your team needs. CLI, CI, and HTTP calls share the same action contract.
+You choose the model, environment, instructions, tools, and acceptance checks. Start with the built-in commands and adapt the parts your team needs. CLI and CI use the same execution path; the HTTP receiver selects local or Actions execution.
 
 ## Choose the model and environment
 
@@ -13,7 +13,7 @@ export LANDING_API_KEY="your-provider-api-key"
 
 You can save settings in `~/.landing/config.yml`; see [Configuration](reference/configuration.md) for endpoints and precedence. Model requests go to the selected provider, whose data handling applies.
 
-Prepare checkouts, language runtimes, dependencies, credentials, and baseline data using your existing setup process. A remote client uses the server's prepared environment. Landing does not install project tools or skills for you.
+Prepare checkouts, language runtimes, dependencies, credentials, and baseline data using your existing setup process. Webhook work uses the selected local or Actions runner's prepared environment. Landing does not install project tools or skills for you.
 
 ## Provide project guidance
 
@@ -58,6 +58,6 @@ Checks execute in the task workspace. Exit status establishes pass or failure, s
 
 ## Connect and extend
 
-Supply focused evidence with `--input`, use the prepared gh CLI for [GitHub](guides/github.md), or translate another platform's events into the [HTTP contract](reference/http.md). Provider signatures belong at that translation boundary. Use a [service](guides/server.md) for shared callers.
+Supply focused evidence with `--input`, use the prepared gh CLI for [GitHub](guides/github.md), or connect GitHub webhooks to the [receiver](guides/server.md). The receiver verifies signatures and queues local work or dispatches it to Actions; it is not a generic task submission API.
 
 Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters. Use the CLI, GitHub integration, or [HTTP service](reference/http.md) to delegate work. For an embedded agent, use [Bub's SDK](https://bub.build/docs/build/sdk/). Actions and model history stay in SQLite; workspace files remain separate. Choose retention and [recovery](guides/recovery.md) for both.

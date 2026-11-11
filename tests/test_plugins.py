@@ -15,12 +15,13 @@ from tests.test_repository import report_reference
 
 
 @pytest.mark.parametrize("mode", ["fixer", "gatekeeper"])
-def test_delegated_work_and_checks_use_the_host_environment(tmp_path, model, mode):
+def test_delegated_work_and_checks_use_the_host_environment(tmp_path, model, mode, monkeypatch):
     workspace, default = tmp_path / "workspace", tmp_path / "default"
     prepared = workspace / "prepared"
     workspace.mkdir()
     prepared.mkdir()
     (default / "prepared").mkdir(parents=True)
+    monkeypatch.chdir(default)
     (workspace / "deployment.txt").write_text("reference=wrong")
     if mode != "fixer":
         (prepared / "deployment.txt").write_text("reference=approved")
@@ -38,14 +39,12 @@ def test_delegated_work_and_checks_use_the_host_environment(tmp_path, model, mod
     responses.extend([completion(tool="fs_read", arguments={"path": "deployment.txt"}), report_reference])
 
     async def run():
-        async with Runtime(
-            tmp_path / "landing.sqlite3", workspaces={"default": default, "selected": workspace}, plugins=[Host()]
-        ).running() as landing:
+        async with Runtime(tmp_path / "landing.sqlite3", plugins=[Host()]).running() as landing:
             action = await landing.run(
                 ActionRequest(
                     mode=mode,
                     instruction="Inspect the deployment reference.",
-                    workspace="selected",
+                    workspace=str(workspace),
                     checks=['test "$(cat deployment.txt)" = reference=approved'],
                 )
             )
@@ -92,6 +91,10 @@ def test_native_plugin_tools_and_continuation_share_task_state(tmp_path, model):
 
     class Context:
         @hookimpl
+        def provide_tools(self):
+            return [identify]
+
+        @hookimpl
         def load_state(self):
             return {"reference": "approved"}
 
@@ -111,10 +114,60 @@ def test_native_plugin_tools_and_continuation_share_task_state(tmp_path, model):
 
     async def run():
         landing = Runtime(tmp_path / "landing.sqlite3", plugins=[Context()])
-        landing.tools.append(identify)
         async with landing.running():
             action = await landing.run(ActionRequest(mode="explainer", instruction="Identify deployment."))
             assert action.status == "completed"
             assert action.result == "Continued with approved evidence."
 
     asyncio.run(run())
+
+
+def test_configured_native_plugin_supplies_environment_and_tools(tmp_path, monkeypatch, model, capsys):
+    from landing.cli import main
+
+    module = tmp_path / "prepared_plugin.py"
+    module.write_text("""from bub import hookimpl, tool
+from bub.environment import LocalEnvironment
+@tool
+def identity():
+    return "reference=plugin"
+@hookimpl
+def provide_tools():
+    return [identity]
+@hookimpl
+def provide_environment(session_id, workspace):
+    return LocalEnvironment(workspace / "prepared")
+""")
+    metadata = tmp_path / "prepared_plugin-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "entry_points.txt").write_text("[bub]\nprepared-test = prepared_plugin\n")
+    (tmp_path / "prepared").mkdir()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("LANDING_PLUGINS", '["prepared-test"]')
+
+    async def report(**request):
+        text = "Used the prepared plugin." if "reference=plugin" in str(request["messages"]) else "Missing plugin tool."
+        return completion(text)
+
+    model[0].extend([
+        completion(tool="identity"),
+        completion(tool="fs_write", arguments={"path": "result.txt", "content": "plugin environment"}),
+        report,
+    ])
+    assert (
+        main([
+            "--db",
+            str(tmp_path / "landing.sqlite3"),
+            "fix",
+            "Use the prepared plugin.",
+            "--workspace",
+            str(tmp_path),
+            "--check",
+            "test -f result.txt",
+            "--json",
+        ])
+        == 0
+    )
+    assert "Used the prepared plugin." in capsys.readouterr().out
+    assert (tmp_path / "prepared/result.txt").exists()
+    assert not (tmp_path / "result.txt").exists()

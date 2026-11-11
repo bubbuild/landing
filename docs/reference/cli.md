@@ -14,7 +14,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 | --- | --- |
 | `--db PATH` | SQLite path, overriding `LANDING_DB`. |
 | `--github-repository OWNER/REPO` | Prepared gh context, default `LANDING_GITHUB_REPOSITORY`; configured on the executing host. |
-| `--skill-dir PATH` | Repeatable trusted skill root for execution or `serve`. |
+| `--skill-dir PATH` | Repeatable trusted skill root for local or runner execution. |
 
 [Configuration](configuration.md) defines environment defaults and skill precedence.
 
@@ -24,7 +24,7 @@ Put global options before the subcommand. Local execution requires Python 3.12 o
 landing {triage,fix,review,explain,bump} [INSTRUCTION] [OPTIONS]
 ```
 
-A nonblank instruction or at least one input is required. Results are text by default. Commands execute the task and return its result. Use the [HTTP API](http.md) to submit work to a running service and receive a receipt immediately.
+A nonblank instruction or at least one input is required. Results are text by default. Commands execute the task and return its result. The [HTTP service](http.md) admits GitHub webhooks and dispatches them to Actions.
 
 | Option | Contract |
 | --- | --- |
@@ -51,15 +51,15 @@ Bump accepts dependency targets, policy and configuration locations through ordi
 | `action cancel ID` | Cancel queued work while its executing host is stopped. |
 | `action retry ID` | Execute a new action from a terminal task's request. |
 
-All accept `--json`. Retry does not revert workspace changes. Inspection can read SQLite while its worker runs; only explicit `watch` polls for completion. Use Ctrl-C to cancel local execution, or the HTTP cancellation endpoint for a running service. Each database has one execution owner.
+All accept `--json`. Retry does not revert workspace changes. Inspection can read SQLite while its worker runs; only explicit `watch` polls for completion. Use Ctrl-C to cancel local execution, or cancel the GitHub Actions run for remote execution. Each database has one execution owner.
 
 ## Serve
 
 ```text
-landing [GLOBAL OPTIONS] serve [--host HOST] [--port PORT] [--workspace NAME=PATH]
+landing [GLOBAL OPTIONS] serve [--runner local|gha] [--workspace PATH] [--host HOST] [--port PORT]
 ```
 
-Host defaults to `127.0.0.1`, port to `8080`. Workspace registration is repeatable; `default` initially points to the current directory. Listening beyond localhost requires `LANDING_TOKEN`. See [Run the server](../guides/server.md).
+Host defaults to `127.0.0.1`, port to `8080`. Execution defaults to `local`; `--runner gha` selects stateless Actions placement. Local mode uses `--db` for its inbox and history, runs in `--workspace` or the current directory, and needs prepared model/tools/publication access. Both modes require a webhook secret. See [Run the server](../guides/server.md).
 
 ## Exit codes and interruption
 
@@ -76,38 +76,24 @@ Help and syntax diagnostics remain plain in captured output. Syntax errors use s
 
 ## GitHub events
 
-```bash
-landing --db landing.sqlite3 github event --repository example/service --event event.json --delivery-key comment:123
-```
+`landing github event` is the GitHub CLI and Actions entry point. The local service calls the same execution API directly. It reads `GITHUB_EVENT_PATH` and [integration configuration](configuration.md#github-workflows-and-runner), admits the caller, routes the event, and verifies native publication. It returns an action record as JSON and treats review decisions as advisory. Unauthorized or unrelated events exit successfully without an action; lookup failures fail visibly.
 
-`github event` reads a GitHub event, checks caller authority, and executes the selected command. It uses the prepared gh identity and current workspace, returns an action record as JSON, and treats review decisions as advisory. `--help` lists its options. Use repeatable `--check` and `--upstream-workflow` options for local calls. An unrelated or unauthorized event exits successfully without an action record.
+A forwarded `workflow_dispatch` carries GitHub's original body in `inputs.event`, original signature in `inputs.signature`, and original headers in `inputs.event_name` and `inputs.delivery`. The runner verifies the original HMAC with `LANDING_GITHUB_WEBHOOK_SECRET`, removes the key, and checks the original caller. Forwarded inputs do not set integration policy. Local workers read accepted input from the inbox and call the execution API without native Actions authority. Native Actions events use the same execution and publication path without wrapping.
 
-A `repository_dispatch` with `action: dependabot_alert` supplies a positive integer `client_payload.alert_number`. The current GitHub alert state selects the command: open selects bump; fixed or dismissed selects triage. Alert lookup errors fail the invocation. See [security alert integration](../guides/github.md#handle-security-alerts-and-unresolved-blockers) for setup and issue tracking.
+For local event reproduction, set `GITHUB_EVENT_PATH`, `LANDING_GITHUB_REPOSITORY`, and `LANDING_GITHUB_DELIVERY_KEY` before invoking the command. Ordinary local tasks still use `landing explain`, `triage`, `fix`, `review`, or `bump` with their CLI options. The duplicated `github event` option surface is removed.
 
-In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT_*` environment. Multiline `INPUT_CHECKS` and `INPUT_UPSTREAM_WORKFLOW` supply checks and allowed workflow names. Explicit options take precedence. The database uses `--db`, then `INPUT_DATABASE`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`. Outside a workflow, supply `--delivery-key`. Native output and summary files receive the same values as the composite Action.
+Native `dependabot_alert` payloads resolve the current alert through GitHub: open selects bump; fixed or dismissed selects triage. Alert lookup errors fail the invocation.
 
 ## GitHub Action
 
-The `bubbuild/landing` Action executes work from GitHub workflow events. [Get started](../get-started.md) shows project preparation and one Action invocation with built-in admission.
+The `bubbuild/landing` Action prepares an isolated Landing installation, invokes `github event`, and exports `id`, `status`, `decision`, and `result`. [Get started](../get-started.md) shows native CI use; [server setup](../guides/server.md) covers webhook placement.
 
 | Input | Contract |
 | --- | --- |
-| `command` | `review` (default), `fix`, `triage`, `explain`, or `bump`; comment events route their own command. |
+| `command` | `review` (default), `fix`, `triage`, `explain`, or `bump`; comments and signed events route their own command. |
 | `instruction` | Task and acceptance criteria; defaults to carrying out the selected action using repository guidance. |
-| `repository` | Workflow repository; cross-repository targets fail. |
-| `trust` | `repository` (default) or `owner`. |
-| `upstream-workflow` | Allowed `workflow_run` name; empty rejects these events. |
-| `bump-on-failure` | Default `false`; opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails. |
-| `dependency-update-actors` | Update account logins, one per line; defaults to `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
-| `number` | Issue or PR number; supplied by the event when available. |
-| `head` | Candidate head, distinct from the checked revision; PR events supply it. |
-| `checked-revision` | Actual checked commit, default `github.sha`. |
-| `run-id` | Native run to inspect, default the current run. |
-| `delivery-key` | Stable delivery identity; default run ID and attempt, or PR number and candidate head for automatic bump. |
-| `command-prefix` | Comment prefix, default `/landing`. |
 | `checks` | Required check commands, one per line. |
-| `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
-Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without task creation, model use, delegated tools or checks, or publication. Permission lookup errors fail the Action. Execution or required publication failure also fails the step; gate recommendations remain advisory. Automatic PR and candidate dispatch reviews update one status comment instead of requiring a new overview review per execution. Explicit review commands retain their required reply. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
+Repository policy and task references use `LANDING_GITHUB_*` environment settings rather than additional forwarded inputs. Model settings and execution tools belong to the prepared runner. `LANDING_DB` selects a nondefault runner database.
 
-For automatic feedback, set GitHub's step-level `continue-on-error: true`; this is a workflow property, not an Action input. `steps.landing.outcome` remains `failure` even though its conclusion becomes `success`. Use the outcome to warn and retain logs and artifacts. Omit this property for strict delegations.
+Unauthorized or unrelated events return `status: skipped` without model work, delegated tools, checks, or publication. Permission lookup, execution, and required publication failures fail the step; gate recommendations remain advisory. For optional feedback, GitHub's step-level `continue-on-error: true` keeps that step from failing native CI while preserving `steps.landing.outcome`. It is not an Action input.

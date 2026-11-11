@@ -1,0 +1,79 @@
+name: Landing Execute
+run-name: Landing ${{ inputs.delivery || 'maintenance' }}
+
+on:
+  schedule:
+    - cron: '23 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      event:
+        description: Original GitHub webhook body; leave empty for maintenance
+        type: string
+        default: ''
+      signature:
+        description: Original X-Hub-Signature-256
+        type: string
+        default: ''
+      event_name:
+        description: Original X-GitHub-Event
+        type: string
+        default: ''
+      delivery:
+        description: Original X-GitHub-Delivery
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  execute:
+    if: vars.LANDING_MODEL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-python-env
+      - name: Prepare repository tools
+        env:
+          GH_TOKEN: ${{ secrets.LANDING_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth setup-git
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          scripts/prepare-skills.sh "$RUNNER_TEMP/landing-skills"
+          echo "LANDING_SKILL_DIRS=[\"$RUNNER_TEMP/landing-skills\"]" >> "$GITHUB_ENV"
+          npx --yes @playwright/mcp@0.0.83 --help > /dev/null
+          mkdir -p .ci-state/browser
+      - uses: ./
+        with:
+          command: bump
+          instruction: >-
+            Maintain this repository's dependencies using its documented version policy.
+            Publish updates as draft PRs; run required checks and start candidate CI.
+            Maintainers own merge and alert dismissal.
+        env:
+          LANDING_GITHUB_TRUST: ${{ vars.LANDING_GITHUB_TRUST || 'repository' }}
+          LANDING_GITHUB_UPSTREAM_WORKFLOW: ${{ vars.LANDING_GITHUB_UPSTREAM_WORKFLOW }}
+          LANDING_GITHUB_BUMP_ON_FAILURE: ${{ vars.LANDING_GITHUB_BUMP_ON_FAILURE || 'false' }}
+          LANDING_GITHUB_WEBHOOK_SECRET: ${{ secrets.LANDING_GITHUB_WEBHOOK_SECRET }}
+          GH_TOKEN: ${{ secrets.LANDING_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_ADMISSION_TOKEN: ${{ secrets.LANDING_ADMISSION_TOKEN || secrets.LANDING_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          LANDING_MODEL: ${{ vars.LANDING_MODEL }}
+          LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
+          LANDING_API_BASE: ${{ vars.LANDING_API_BASE }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: landing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/landing/
+            .ci-state/browser/
+          retention-days: 30
+          if-no-files-found: warn

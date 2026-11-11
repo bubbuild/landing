@@ -1,38 +1,31 @@
-# Deploy Landing
+# Deploy the webhook receiver
 
-Use `ghcr.io/bubbuild/landing:latest` for the latest stable release. Pin a release tag or digest to keep the deployed image fixed. Prepare model settings and a project workspace with the tools its tasks need.
+Prepare the [executor and credentials](server.md) first. Use an image containing webhook support; older releases serve the former local execution API. Choose local execution or GHA placement. Model keys, project tools, and execution history belong at the selected execution location.
 
 ## Start with Compose
 
 ```bash
-export LANDING_TOKEN="your-server-token"
-export LANDING_MODEL="openai:gpt-4.1"
-export LANDING_API_KEY="your-provider-api-key"
+export LANDING_GITHUB_WEBHOOK_SECRET="your-random-webhook-secret"
+export GH_TOKEN="your-actions-dispatch-token"
 docker compose pull
 docker compose up --no-build -d
 curl --fail http://127.0.0.1:8080/up
 ```
 
-The image serves port 80 as UID 1000. SQLite lives at `/storage/landing.sqlite3`; the default workspace is `/storage/workspace`. It starts empty, so prepare your checkout there before delegating. Git, gh, uv, and Python are included; add other project toolchains through your normal provisioning process. Register additional workspaces with `serve --workspace NAME=PATH`.
+Use `compose.yaml` from the repository. `LANDING_IMAGE` selects a release or digest. For this unreleased checkout, build with `LANDING_IMAGE=landing:local SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run landing --version)" docker compose up --build -d`.
 
-Submit through the HTTP API with the same token:
+The Compose example explicitly selects `LANDING_RUNNER=gha`. In that mode the image requires no persistent volume, database path, or model settings. It serves port 80 as UID 1000, includes gh, and uses `/up` as its healthcheck. Compose forwards only the listed variables; add an override for other prepared configuration.
 
-```bash
-curl -i http://127.0.0.1:8080/v1/actions -H "Authorization: Bearer $LANDING_TOKEN" -H "Content-Type: application/json" -d '{"mode":"explainer","instruction":"Explain the validation failure in this workspace."}'
-```
+Expose `/webhooks/github` through HTTPS. Configure the same webhook secret in GitHub, the receiver, and the trusted executor. The dispatch target defaults to `landing-execute.yml` on each event repository's default branch; optional workflow and ref settings override it.
 
-The response contains a task receipt; [Run the server](server.md) explains result inspection and cancellation.
+## Run a local worker in a container
 
-Use `compose.yaml` from the Landing repository. `LANDING_IMAGE` selects another image or digest. For a local build, run `LANDING_IMAGE=landing:local SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run --reinstall-package landing landing --version)" docker compose up --build -d` from the repository checkout. Compose forwards only the listed variables; use an override for additional settings or mounts. See [Configuration](../reference/configuration.md#container-replication). `/up` is also the container healthcheck. Each database has one worker.
+Select `LANDING_RUNNER=local`, mount the prepared checkout, and set `LANDING_WORKSPACE` to its container path. Mount persistent storage for `LANDING_DB` and provide the local model and publication settings. Ensure UID 1000 can write the database and checkout. Prepare additional project toolchains in the image; Landing does not install them or reset workspaces between jobs. Native environment plugins are optional and must be installed in Landing's interpreter.
 
 ## Deploy with ONCE
 
-The image exposes port 80 and `/up`, and stores persistent data under `/storage`. When deploying behind ONCE or another TLS proxy, set `LANDING_BASE_URL` to the public origin for pagination links.
-
-Configure the [replica destination](recovery.md#replicate-the-database) and credentials before deployment:
-
 ```bash
-once deploy ghcr.io/bubbuild/landing:latest --host landing.example.com --env "LANDING_TOKEN=$LANDING_TOKEN" --env "LANDING_MODEL=$LANDING_MODEL" --env "LANDING_API_KEY=$LANDING_API_KEY" --env "LITESTREAM_REPLICA_URL=$LITESTREAM_REPLICA_URL" --env "AWS_REGION=$AWS_REGION" --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+once deploy ghcr.io/bubbuild/landing:latest --host landing.example.com --env "LANDING_RUNNER=gha" --env "LANDING_GITHUB_WEBHOOK_SECRET=$LANDING_GITHUB_WEBHOOK_SECRET" --env "GH_TOKEN=$GH_TOKEN"
 ```
 
-Enable ONCE's full-volume backups for workspace files. Landing uses paused-container backup behavior. Litestream protects SQLite separately; [Recovery](recovery.md) describes both paths. Verify deployment and remote replication in your actual environment.
+A GHA-only receiver needs no backup or restore step. Local workers retain their database and workspace as described in [execution history](recovery.md). Restarting it cannot cancel a workflow that GitHub has already accepted. A failed or timed-out webhook remains visible in GitHub's delivery history; inspect Actions before redelivery. Verify actual dispatch and publication in your deployment, not just `/up`.

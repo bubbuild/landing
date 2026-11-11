@@ -1,47 +1,45 @@
-# Run the server
+# Run a local worker or Actions receiver
 
-Use a service for a shared queue or HTTP admission point. Prepare checkouts, dependencies, model settings, and skills on the executing host. Install the CLI with `uv tool install landing`.
+`landing serve` accepts GitHub webhooks and selects an execution location with `--runner local|gha` or `LANDING_RUNNER`. Local execution is the default. The local worker and Actions CLI call the same execution API, which checks the original caller, selects a mode, and verifies native publication.
 
-## Start with registered workspaces
+## Run locally without Actions
 
-```bash
-export LANDING_TOKEN="your-server-token"
-landing --db /var/lib/landing/landing.sqlite3 serve --host 127.0.0.1 --port 8080 --workspace candidate=/srv/landing/candidate
-```
-
-Requests select registered names rather than arbitrary paths. `default` points to the server's current directory. Each database has one worker with serial execution; submit through the service rather than starting another local worker on that database.
-
-Tools and checks use the host environment. Add trusted skills with global `--skill-dir` options; each action also loads its workspace's instructions and skills. Remote callers cannot add local skill roots. Binding beyond localhost requires `LANDING_TOKEN`; provide TLS through your proxy.
-
-## Explore the API
-
-Open [the API reference](http://127.0.0.1:8080/docs) to inspect requests and try the API with Scalar. When `LANDING_TOKEN` is configured, enter its value as the bearer token before sending a request. Download the OpenAPI document from the page or fetch `/openapi.json`. Documentation is public and contains no task history or credentials; API calls still require the token.
-
-## Admit webhook work
+Prepare a checkout, its project tools, model access, and gh authentication. The worker uses that checkout; it does not clone repositories or reset local edits.
 
 ```bash
-curl -i http://127.0.0.1:8080/v1/actions -H "Authorization: Bearer $LANDING_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: delivery-example-1" -d '{"mode":"explainer","instruction":"Explain the failed validation.","workspace":"candidate","input":[{"type":"text","text":"Invalid arguments returned exit code 0."}]}'
+export LANDING_GITHUB_WEBHOOK_SECRET="your-random-webhook-secret"
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
+export GH_TOKEN="your-repository-token"
+landing --db /srv/landing/landing.sqlite3 serve --runner local --workspace /srv/project
 ```
 
-Admission persists the task before returning `201` and `Location`. The request returns without waiting for model execution. Read that resource when you need the eventual result. Identical admission with the same key reuses the action; changed content returns `409`.
+Accepted events enter a SQLite inbox before HTTP returns. A serial worker executes them in separate processes through Bub's environment and process lifecycle. The installed worker loads the event from SQLite and calls that API directly, without a temporary event file or CLI handoff. A same-named module in the checkout cannot replace the installed worker. The worker identifies the prepared checkout through gh and rejects events for another repository before model execution. It does not manufacture Actions identity or outputs.
 
-This endpoint accepts Landing's normalized [HTTP contract](../reference/http.md). Your platform adapter verifies its provider signature, translates the payload, and delivers the result. It is not a raw GitHub or Linear webhook receiver.
+Local jobs share the selected database and workspace. Task records and Bub tapes survive process and service restarts; later work in the same GitHub thread and workspace can read earlier history. On shutdown, owned processes stop and waiting events remain queued. Failed events retain a diagnostic in the inbox and receiver logs rather than retrying continuously. Inspect saved actions with `landing --db /srv/landing/landing.sqlite3 action list --json`.
 
-## Inspect or cancel work
+Local mode runs with the service account's filesystem and process permissions; it is not a sandbox. Keep callers trusted and configure environment isolation deliberately when needed.
 
-Use the returned `Location`, replacing `act_example` with the action ID:
+Keep the database and workspace persistent, and use one worker for that inbox. Model settings, Git identity, credentials, and trusted skills belong to the executing environment. Global `--skill-dir` roots are passed to local jobs. [Configuration](../reference/configuration.md#bub-plugins) describes optional native environment and storage plugins.
+
+## Place work on GitHub Actions
 
 ```bash
-curl http://127.0.0.1:8080/v1/actions/act_example -H "Authorization: Bearer $LANDING_TOKEN"
-curl -X POST http://127.0.0.1:8080/v1/actions/act_example/cancellation -H "Authorization: Bearer $LANDING_TOKEN"
+export LANDING_GITHUB_WEBHOOK_SECRET="your-random-webhook-secret"
+export GH_TOKEN="your-actions-dispatch-token"
+landing serve --runner gha --host 127.0.0.1 --port 8080
 ```
 
-Disconnecting the caller leaves accepted work running. Cancellation goes through the service that executes it. Stopping the service preserves queued work and interrupts active work; queued work resumes after restart. Inspect interrupted work before retrying.
+This receiver mode needs neither a local checkout nor a database or model key. The GitHub identity needs Actions write access to each target repository. Prepared gh login also works. The default executor is `landing-execute.yml` on the event repository's default branch; `LANDING_GITHUB_WORKFLOW` and `LANDING_GITHUB_REF` override the workflow and trusted ref.
 
-## Verify readiness
+Use Landing's [executor workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing-execute.yml) as a starting point. It accepts `event`, `signature`, `event_name`, and `delivery`. Outside Landing's repository, adapt preparation and replace `uses: ./` with a pinned Landing revision. Configure the same webhook secret, model access, publication credentials, and task policy on the executor. GitHub stores the workflow run; the runner uploads its SQLite execution history as an artifact. It does not download previous databases automatically.
 
-```bash
-curl --fail http://127.0.0.1:8080/up
-```
+## Connect GitHub
 
-`/up` checks the worker and database; `/healthz` checks HTTP liveness. Both are unauthenticated. See [Deployment](deploy.md) for containers and [Recovery](recovery.md) for storage.
+Configure a repository webhook at `/webhooks/github`, choose `application/json`, and use the same webhook secret. Subscribe to comments, PRs, workflow runs, and Dependabot alerts as needed. If changing the command prefix, configure `LANDING_GITHUB_COMMAND_PREFIX` consistently on the receiver and worker.
+
+The original body and signature reach execution unchanged. The runner verifies them and checks current caller permissions; message fields do not configure authorization policy. Set `LANDING_GITHUB_TRUST`, allowed upstream workflows, and dependency-repair policy in the execution environment.
+
+Landing's repository keeps Main for checks and the executor for webhook jobs plus weekly/manual maintenance. Remove overlapping listeners in other repositories when adopting this receiver. Provide HTTPS and appropriate ingress limits through your proxy.
+
+Post `/landing explain What caused this failure?` as an authorized writer. In local mode, inspect receiver logs, SQLite action history, and the native reply. In GHA mode, inspect the workflow run and artifacts. `/up` checks local worker availability or, for GHA placement, HTTP liveness. See [HTTP semantics](../reference/http.md), [Deployment](deploy.md), and [execution history](recovery.md).

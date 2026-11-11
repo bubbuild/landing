@@ -1,8 +1,9 @@
 """Bub hooks supply Landing task guidance, state, and storage."""
 
 import asyncio
+import signal
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bub import hookimpl, tool
 from bub.builtin.settings import load_session_settings
@@ -12,6 +13,7 @@ from bub.core.events import LLMCallDecision, ToolCall, ToolCallResult
 from bub.core.tape import session_tape_name
 from bub.core.tools import ToolContext, content_result, result_content
 from bub.envelope import field_of
+from bub.environment import LocalEnvironment
 from bub.errors import BubError
 from bub.turn import TurnState
 
@@ -102,9 +104,12 @@ class LandingHooks:
     async def storage_lifespan(self):
         with own_database(self.runtime.path), open_database(self.runtime.engine):
             self.runtime.execution = asyncio.Lock()
-            self.runtime.pending = asyncio.Event()
             self.runtime.tasks.recover()
             yield
+
+    @hookimpl(trylast=True)
+    def provide_environment(self, workspace: Path):
+        return LocalEnvironment(workspace)
 
     @hookimpl
     def provide_tape_store(self):
@@ -113,3 +118,17 @@ class LandingHooks:
     @hookimpl(specname="provide_tape_sidecar")
     def spill_sidecar(self):
         return self.runtime.spill_store
+
+
+class TerminationHooks:
+    """Process entry points own termination; platform adapters do not."""
+
+    @hookimpl(specname="provide_lifespan")
+    async def termination(self):
+        loop = asyncio.get_running_loop()
+        task = cast("asyncio.Task", asyncio.current_task())
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+        try:
+            yield
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)

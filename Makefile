@@ -36,16 +36,12 @@ publish: ## Publish a release to PyPI.
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
 
-.PHONY: docs-api
-docs-api: ## Export the OpenAPI schema
-	@uv run python scripts/export_api_docs.py
-
 .PHONY: docs-test
-docs-test: docs-api ## Test if documentation can be built without warnings or errors
+docs-test: ## Test if documentation can be built without warnings or errors
 	@uv run zensical build -s
 
 .PHONY: docs
-docs: docs-api ## Build and serve the documentation
+docs: ## Build and serve the documentation
 	@uv run zensical serve
 
 .PHONY: help

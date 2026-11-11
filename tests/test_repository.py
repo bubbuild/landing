@@ -6,12 +6,10 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from landing.cli import main
 from landing.models import ActionRequest
 from landing.runtime import Runtime
-from landing.server import create_app
 from tests.conftest import completion
 
 
@@ -60,7 +58,7 @@ def test_cli_uses_selected_project_instructions_and_explicit_skill_root(tmp_path
     assert json.loads(capsys.readouterr().out)["result"] == "regional: Deployment reference: approved"
 
 
-def test_registered_workspaces_keep_their_own_skills_and_user_fallback(tmp_path, monkeypatch, model):
+def test_selected_workspaces_keep_their_own_skills_and_user_fallback(tmp_path, monkeypatch, model):
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     write_skill(tmp_path / "home" / ".agents/skills", "deploy", "global")
     first, second = tmp_path / "first", tmp_path / "second"
@@ -76,14 +74,12 @@ def test_registered_workspaces_keep_their_own_skills_and_user_fallback(tmp_path,
     ])
 
     async def run():
-        async with Runtime(
-            tmp_path / "landing.sqlite3", workspaces={"first": first, "second": second}
-        ).running() as runtime:
+        async with Runtime(tmp_path / "landing.sqlite3").running() as runtime:
             local = await runtime.run(
-                ActionRequest(mode="explainer", instruction="Identify deployment.", workspace="first")
+                ActionRequest(mode="explainer", instruction="Identify deployment.", workspace=str(first))
             )
             global_ = await runtime.run(
-                ActionRequest(mode="explainer", instruction="Identify deployment.", workspace="second")
+                ActionRequest(mode="explainer", instruction="Identify deployment.", workspace=str(second))
             )
             assert local.result == "Deployment reference: local"
             assert global_.result == "Deployment reference: global"
@@ -122,30 +118,19 @@ def test_cli_loads_configured_skills_and_explicit_override(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize(
-    ("entry", "limits"),
+    "limits",
     [
-        ("cli", {}),
-        ("http", {"allowed_skills": []}),
-        ("cli", {"allowed_skills": ["landing-explainer"], "excluded_skills": ["landing-explainer"]}),
+        {},
+        {"allowed_skills": []},
+        {"allowed_skills": ["landing-explainer"], "excluded_skills": ["landing-explainer"]},
     ],
 )
-def test_selected_mode_skill_can_be_overridden_or_disabled(tmp_path, monkeypatch, model, capsys, entry, limits):
-    from tests.test_server import wait
-
+def test_selected_mode_skill_can_be_overridden_or_disabled(tmp_path, monkeypatch, model, capsys, limits):
     write_skill(tmp_path / ".agents/skills", "landing-explainer", "approved")
     monkeypatch.setenv("LANDING_MODES", json.dumps({"explainer": limits}))
     responses, _ = model
     responses.append(report_reference)
     database = tmp_path / "landing.sqlite3"
-    if entry == "cli":
-        assert (
-            main(["--db", str(database), "explain", "Identify deployment.", "--workspace", str(tmp_path), "--json"])
-            == 0
-        )
-        action = json.loads(capsys.readouterr().out)
-    else:
-        with TestClient(create_app(database, workspaces={"default": tmp_path})) as client:
-            response = client.post("/v1/actions", json={"mode": "explainer", "instruction": "Identify deployment."})
-            assert response.status_code == 201
-            action = wait(client, response.headers["Location"])
+    assert main(["--db", str(database), "explain", "Identify deployment.", "--workspace", str(tmp_path), "--json"]) == 0
+    action = json.loads(capsys.readouterr().out)
     assert action["result"] == ("No reference available." if limits else "Deployment reference: approved")

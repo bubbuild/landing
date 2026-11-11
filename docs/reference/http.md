@@ -1,87 +1,34 @@
 # HTTP reference
 
-Submit an action, then read its record for progress and results. The service saves accepted work before execution and uses the same requests and results as the CLI. When connecting a platform webhook, verify its signature and translate its payload to the request below before submitting it.
+The receiver verifies GitHub webhooks and accepts work for `local` or `gha` execution. Local mode persists an inbox in SQLite; GHA mode calls GitHub's dispatch API without a local queue. Both execute through the same GitHub adapter and Bub runtime. There is no general job-control or delivery-claim API.
 
-## Authorization and admission
+## Webhook delivery
 
-When `LANDING_TOKEN` is configured, action endpoints require `Authorization: Bearer TOKEN`. JSON admission requires a JSON Content-Type such as `application/json`, has a 16 MiB limit, and rejects unknown fields.
+`POST /webhooks/github` reads GitHub's JSON body and `X-GitHub-Delivery`, `X-GitHub-Event`, and `X-Hub-Signature-256` headers. Landing verifies the original SHA-256 HMAC with `LANDING_GITHUB_WEBHOOK_SECRET`. Delivery IDs are opaque strings. The verified payload supplies the target repository; it is not restricted to one configured repository.
 
-```json
-{
-  "mode": "gatekeeper",
-  "instruction": "Review the candidate against these acceptance criteria.",
-  "workspace": "candidate",
-  "input": [
-    {"type": "text", "text": "Missing arguments must exit 2."},
-    {"type": "file", "name": "check.log", "media_type": "text/plain", "content": "Acceptance passed.\n"}
-  ],
-  "checks": ["make acceptance"]
-}
-```
+Selected events enter the local inbox or dispatch the configured workflow with the original body, signature, event name, and delivery ID. There is no second Landing signature or configuration snapshot. The runner verifies the same original signature, removes the key before model execution, and checks caller permissions using its trusted integration configuration. Forwarded headers cannot grant native dispatch authority. Publication identity uses GitHub's verified signature, not the unsigned delivery header; the header remains a run correlation label.
 
-| Field | Contract |
+| Event | Selection |
 | --- | --- |
-| `mode` | Required: `issuer`, `fixer`, `gatekeeper`, `explainer`, or `bumper`. |
-| `instruction` | Optional string; a nonblank instruction or nonempty input is required. |
-| `workspace` | Registered name, default `default`; the service prepares no checkout. |
-| `input` | Text or file snapshots, default empty; files require `name` and `content`, with `media_type` defaulting to `text/plain`. |
-| `checks` | Nonblank commands, default empty; supported only by fixer, gatekeeper, and bumper. Fixer and bumper run checks after edits; gatekeeper runs them before evaluation. |
+| `issue_comment`, `pull_request_review_comment` | Created comments beginning with the configured command prefix. |
+| `pull_request` | Opened, reopened, synchronized, or ready-for-review, non-draft PRs with a same-repository head. |
+| `workflow_run` | Failed, completed runs, excluding the executor itself. The runner checks the configured upstream allowlist. |
+| `dependabot_alert` | Created or reopened alerts; the runner resolves their current state. |
 
-`POST /v1/actions` commits the request before returning `201` with an action record and `Location`. Optional `Idempotency-Key` accepts 1–256 characters. The same key and request return the existing action with `200`; conflicting content returns `409`. Retry admission also supports the header.
+These filters select possible work, not authorized users. A dispatch can start a runner that skips the event before model execution because caller permissions or task policy reject it. Ordinary discussion and unrelated events receive `204` without dispatch.
 
-## Resources
+In local mode, `202` returns `{"queued": 1}` after persisting the event; the value identifies an inbox entry, not a completed action. GHA mode returns `202` only after the dispatch call succeeds, with GitHub response data when available. Neither response means the model finished. Authorization happens in the worker before model execution.
 
-| Method and path | Contract |
-| --- | --- |
-| `POST /v1/actions` | Admit work. |
-| `GET /v1/actions?limit=50&cursor=act_example` | History, newest first. |
-| `GET /v1/actions/{id}` | Action record. |
-| `GET /v1/actions/{id}/events?after=0&limit=50` | Lifecycle, validation, and publication events. |
-| `POST /v1/actions/{id}/cancellation` | Request cancellation. |
-| `POST /v1/actions/{id}/retries` | Retry a terminal action's original request. |
-| `GET /healthz` | HTTP liveness. |
-| `GET /up` | Worker and SQLite readiness. |
-| `GET /docs` | Scalar API reference with interactive requests and bearer authentication. |
-| `GET /openapi.json` | Generated schema. |
+`401` means an invalid signature, `422` invalid input, `502` failed GHA dispatch, and `503` unavailable local intake. `/up` checks local worker availability or GHA receiver liveness, not model or GitHub credential health.
 
-Health checks, `/docs`, and the generated schema are public. Documentation describes the API without exposing task history or credentials.
+## Limits and redelivery
 
-Collections are arrays. `limit` is 1–100, default 50. Follow `Link: rel="next"` for pagination. Action cursors are IDs; event `after` uses the last numeric event ID, default 0. `LANDING_BASE_URL` supplies the public origin behind a proxy.
+For GHA placement, GitHub's workflow input limits still apply; Landing does not impose another encoded-size cap or truncate events. GitHub rejection is reported as a dispatch failure. Set ingress body limits and TLS through your hosting environment.
 
-## Action records
+GitHub expects a webhook response within ten seconds. Local mode returns after the inbox write; the GHA dispatch call has an eight-second timeout. GHA mode acknowledges only after that call succeeds. If GitHub is slow or the response is lost, inspect Actions before redelivering from GitHub's webhook delivery UI. Redelivery is allowed and can start another run; the receiver does not claim exactly-once execution or keep an `uncertain` record that blocks retries.
 
-| Field | Contract |
-| --- | --- |
-| `id`, `mode`, `instruction`, `workspace` | Identity and delegated work; IDs are opaque. |
-| `status` | Execution status: `queued`, `running`, `completed`, `failed`, `cancelled`, or `interrupted`. |
-| `result` | Text or null; failed actions can retain an answer. |
-| `decision` | Gatekeeper recommendation: `allow`, `block`, or `inconclusive`; null for other modes. A missing gatekeeper decision is inconclusive. |
-| `error` | Error details or null. |
-| `retry_of` | Original action ID or null. |
-| `created_at`, `updated_at` | Record timestamps. |
-| `started_at`, `completed_at`, `cancel_requested_at` | Lifecycle timestamps or null. |
+Local waiting events resume after restart. Shutdown stops the active child process; an action that already started retains its recorded cancellation or interruption rather than silently repeating edits. Failed inbox entries remain diagnostic records and are not continuously retried. Inspect the action, workspace, and native publications before re-delegating. No task workspace is reset automatically.
 
-Read the record when needed; terminal states are `completed`, `failed`, `cancelled`, and `interrupted`. Admission does not wait for completion, and caller disconnection does not cancel accepted work. Events contain `id`, `type`, `created_at`, and `data`. Validation events record command, output, exit code, and timeout status.
+Once GitHub accepts a GHA job, it no longer depends on receiver availability. GitHub owns its cancellation and reruns. Existing publication markers can prevent repeated replies in either location, but do not establish exactly-once side effects.
 
-Cancellation returns `202` while active work stops, otherwise `200` for terminal work. Retry requires a terminal action and preserves workspace edits. After worker restart, active work becomes `interrupted`, queued work resumes, and completed work does not replay.
-
-## Errors
-
-Errors use FastAPI's JSON responses with a `detail` field. Request validation returns `422` with a list of field errors; HTTP errors return a message:
-
-```json
-{
-  "detail": "The idempotency key was used with a different request."
-}
-```
-
-| Status | Meaning |
-| --- | --- |
-| `401` | Missing or invalid token. |
-| `404` | Missing route or action. |
-| `409` | Idempotency conflict or invalid retry state. |
-| `413` | Request exceeds 16 MiB. |
-| `422` | Malformed JSON, invalid content type, fields, checks, workspace, or query values. |
-| `503` | Unavailable worker or database. |
-
-[Run the server](../guides/server.md) provides an end-to-end request example.
+The former `/v1/actions` API, delivery receipt API, and named workspace registration are removed. `serve --workspace PATH` selects the prepared local checkout. See [server setup](../guides/server.md).

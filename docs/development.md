@@ -15,7 +15,7 @@ make docs-test
 uv build
 ```
 
-Use `make docs` for preview. Documentation commands export the server's OpenAPI schema without starting a worker; generated files are not committed. Run checks appropriate to the change; native CI owns the full Python 3.12–3.14 matrix on Linux, a macOS test run, quality, strict documentation build, and container recovery. See [Contributing](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) for discussion and submission.
+Use `make docs` for preview. Documentation builds do not start execution or contact GitHub. Run checks appropriate to the change; native CI owns the full Python 3.12–3.14 matrix on Linux, a macOS test run, quality, strict documentation build, and container startup/shutdown. See [Contributing](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) for discussion and submission.
 
 ## Test what people observe
 
@@ -40,17 +40,39 @@ Deterministic tests establish identity, destination, stale-candidate, required-c
 Landing is an application with CLI, HTTP, and GitHub entry points. Its internal Runtime uses `BubAgent`, Bub's core Agent configured with native Framework hooks; Landing does not expose an embedding SDK. Landing pins the published `bub[app]==0.6.1` package. The `app` dependencies provide reusable hooks and tools; Landing owns its entry points and does not run Bub's message pipeline. Mode selection and accepted SQLite requests drive execution.
 
 ```text
-CLI / GitHub -> admission -> run -----+
-HTTP -> receipt -> background worker -+-> SQLite -> execute
-                                                     |
-                         Framework hooks -> BubAgent + checks
-                                |                    |
-                      hooks / state / storage    result / reply
+HTTP webhook -> verify/filter -> local inbox -> worker process --+
+                          \-> GHA dispatch -> Action CLI -------+-> GitHub execution API
+Native Action / github event CLI -------------------------------+          |
+                                                                  policy + request
+                                                                          |
+Plain CLI ------------------------------------------------------------> Runtime
+                                                                          |
+                                                                  BubAgent + checks
+                                                                          |
+                                                                  publication verify
 ```
 
 The CLI registers Landing commands and bundled adapter commands directly. Help and history inspection start no agent. Each execution creates a BubAgent inside the Framework lifespan, restores state with `Framework.build_state()`, selects tools, then consumes the native stream inside `Agent.run()`. BubAgent subscribes native interception hooks and supplies continuations and steering. Landing supplies its SystemPrompt and disables command parsing so delegated text remains model input. Agent and tool resources close before post-edit checks and delivery verification.
 
-HTTP accepts work without waiting for completion; its worker continues after the request ends. CLI and GitHub wait for their delegated outcome. The CLI and worker await the same owned execution task, which consumes the native Agent stream. Only explicit `action watch` polls. Each mode uses the same chain with its own skills and capability limits: issuer identifies changed problems, fixer repairs them, gatekeeper evaluates candidates, and explainer answers the current question. Review recommendations remain advisory.
+Local intake returns after persisting the original event in SQLite; GHA intake returns after GitHub accepts dispatch. `LocalRunner` uses `provide_lifespan` to own the inbox consumer, `provide_environment` to supply the native host environment, and Bub's shell manager to own child processes and shutdown. The isolated worker reads the accepted event by inbox ID and calls the GitHub execution API directly. There is no temporary event file, synthetic `GITHUB_EVENT_PATH`, Typer parsing, or environment-variable task handoff. The process boundary keeps synchronous GitHub calls and model execution off the HTTP loop. Both worker and Action CLI use the same execution API and publication hooks.
+
+### Module boundaries
+
+```text
+cli.py / server.py / worker.py          entry points and process ownership
+  -> adapters/github/execution.py      event-to-action orchestration
+       -> events.py                    caller policy and mode routing
+       -> publication.py               publication receipts and native hooks
+       -> api.py / settings.py         prepared GitHub access and configuration
+       -> runtime.py                   Bub execution, tools, checks, result state
+            -> hooks.py / mcp.py       native SDK integrations
+            -> tasks.py / store.py     action records and model history
+  -> inbox.py                          local intake persistence
+```
+
+`local.py` schedules a worker process; it neither parses GitHub events nor implements SQL operations. `worker.py` loads accepted input and invokes the execution API. `adapters/github/webhook.py` owns webhook verification and Actions placement, not model execution. Integration modules never import CLI or HTTP modules. Native Actions context is passed explicitly to admission; local execution cannot acquire authority from ambient Actions variables. Process entry points register `TerminationHooks`; publication code no longer installs process signal handlers.
+
+The local inbox has only pending messages and retained errors. It is not a GHA receipt/claim protocol. Finished or ignored messages leave the inbox; action records and tapes remain. Waiting work survives restart, while native action identity and publication verification prevent silently repeating already-started work. CLI and runner execution share native state, environment, tape-store, tool, and interception hooks.
 
 Landing task records and Bub tapes share one SQLite database. Resetting a session's tape clears its model history without deleting action records.
 
@@ -64,11 +86,11 @@ Host starts -> Framework lifespan -> lock + SQLite recovery
 Host exits -> stop and await work -> close environments -> unlock SQLite
 ```
 
-`Runtime.running()` owns foreground execution; `Runtime.lifespan` uses it with a worker for ASGI. A `provide_environment` plugin applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
+`Runtime.running()` owns foreground execution. The former local ASGI execution queue and Runtime submission API are removed. A `provide_environment` plugin applies to both tools and checks; otherwise they use the selected workspace. State and skills stay isolated by workspace and session. A reused Runtime supports later lifespans.
 
-Cancellation goes through the executing host. Interrupting a foreground invocation cancels its action; service shutdown marks active work interrupted and leaves queued work for restart. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
+Cancellation goes through the executing host. Interrupting a foreground invocation cancels its action; runner shutdown marks active work interrupted; receiver shutdown does not cancel a remote run. Interrupted work requires inspection before retry because external effects may already exist. Other processes can read history, but offline cancellation requires exclusive database ownership.
 
-GitHub adds `confirm_reply` for its run and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. `LANDING_REPLICATE` delegates service supervision and backup recovery to Litestream, which starts the same CLI with replication disabled in its child. The container prepares its directory and executes the ordinary CLI. Help, invalid arguments, and non-service commands bypass replication.
+GitHub adds `confirm_reply` for its run and verifies publication identity, destination, and candidate revision. Replayed deliveries reuse their existing action; superseded candidates stop without publishing. The container starts `serve`; Compose explicitly chooses GHA placement. Local service mode retains its inbox and execution database.
 
 ## Instructions and skills
 
@@ -80,42 +102,17 @@ Task instructions and evidence stay in task inputs. GitHub adaptation owns desti
 
 ## Run the feedback loop
 
-Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step: failures emit a warning and retain their task records without failing native CI. Environment preparation outside the Action remains strict, as do explicit delegations. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
+Main runs native quality, tests, typing, documentation, and container checks. GitHub webhooks route comments, PR reviews, failed upstream workflows, and alerts through the receiver. `landing-execute.yml` runs the original GitHub event with the ordinary Action; the same workflow handles weekly and manual dependency maintenance. The previous Main feedback job and duty listener are removed rather than retained as a second event path.
 
-The release workflow also deploys documentation from main on push or manual dispatch. Package publication runs only for a published release; documentation-only runs do not trigger issuer follow-up. Pages artifacts use attempt-specific names so deployment retries select one artifact.
+Prepare `LANDING_MODEL`, `LANDING_API_KEY`, optional `LANDING_API_BASE`, and `LANDING_GITHUB_WEBHOOK_SECRET` in the executor. Publication defaults to the workflow token; `LANDING_GITHUB_TOKEN` and `LANDING_ADMISSION_TOKEN` can provide separate identities. Configure runner policy with `LANDING_GITHUB_*`, not forwarded payload fields or repeated workflow conditions. The executor prepares skills, Git authentication, and the repository's MCP tools before delegation, and uploads SQLite and browser evidence with 30-day retention.
 
-```text
-Issue or failure -> Delegated work -> Candidate PR -> Native checks
-      ^                                                 |
-      |                  Review and maintainer feedback |
-      +-------------------------------------------------+
-```
-
-The composite Action is `action.yml`. Main and duty prepare project tools and skills, then call `uses: ./` once with built-in admission. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty uses the default-branch checkout for its prepared environment, admits explicit commands or trusted release events, and queues delegations separately. Admission protects delegated agent work; native workflow policy governs the prepared environment. [GitHub integration](guides/github.md) explains identity, trust, and publication.
-
-Configure this repository's workflows with these GitHub variables and secrets:
-
-| Setting | Purpose |
-| --- | --- |
-| Variable `LANDING_MODEL` | Model identifier; unset disables feedback. |
-| Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
-| Secret `LANDING_API_KEY` | Provider key. |
-| Variable `LANDING_TRUST` | Caller policy, default `repository`. |
-| Secret `LANDING_ADMISSION_TOKEN` | Optional admission credential; organization owner checks need Members read. |
-| Secret `LANDING_GITHUB_TOKEN` | Publication token, default workflow token. |
-| Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
-
-For a workflow-token candidate, start Main explicitly using the repository procedure:
+For a workflow-token candidate, start Main explicitly:
 
 ```bash
 gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA
 ```
 
-Candidate self-checks install Landing from that checkout. A duty task using the default-branch runtime does not reload it when the selected workspace changes.
-
-The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json) for demonstration and browser checks during development.
-
-Bundled jobs use a 120-second model request timeout. Main's feedback Action has a 20-minute step timeout inside a 25-minute job, leaving time for warnings and artifact upload. Duty has a 20-minute job timeout. Per-job SQLite artifacts expire after 30 days. Retain lasting findings in issues, project guidance, code, and meaningful regression cases. Update work items when evidence or outcomes change; avoid repeated status reports.
+Main checks the supplied candidate revision. The executor itself stays on its configured trusted ref; changing the task checkout does not reload its runtime. CI remains independent of the agent's review recommendation. Release publication and documentation deployment retain their existing workflows.
 
 ## Publish a release
 
@@ -129,13 +126,11 @@ Check whether the explanation helped, the repair met acceptance, and feedback re
 
 Keep investigation details in artifacts and public feedback useful to the person receiving it. Automated work can proceed within its authorization. Maintainers stay involved in welcoming contributors, understanding concerns, and resolving disagreements, following [Community Over Code](working-with-landing.md#community-over-code).
 
-## Verify container recovery
-
-With Docker or Podman:
+## Verify the webhook container
 
 ```bash
-docker build --build-arg SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run --reinstall-package landing landing --version)" -t landing:local .
+docker build --build-arg SETUPTOOLS_SCM_PRETEND_VERSION="$(uv run landing --version)" -t landing:local .
 uv run python tests/container_smoke.py --image landing:local
 ```
 
-This acceptance exercises health, authentication, graceful shutdown, paused-volume restore, and restoration from a real Litestream file replica onto an empty primary volume. Remote storage and ONCE deployment need verification in their own environments. See [Recovery](guides/recovery.md).
+The smoke test starts the non-root image in GHA placement mode without storage, model settings, or GitHub credentials, checks liveness and signature handling using an ignored ping, and verifies graceful shutdown. It makes no GitHub writes and does not establish real-provider execution or external delivery.

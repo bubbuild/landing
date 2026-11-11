@@ -6,10 +6,8 @@
 !src/landing/
 !src/landing/*.py
 !src/landing/adapters/
-!src/landing/adapters/*.py
+!src/landing/adapters/**
 !src/skills/
 !src/skills/**
-!container/
-!container/entrypoint
-!container/litestream.yml
 !Dockerfile
+**/__pycache__/

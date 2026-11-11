@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from landing.models import Mode
 
+DEFAULT_DATABASE = Path("~/.local/share/landing/landing.sqlite3")
+
 
 class ModeSettings(BaseModel):
     """Additional mode instructions and native SDK capability limits."""
@@ -38,5 +40,6 @@ class Settings(AgentSettings):
         populate_by_name=True,
         hide_input_in_errors=True,
     )
+    plugins: list[str] = Field(default_factory=list)
     skill_dirs: list[Path] = Field(default_factory=list)
     modes: dict[Mode, ModeSettings] = Field(default_factory=dict)

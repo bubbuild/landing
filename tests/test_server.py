@@ -1,251 +1,161 @@
-import asyncio
-import threading
-import time
+"""The receiver forwards GitHub's signed event, without owning a job queue."""
 
-import httpx
+import hashlib
+import hmac
+import json
+import os
+from uuid import uuid4
+
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from landing.models import ActionRequest
-from landing.runtime import Runtime
 from landing.server import create_app
-from tests.conftest import completion
 
 
-def wait(client, location):
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        action = client.get(location).json()
-        if action["status"] == "completed":
-            return action
-        assert action["status"] in {"queued", "running"}, action
-        time.sleep(0.01)
-    message = "The action did not finish."
-    raise AssertionError(message)
+@pytest.fixture
+def receiver(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("GITHUB_", "INPUT_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("LANDING_RUNNER", "gha")
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "webhook-fixture")
+    state = tmp_path / "github.json"
+    state.write_text(json.dumps({"dispatches": []}))
+    monkeypatch.setenv("TEST_GITHUB_STATE", str(state))
+    executable = tmp_path / "gh"
+    executable.write_text("""#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+path = Path(os.environ["TEST_GITHUB_STATE"])
+state = json.loads(path.read_text())
+state["dispatches"].append({"endpoint": sys.argv[2], **json.load(sys.stdin)})
+path.write_text(json.dumps(state))
+if state.get("wait"):
+    time.sleep(60)
+if state.get("lost_receipt"):
+    raise SystemExit("Dispatch response lost")
+if state.get("empty_response"):
+    raise SystemExit(0)
+print(json.dumps({"workflow_run_id": 123, "html_url": "https://github.com/example/landing/actions/runs/123"}))
+""")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    return state
 
 
-def test_webhook_admission_history_and_retry(tmp_path, model):
-    responses, _ = model
-    responses.extend([completion("Explained the failing check.")] * 3)
-    path = tmp_path / "landing.sqlite3"
-    app = create_app(Runtime(path, workspaces={"candidate": tmp_path}))
-    body = {"mode": "explainer", "instruction": "Explain the failing check.", "workspace": "candidate"}
-    with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
-        created = client.post("/v1/actions", json=body, headers={"Idempotency-Key": "delivery-1"})
-        assert created.status_code == 201
-        location = created.headers["Location"]
-        action = wait(client, location)
-        assert action["result"] == "Explained the failing check."
-        repeated = client.post("/v1/actions", json=body, headers={"Idempotency-Key": "delivery-1"})
-        assert repeated.status_code == 200
-        assert repeated.json()["id"] == action["id"]
+def event(body="/landing explain this failure"):
+    return {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "action": "created",
+        "sender": {"login": "writer"},
+        "comment": {"id": 7, "body": body, "user": {"login": "writer"}},
+        "issue": {"number": 42},
+    }
+
+
+def post(client, payload, *, delivery_id=None, name="issue_comment", signed=True):
+    body = json.dumps(payload, ensure_ascii=False).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "X-GitHub-Delivery": delivery_id or str(uuid4()),
+        "X-GitHub-Event": name,
+        "X-Hub-Signature-256": "sha256="
+        + hmac.new(b"webhook-fixture" if signed else b"wrong", body, hashlib.sha256).hexdigest(),
+    }
+    return client.post("/webhooks/github", content=body, headers=headers)
+
+
+def test_dispatch_returns_github_receipt_and_preserves_original_event(receiver):
+    with TestClient(create_app()) as client:
+        payload = event("/landing explain 这次失败")
+        response = post(client, payload, delivery_id="opaque-delivery")
+        assert response.status_code == 202
+        assert response.json()["workflow_run_id"] == 123
+        dispatched = json.loads(receiver.read_text())["dispatches"][0]
+        assert dispatched["ref"] == "main"
+        inputs = dispatched["inputs"]
+        assert json.loads(inputs["event"]) == payload
+        assert inputs["event_name"] == "issue_comment"
+        assert inputs["delivery"] == "opaque-delivery"
         assert (
-            client.post(
-                "/v1/actions", json={**body, "instruction": "Different."}, headers={"Idempotency-Key": "delivery-1"}
-            ).status_code
-            == 409
+            inputs["signature"]
+            == "sha256=" + hmac.new(b"webhook-fixture", inputs["event"].encode(), hashlib.sha256).hexdigest()
         )
-        retry = client.post(location + "/retries", headers={"Idempotency-Key": "retry-1"})
-        assert retry.status_code == 201
-        retried = wait(client, retry.headers["Location"])
-        assert retried["retry_of"] == action["id"]
-        assert client.post(location + "/retries", headers={"Idempotency-Key": "retry-1"}).status_code == 200
-        assert client.post(location + "/cancellation").status_code == 200
-        history = client.get("/v1/actions?limit=1")
-        assert len(history.json()) == 1
-        assert 'rel="next"' in history.headers["Link"]
-        assert client.get(history.links["next"]["url"]).json()[0]["id"] == action["id"]
-        events = client.get(location + "/events?limit=1")
-        following = client.get(events.links["next"]["url"]).json()
-        assert following[0]["id"] > events.json()[0]["id"]
-    # A restart does not require a provider call to read completed work.
-    with TestClient(create_app(tmp_path / "landing.sqlite3")) as client:
-        assert client.get(location).json() == action
+        assert client.get("/up").status_code == 200
+        assert client.get("/v1/github/deliveries/opaque-delivery").status_code == 404
 
 
-def test_admission_rejects_invalid_requests_without_tasks(tmp_path, model):
-    app = create_app(tmp_path / "landing.sqlite3", token="test-secret", workspaces={"candidate": tmp_path})  # noqa: S106 -- test-only credential.
-    with TestClient(app) as client:
-        assert client.get("/healthz").status_code == 200
-        assert client.get("/v1/actions").status_code == 401
-        client.headers["Authorization"] = "Bearer test-secret"
-        body = {"mode": "issuer", "instruction": "Identify the problem.", "workspace": "candidate"}
-        assert client.post("/v1/actions", content="{}").status_code == 422
-        assert client.post("/v1/actions", content="{", headers={"Content-Type": "application/json"}).status_code == 422
-        assert client.post("/v1/actions", json={**body, "mode": "unknown"}).status_code == 422
-        assert client.post("/v1/actions", json={**body, "unknown": True}).status_code == 422
-        assert client.post("/v1/actions", json={**body, "workspace": str(tmp_path)}).status_code == 422
-        assert client.get("/v1/actions/missing").status_code == 404
-        assert client.get("/v1/actions").json() == []
+def test_repository_and_default_branch_come_from_verified_github_event(receiver, monkeypatch):
+    monkeypatch.setenv("LANDING_GITHUB_WORKFLOW", "12345")
+    with TestClient(create_app()) as client:
+        payload = event()
+        payload["repository"] = {"full_name": "another/project", "default_branch": "develop"}
+        assert post(client, payload).status_code == 202
+    dispatched = json.loads(receiver.read_text())["dispatches"][0]
+    assert dispatched["endpoint"] == "repos/another/project/actions/workflows/12345/dispatches"
+    assert dispatched["ref"] == "develop"
 
 
-def test_oversized_requests_stop_at_the_admission_limit(tmp_path):
-    sent = 0
-
-    async def chunks():
-        nonlocal sent
-        for _ in range(64):
-            sent += 1
-            yield b"x" * 1024 * 1024
-
-    async def post(**kwargs):
-        app = create_app(tmp_path / "landing.sqlite3", token="test-secret")  # noqa: S106 -- test-only credential.
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            return (await client.post("/v1/actions", **kwargs)).status_code
-
-    assert asyncio.run(post(content=chunks())) == 413
-    assert sent <= 17
-    declared = {"Content-Length": str(64 * 1024 * 1024)}
-    assert asyncio.run(post(content=b"{}", headers=declared)) == 413
-
-
-def test_embedded_application_uses_landing_lifespan(tmp_path, model):
-    responses, _ = model
-    started = threading.Event()
-    release = threading.Event()
-
-    async def blocked(**kwargs):
-        started.set()
-        await asyncio.to_thread(release.wait, 5)
-        return completion("Explained for the embedding application.")
-
-    responses.extend([blocked, completion("Explained after restarting the application.")])
-    runtime = Runtime(tmp_path / "landing.sqlite3")
-    app = FastAPI(lifespan=runtime.lifespan)
-
-    @app.post("/delegate")
-    async def delegate(body: ActionRequest):
-        action, _ = runtime.submit(body)
-        return action
-
-    @app.get("/actions/{action_id}")
-    async def view(action_id: str):
-        return runtime.tasks.get(action_id)
-
-    with TestClient(app) as client:
-        created = client.post("/delegate", json={"mode": "explainer", "instruction": "Explain the failure."})
-        assert created.status_code == 200
-        assert started.wait(timeout=5)
-        location = "/actions/" + created.json()["id"]
-        assert client.get(location).json()["status"] == "running"
-        release.set()
-        assert wait(client, location)["result"] == "Explained for the embedding application."
-    with TestClient(app) as client:
-        assert client.get(location).json()["status"] == "completed"
-        created = client.post("/delegate", json={"mode": "explainer", "instruction": "Explain the next failure."})
-        assert created.status_code == 200
-        location = "/actions/" + created.json()["id"]
-        assert wait(client, location)["result"] == "Explained after restarting the application."
-
-
-def test_cancellation_and_restart_preserve_work_outcomes(tmp_path, model):
-    responses, _ = model
-    started = threading.Event()
-
-    async def blocked(**kwargs):
-        started.set()
-        await asyncio.Event().wait()
-
-    responses.extend([
-        blocked,
-        completion("Explained the next failure."),
-        blocked,
-        completion("Explained queued work."),
-    ])
-    path = tmp_path / "landing.sqlite3"
-    with TestClient(create_app(path)) as client:
-        body = {"mode": "explainer", "instruction": "Explain the failure."}
-        first = client.post("/v1/actions", json=body).headers["Location"]
-        assert started.wait(timeout=5)
-        second = client.post("/v1/actions", json=body).headers["Location"]
-        assert client.post(first + "/retries").status_code == 409
-        queued = client.post(second + "/cancellation")
-        assert queued.status_code == 200
-        assert queued.json()["status"] == "cancelled"
-        active = client.post(first + "/cancellation")
-        assert active.status_code == 202
-        third = client.post("/v1/actions", json=body).headers["Location"]
-        assert wait(client, third)["result"] == "Explained the next failure."
-        assert client.get(first).json()["status"] == "cancelled"
-        started.clear()
-        interrupted = client.post("/v1/actions", json=body).headers["Location"]
-        assert started.wait(timeout=5)
-        pending = client.post("/v1/actions", json=body).headers["Location"]
-    with TestClient(create_app(path)) as client:
-        assert client.get(interrupted).json()["status"] == "interrupted"
-        assert wait(client, pending)["result"] == "Explained queued work."
-        assert client.get(first).json()["status"] == "cancelled"
-
-
-def test_once_health_checks_worker_and_database_without_auth(tmp_path):
-    runtime = Runtime(tmp_path / "landing.sqlite3")
-    app = create_app(runtime, token="test-secret")  # noqa: S106 -- test-only credential.
-    with TestClient(app) as client:
-        assert client.get("/up").json() == {"status": "ok"}
-        assert client.get("/v1/actions").status_code == 401
-        assert client.portal is not None
-        client.portal.call(runtime.stop)
-        deadline = time.monotonic() + 5
-        while client.get("/up").status_code == 200 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert client.get("/up").status_code == 503
-        assert client.get("/healthz").status_code == 200
-        response = client.post(
-            "/v1/actions",
-            json={"mode": "issuer", "instruction": "Identify the failure."},
-            headers={"Authorization": "Bearer test-secret"},
-        )
-        assert response.status_code == 503
-        assert client.get("/v1/actions", headers={"Authorization": "Bearer test-secret"}).json() == []
-
-
-def test_public_origin_is_used_for_pagination(tmp_path, model):
-    responses, _ = model
-    responses.extend([completion("Explained the failure.")] * 2)
-    app = create_app(tmp_path / "landing.sqlite3", base_url="https://landing.example.test:8443/")
-    with TestClient(app) as client:
-        for _ in range(2):
-            response = client.post("/v1/actions", json={"mode": "explainer", "instruction": "Explain the failure."})
-            wait(client, response.headers["Location"])
-        history = client.get("/v1/actions?limit=1")
-        assert history.links["next"]["url"].startswith("https://landing.example.test:8443/v1/actions?")
-        events = client.get(response.headers["Location"] + "/events?limit=1")
-        assert events.links["next"]["url"].startswith("https://landing.example.test:8443/v1/actions/")
+def test_invalid_signature_or_payload_never_dispatches(receiver):
+    with TestClient(create_app()) as client:
+        assert post(client, event(), signed=False).status_code == 401
+        assert post(client, []).status_code == 422
+        assert client.post("/v1/actions", json={"mode": "fixer", "instruction": "old API"}).status_code == 404
+    assert json.loads(receiver.read_text())["dispatches"] == []
 
 
 @pytest.mark.parametrize(
-    "origin", ["file:///storage", "https://user:password@example.test", "https://example.test/path"]
+    ("body", "name"),
+    [
+        ("ordinary discussion", "issue_comment"),
+        ("<!-- landing:reply --> result", "issue_comment"),
+        ("/landing fix issue", "workflow_dispatch"),
+    ],
 )
-def test_public_origin_rejects_non_origin_urls(tmp_path, origin):
-    with pytest.raises(ValueError, match=r"HTTP\(S\) origin"):
-        create_app(tmp_path / "landing.sqlite3", base_url=origin)
+def test_unrelated_events_are_acknowledged_without_dispatch(receiver, body, name):
+    with TestClient(create_app()) as client:
+        assert post(client, event(body), name=name).status_code == 204
+    assert json.loads(receiver.read_text())["dispatches"] == []
 
 
-@pytest.mark.parametrize("token", [None, "test-secret"])
-def test_api_documentation_and_authenticated_requests(tmp_path, model, token):
-    responses, _ = model
-    responses.append(completion("Explained through the documented API."))
-    with TestClient(create_app(tmp_path / "landing.sqlite3", token=token)) as client:
-        page = client.get("/docs")
-        assert page.status_code == 200
-        assert "/openapi.json" in page.text
-        schema = client.get("/openapi.json").json()
-        operation = schema["paths"]["/v1/actions"]["post"]
-        if token:
-            scheme_name = next(iter(operation["security"][0]))
-            scheme = schema["components"]["securitySchemes"][scheme_name]
-            assert scheme["type"] == "http" and scheme["scheme"] == "bearer"
-            assert "security" not in schema["paths"]["/healthz"]["get"]
-            assert token not in page.text and token not in str(schema)
-            assert client.post("/v1/actions", json={"mode": "explainer", "instruction": "Explain."}).status_code == 401
-            client.headers["Authorization"] = "Bearer wrong-token"
-            assert client.get("/v1/actions").status_code == 401
-            client.headers["Authorization"] = "Bearer " + token
-        else:
-            assert "security" not in operation
-        assert client.get("/redoc").status_code == 404
-        created = client.post("/v1/actions", json={"mode": "explainer", "instruction": "Explain."})
-        assert created.status_code == 201
-        assert wait(client, created.headers["Location"])["result"] == "Explained through the documented API."
+def test_failed_dispatch_remains_redeliverable(receiver):
+    receiver.write_text(json.dumps({"dispatches": [], "lost_receipt": True}))
+    with TestClient(create_app()) as client:
+        assert post(client, event(), delivery_id="retry-me").status_code == 502
+        state = json.loads(receiver.read_text())
+        state["lost_receipt"] = False
+        receiver.write_text(json.dumps(state))
+        assert post(client, event(), delivery_id="retry-me").status_code == 202
+    # A lost response can hide a successful remote write. The bridge does not promise exactly-once execution.
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 2
+
+
+def test_executor_workflow_never_recurses(receiver):
+    payload = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "action": "completed",
+        "workflow_run": {"path": ".github/workflows/landing-execute.yml", "conclusion": "failure"},
+    }
+    with TestClient(create_app()) as client:
+        assert post(client, payload, name="workflow_run").status_code == 204
+    assert json.loads(receiver.read_text())["dispatches"] == []
+
+
+def test_slow_dispatch_is_reported_as_failure_not_acceptance(receiver):
+    receiver.write_text(json.dumps({"dispatches": [], "wait": True}))
+    with TestClient(create_app()) as client:
+        assert post(client, event()).status_code == 502
+
+
+def test_github_acceptance_does_not_require_run_metadata(receiver):
+    receiver.write_text(json.dumps({"dispatches": [], "empty_response": True}))
+    with TestClient(create_app()) as client:
+        response = post(client, event())
+        assert response.status_code == 202
+        assert response.json() == {}
+
+
+def test_ping_needs_no_repository_identity(receiver):
+    with TestClient(create_app()) as client:
+        assert post(client, {"zen": "Keep delivery simple."}, name="ping").status_code == 204
+    assert json.loads(receiver.read_text())["dispatches"] == []

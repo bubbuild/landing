@@ -38,7 +38,7 @@ Put concurrency on the calling workflow before checks delay agent admission. Gro
 
 The calling workflow owns concurrency; a composite Action cannot configure it.
 
-For explicit delegations that must be preserved, GitHub.com supports `queue: max` with `cancel-in-progress: false`, retaining up to 100 pending runs. Without `queue: max`, a new pending run replaces the single pending run. Check availability on GitHub Enterprise Server, or use Landing's server queue. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+For explicit delegations that must be preserved, GitHub.com supports `queue: max` with `cancel-in-progress: false`, retaining up to 100 pending runs. Without `queue: max`, a new pending run replaces the single pending run. Check availability on GitHub Enterprise Server; local service mode provides a persistent inbox when Actions is unavailable. See [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 ## Use an ordinary CI command
 

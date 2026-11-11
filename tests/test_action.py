@@ -15,7 +15,7 @@ from tests.conftest import completion
 from tests.provider import provider
 
 
-def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when=None, arguments=()):
+def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when=None):
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith(("LANDING_", "BUB_", "GITHUB_", "INPUT_"))
     }
@@ -28,14 +28,14 @@ def delegate(tmp_path, api_base, command, checks, *, extra_env=None, cancel_when
         INPUT_COMMAND=command,
         INPUT_INSTRUCTION="Carry out the requested work.",
         INPUT_CHECKS=checks,
-        INPUT_DATABASE=str(tmp_path / "landing.sqlite3"),
+        LANDING_DB=str(tmp_path / "landing.sqlite3"),
         GITHUB_REPOSITORY="example/landing",
         GITHUB_RUN_ID="acceptance",
         GITHUB_OUTPUT=str(tmp_path / "outputs.txt"),
         GITHUB_STEP_SUMMARY=str(tmp_path / "summary.md"),
     )
     environment.update(extra_env or {})
-    args = [sys.executable, "-m", "landing", "github", "event", *arguments]
+    args = [sys.executable, "-m", "landing", "github", "event"]
     if cancel_when is None:
         return subprocess.run(args, cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=30)  # noqa: S603 -- fixed entry point in a disposable workspace.
     with subprocess.Popen(  # noqa: S603 -- fixed public Action entry point in a disposable workspace.
@@ -98,14 +98,13 @@ def test_action_does_not_attribute_unknown_checks_to_the_trigger_revision(tmp_pa
             api_base,
             "triage",
             "",
-            extra_env={"INPUT_CHECKED_REVISION": "", "GITHUB_SHA": "unrelated-main-revision"},
+            extra_env={"LANDING_GITHUB_CHECKED_REVISION": "", "GITHUB_SHA": "unrelated-main-revision"},
         )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["result"] == "The checked revision is unknown."
 
 
-@pytest.mark.parametrize("source", ["environment", "options"])
-def test_action_preserves_instruction_assignments_and_quotes(tmp_path, source):
+def test_action_preserves_instruction_assignments_and_quotes(tmp_path):
     instruction = 'Native checks: quality=success. Explain "key=value" in https://example.test/?page=2.'
 
     def explain(request):
@@ -122,8 +121,7 @@ def test_action_preserves_instruction_assignments_and_quotes(tmp_path, source):
             api_base,
             "explain",
             "",
-            extra_env={"INPUT_INSTRUCTION": instruction if source == "environment" else "Explain the other evidence."},
-            arguments=["--instruction", instruction] if source == "options" else [],
+            extra_env={"INPUT_INSTRUCTION": instruction},
         )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["result"] == "The quality check passed; key=value and page=2 remain task evidence."
@@ -131,7 +129,7 @@ def test_action_preserves_instruction_assignments_and_quotes(tmp_path, source):
 
 def test_action_rejects_cross_repository_target_before_model_call(tmp_path):
     with provider([]) as (api_base, requests):
-        result = delegate(tmp_path, api_base, "review", "", extra_env={"INPUT_REPOSITORY": "other/repository"})
+        result = delegate(tmp_path, api_base, "review", "", extra_env={"LANDING_GITHUB_REPOSITORY": "other/repository"})
     assert result.returncode != 0
     assert "workflow repository" in result.stderr
     assert not requests
@@ -187,10 +185,23 @@ def test_native_source_uses_github_authorization_for_app_identity(tmp_path, even
                 "GITHUB_ACTIONS": "true",
                 "GITHUB_EVENT_NAME": event_name,
                 "GITHUB_EVENT_PATH": str(source),
-                "INPUT_UPSTREAM_WORKFLOW": "release-main",
+                "LANDING_GITHUB_UPSTREAM_WORKFLOW": "release-main",
                 "PATH": str(binary) + os.pathsep + os.environ["PATH"],
             },
         )
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["status"] == "completed"
         assert requests
+
+
+def test_native_execution_does_not_expose_dispatch_signing_key(tmp_path):
+    with provider([completion("Finished maintenance.")]) as (api_base, _):
+        result = delegate(
+            tmp_path,
+            api_base,
+            "bump",
+            'test -z "$LANDING_GITHUB_WEBHOOK_SECRET"',
+            extra_env={"LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture"},
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "completed"

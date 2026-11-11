@@ -8,9 +8,14 @@ from typing import cast
 
 from sqlalchemy import URL, Engine, create_engine, event
 
-# Version 1 is the schema released in 0.2.0; raise it when a migration changes the schema.
-SCHEMA_VERSION = 1
+# Version 2 adds the local webhook inbox; existing actions and tapes stay unchanged.
+SCHEMA_VERSION = 2
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS inbox (
+    id INTEGER PRIMARY KEY,
+    message TEXT NOT NULL,
+    error TEXT
+);
 CREATE TABLE IF NOT EXISTS actions (
     id TEXT PRIMARY KEY NOT NULL,
     mode TEXT NOT NULL,
@@ -62,7 +67,7 @@ def own_database(path: Path) -> Generator[None]:
         try:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            message = "Another worker owns this database. Use its HTTP API or a different --db."
+            message = "Another worker owns this database. Use a different --db or stop the other process."
             raise ValueError(message) from exc
         yield
 

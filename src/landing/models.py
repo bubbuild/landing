@@ -1,4 +1,4 @@
-"""Shared CLI, HTTP, and GitHub action contracts."""
+"""Shared CLI and GitHub runner action contracts."""
 
 from __future__ import annotations
 

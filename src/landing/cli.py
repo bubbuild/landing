@@ -6,28 +6,31 @@ import asyncio
 import json
 import mimetypes
 import os
-import shlex
 import sys
 import time
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
+from uuid import uuid4
 
 import typer
 from bub import Settings as BubSettings
 from bub import config, ensure_config
 from bub.configure import load
-from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
+from landing.adapters.github.api import required
+from landing.adapters.github.execution import execute as execute_github
+from landing.adapters.github.execution import with_repository_context
+from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
+from landing.adapters.github.webhook import read_webhook
 from landing.database import open_database, own_database
+from landing.hooks import TerminationHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
-from landing.settings import ConfigurationFile
+from landing.settings import DEFAULT_DATABASE, ConfigurationFile
 from landing.tasks import NotFoundError, Tasks
-
-DEFAULT_DATABASE = Path("~/.local/share/landing/landing.sqlite3")
 
 
 @config()
@@ -43,10 +46,7 @@ class ExecutionSettings(BubSettings):
         validate_assignment=True,
     )
     db: Path | None = None
-    token: str | None = Field(default=None, repr=False)
     github_repository: str | None = None
-    base_url: str | None = None
-    replicate: bool = False
 
 
 JsonOutput = Annotated[bool, typer.Option("--json", help="Print records as JSON.")]
@@ -85,6 +85,7 @@ def execution_runtime(ctx: typer.Context, settings: ExecutionSettings, *, databa
     return Runtime(
         database or settings.db or DEFAULT_DATABASE,
         skill_dirs=ctx.find_root().params.get("skill_dir") or (),
+        plugins=[TerminationHooks()],
     )
 
 
@@ -107,8 +108,6 @@ def configure(
 
 
 def create_cli_app() -> typer.Typer:
-    from landing.adapters.github import register_cli_commands
-
     app = typer.Typer(
         name="landing",
         help="Explain CI failures, delegate fixes, and review evidence.",
@@ -127,7 +126,9 @@ def create_cli_app() -> typer.Typer:
         app.command(name=name, cls=Command, help=help_text)(delegate)
     app.add_typer(actions, name="action")
     app.command(cls=Command)(serve)
-    register_cli_commands(app)
+    github = typer.Typer(help="Handle GitHub events with prepared credentials.", no_args_is_help=True)
+    github.command("event", cls=Command)(github_event)
+    app.add_typer(github, name="github")
     return app
 
 
@@ -157,10 +158,8 @@ async def delegate_action(ctx: typer.Context, request: ActionRequest | str) -> A
         if isinstance(request, str):
             retry_of = request
             request = runtime.tasks.request(request)
-        request = request.model_copy(update={"workspace": runtime.workspace_name(runtime.workspace(request.workspace))})
+        request = request.model_copy(update={"workspace": str(runtime.workspace(request.workspace))})
         if repository := settings.github_repository:
-            from landing.adapters.github import with_repository_context
-
             request = with_repository_context(request, repository)
         # Each delegation uses its own action session; unrelated CLI calls must not share model history.
         return await runtime.run(request, retry_of=retry_of, scope="cli")
@@ -270,52 +269,91 @@ def retry(ctx: typer.Context, action_id: ActionId, json_output: JsonOutput = Fal
 
 def serve(
     ctx: typer.Context,
+    runner: Annotated[
+        Literal["local", "gha"] | None, typer.Option(help="Execution location; default LANDING_RUNNER or local.")
+    ] = None,
+    workspace: Annotated[Path | None, typer.Option(help="Prepared local checkout; default current directory.")] = None,
     host: Annotated[str, typer.Option(help="Listen address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(min=1, max=65535, help="Listen port.")] = 8080,
-    workspace: Annotated[
-        list[str] | None, typer.Option(metavar="NAME=PATH", help="Register a workspace (repeatable).")
-    ] = None,
 ) -> None:
-    """Run the HTTP service with registered workspaces."""
+    """Receive GitHub work for a local worker or GitHub Actions."""
     import uvicorn
 
-    from landing.server import create_app
+    from landing.server import ServerSettings, create_app
 
-    settings = execution_settings(ctx)
-    if host not in {"127.0.0.1", "localhost", "::1"} and not settings.token:
-        message = "Set LANDING_TOKEN before listening beyond localhost."
-        raise ValueError(message)
-    runtime = execution_runtime(ctx, settings)
-    workspaces = dict(runtime.workspaces or {"default": runtime.framework.workspace})
-    for value in workspace or []:
-        name, separator, path = value.partition("=")
-        if not separator or not name or not path:
-            message = "Register a workspace as NAME=PATH."
-            raise ValueError(message)
-        workspaces[name] = Path(path).expanduser().resolve()
-    runtime.workspaces = workspaces
-    app = create_app(
-        runtime,
-        token=settings.token,
-        base_url=settings.base_url,
-        github_repository=settings.github_repository,
+    execution = execution_settings(ctx)
+    options = ServerSettings()
+    if runner is not None:
+        options.runner = runner
+    if workspace is not None:
+        options.workspace = workspace
+    if execution.db is not None:
+        options.db = execution.db
+    uvicorn.run(
+        create_app(options=options, skill_dirs=tuple(ctx.find_root().params.get("skill_dir") or ())),
+        host=host,
+        port=port,
     )
-    if settings.replicate:
-        command = [sys.executable, "-m", "landing", "--github-repository", settings.github_repository or ""]
-        command.extend(["serve", "--host", host, "--port", str(port)])
-        for name, path in workspaces.items():
-            command.extend(["--workspace", f"{name}={path}"])
-        os.execvpe(  # noqa: S606 -- replace the CLI with its native process supervisor.
-            "litestream",  # noqa: S607 -- use Litestream from the prepared host's PATH.
-            ["litestream", "replicate", "-restore-if-db-not-exists", "-exec", shlex.join(command)],
-            {
-                **os.environ,
-                "LANDING_REPLICATE": "false",
-                "LANDING_DB": str(runtime.path),
-                "LANDING_SKILL_DIRS": json.dumps([str(root) for root in runtime.skill_roots]),
-            },
+
+
+def write_outputs(action: Action | None) -> None:
+    """Write native Action outputs and the step summary when available."""
+    outputs = {
+        "id": action.id if action else "",
+        "status": action.status if action else "skipped",
+        "decision": action.decision or "" if action else "",
+        "result": action.result or "" if action else "",
+    }
+    context = GitHubEnvironment()
+    if context.output:
+        with context.output.open("a") as output:
+            for name, value in outputs.items():
+                delimiter = uuid4().hex
+                output.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+    if context.step_summary:
+        with context.step_summary.open("a") as output:
+            output.write(outputs["result"] + "\n")
+
+
+def github_event(ctx: typer.Context) -> None:
+    """Execute the native Actions event or a signed webhook envelope."""
+    options = GitHubSettings()
+    context = GitHubEnvironment()
+    payload = json.loads(context.event_path.read_text()) if context.event_path else None
+    if context.event_path and not isinstance(payload, dict):
+        message = "The event file must contain a JSON object."
+        raise ValueError(message)
+    source, webhook_key = None, None
+    if (payload or {}).get("inputs", {}).get("event"):
+        inputs = required(payload, "inputs")
+        payload = read_webhook(
+            required(inputs, "event").encode(),
+            required(inputs, "signature"),
+            os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""),
         )
-    uvicorn.run(app, host=host, port=port)
+        source = required(inputs, "event_name")
+        # GitHub signs the body, not delivery headers; changing a forwarded ID must not mint new publication identity.
+        webhook_key = f"webhook:{required(inputs, 'signature')}"
+        options = GitHubSettings.for_webhook(options.repository)
+    os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", None)
+    settings = execution_settings(ctx)
+    fallback = webhook_key or (f"action:{context.run_id}:{context.run_attempt}" if context.run_id else None)
+    action = asyncio.run(
+        execute_github(
+            options,
+            payload,
+            database=settings.db or context.runner_temp / "landing/landing.sqlite3",
+            skill_dirs=ctx.find_root().params.get("skill_dir") or (),
+            plugins=[TerminationHooks()],
+            context=context,
+            source=source,
+            fallback_key=fallback,
+        )
+    )
+    write_outputs(action)
+    if action is not None:
+        typer.echo(action.model_dump_json(indent=2))
+        raise typer.Exit(action.status != "completed")
 
 
 def main(argv: list[str] | None = None) -> int:

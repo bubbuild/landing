@@ -102,32 +102,41 @@ Use the `mcpServers` JSON format shown above. Native YAML `mcp.config_path` conf
 
 Discovered tools use names such as `mcp.playwright_browser_navigate` and load on demand: the task prompt lists the names its mode allows, the model calls `tool_describe` with one, and the tool stays callable by name for the rest of the session. The SDK supplies `tool_describe` alongside a deferred list, so mode tool limits apply before loading and excluded tools never reach the model. A configured server that cannot connect fails the task before model work; connection details remain in runner logs. See [Use MCP servers](../guides/mcp.md) for setup and an example.
 
-## Execution and service
+## Execution and webhook hosting
 
-| Variable | Contract |
+`LANDING_DB` selects local or runner SQLite storage, defaulting to `~/.local/share/landing/landing.sqlite3` for the CLI and `RUNNER_TEMP/landing/landing.sqlite3` for Actions. `--db` overrides it. Local execution YAML uses `db` and `github_repository`; model and MCP settings apply to execution, including local worker children, not to GHA-only intake.
+
+| Server variable | Contract |
 | --- | --- |
-| `LANDING_DB` | SQLite path, default `~/.local/share/landing/landing.sqlite3`; image default `/storage/landing.sqlite3`. |
-| `LANDING_TOKEN` | Server bearer token; required to listen beyond localhost. |
-| `LANDING_REPLICATE` | Supervise standalone `serve` with installed Litestream, default false; image default true. |
-| `LANDING_GITHUB_REPOSITORY` | Prepared gh repository context. |
-| `LANDING_BASE_URL` | Public HTTP(S) origin for pagination; no credentials, path, query, or fragment. |
+| `LANDING_RUNNER` | `local` (default) or `gha`; overridden by `serve --runner`. |
+| `LANDING_WORKSPACE` | Prepared local checkout, default current directory; overridden by `serve --workspace`. |
+| `LANDING_DB` | Local inbox, action records, and default tape storage; global `--db` overrides it. |
 
-CLI and service settings read their own fields from environment and Landing YAML. YAML keys are `db`, `token`, `replicate`, `github_repository` and `base_url`. CLI options override corresponding settings. MCP settings load when a task prepares its tools, and configuration errors remain visible in its action record.
+| Webhook variable | Contract |
+| --- | --- |
+| `LANDING_GITHUB_WEBHOOK_SECRET` | Required GitHub webhook HMAC key; also configured on the trusted executor. |
+| `LANDING_GITHUB_WORKFLOW` | Workflow filename or ID, default `landing-execute.yml`; validated by GitHub. |
+| `LANDING_GITHUB_REF` | Optional trusted branch or tag; otherwise uses the event repository's default branch. |
+| `LANDING_GITHUB_COMMAND_PREFIX` | Comment prefix, default `/landing`; keep receiver and runner configuration consistent. |
 
-Local workspace defaults to the current directory. Servers register names with `serve --workspace NAME=PATH`.
+The verified event supplies the repository. There is no repository registry, bearer-token job API, or replication supervisor. Local mode uses the prepared checkout, checks its repository identity, and requires model and publication access. GHA-only intake needs Actions write access but no local model or database.
+
+## Bub plugins
+
+`LANDING_PLUGINS` is a JSON list of installed Bub entry-point names; the equivalent YAML field is `plugins`. Landing explicitly registers the selected plugins with Bub's native plugin manager. Nothing is installed automatically.
+
+Execution hooks such as `provide_environment`, `provide_tape_store`, `provide_lifespan`, `provide_tools`, state loading, continuation, and tool/LLM interception apply to the same Runtime in local CLI, local worker, and Actions execution. Tools provided by plugins still pass through mode capability filtering. Channel and message-pipeline plugins are not automatically turned into Landing transports.
+
+For example, an installed [bub-docker-env](https://github.com/bubbuild/bub-contrib/tree/main/packages/bub-docker-env) can supply `provide_environment` for tools and checks. Prepare its image, network, mounts, and credentials explicitly; its defaults are not a ready-made GitHub development environment. The model and platform verification remain on the host.
+
+The [SQLite](https://github.com/bubbuild/bub-contrib/tree/main/packages/bub-tapestore-sqlite) and [SQLAlchemy](https://github.com/bubbuild/bub-contrib/tree/main/packages/bub-tapestore-sqlalchemy) tape plugins supply model-history storage, not a task queue or GHA scheduler. Their schemas differ from Landing's released database; use separately configured storage unless performing an intentional migration. Existing Landing tapes are not migrated or deleted automatically.
+
+Install plugins into the interpreter that runs Landing. A plugin in a separate project virtualenv is not visible to the composite Action's isolated runtime. For customized Actions environments, install Landing and plugins together and invoke `landing github event` from that environment. Local workers call the same API from the installed runtime, without routing through the CLI.
 
 ## GitHub workflows and runner
 
-The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
+The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. The Action exposes only `command`, `instruction`, and `checks`; its implementation reads these as `INPUT_COMMAND`, `INPUT_INSTRUCTION`, and `INPUT_CHECKS`. Runner policy uses `LANDING_GITHUB_TRUST` (`repository` or `owner`), multiline `LANDING_GITHUB_UPSTREAM_WORKFLOW`, `LANDING_GITHUB_BUMP_ON_FAILURE` (default false), and multiline `LANDING_GITHUB_DEPENDENCY_UPDATE_ACTORS` (default Dependabot and Renovate). There are no duplicate Action inputs or CLI flags for these settings. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority.
+
+For native events, `LANDING_GITHUB_NUMBER`, `LANDING_GITHUB_HEAD`, `LANDING_GITHUB_RUN_ID`, and `LANDING_GITHUB_DELIVERY_KEY` supply explicit task references when needed. `LANDING_GITHUB_CHECKED_REVISION` defaults to `GITHUB_SHA`; an explicitly empty value leaves check provenance unknown. Forwarded webhooks use the original event for task references and current runner configuration for policy; no receiver configuration snapshot is accepted. Runner storage uses global `--db`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`.
 
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
-
-## Container replication
-
-| Variable | Contract |
-| --- | --- |
-| `LITESTREAM_REPLICA_URL` | Replica destination; Compose defaults to `file:///replica/landing`. |
-| `LITESTREAM_CONFIG` | Optional mounted standard configuration path. |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` | Credentials and region for the corresponding storage provider. |
-
-Compose forwards only variables listed in `compose.yaml`, including model, key, endpoint, completion/client options, and model timeout. Add other settings or mounts through an override; exporting them on the host alone does not forward them. See [Deployment](../guides/deploy.md) and [Recovery](../guides/recovery.md).

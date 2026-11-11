@@ -1,9 +1,10 @@
-"""One Bub SDK execution path for local calls, CI, and the HTTP worker."""
+"""One Bub SDK execution path for local calls and GitHub Actions."""
 
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import cast
 
@@ -67,24 +68,23 @@ def task_prompt(request: ActionRequest, checks: list[dict]) -> str:
 class Runtime:
     settings: Settings
     execution: asyncio.Lock
-    pending: asyncio.Event
 
     def __init__(
         self,
         path: Path,
         *,
-        workspaces: Mapping[str, Path] | None = None,
+        workspace: Path | None = None,
+        config_file: Path | None = None,
         skill_dirs: Iterable[Path] = (),
         plugins: Iterable[object] = (),
         verify: Callable[[Action], None] | None = None,
     ) -> None:
         self.path = path.expanduser().resolve()
-        self.workspaces = workspaces
         self.verify = verify
-        self.framework = BubFramework(config_file=ConfigurationFile().config_file.expanduser())
+        self.framework = BubFramework(config_file=(config_file or ConfigurationFile().config_file).expanduser())
+        if workspace is not None:
+            self.framework.workspace = workspace.expanduser().resolve()
         settings = ensure_config(Settings)
-        if workspaces is not None and "default" in workspaces:
-            self.framework.workspace = workspaces["default"].expanduser().resolve()
         self.engine = database_engine(self.path)
         self.tasks = Tasks(self.engine)
         self.settings = settings
@@ -111,11 +111,17 @@ class Runtime:
         self.skill_roots = tuple(Path(root).expanduser().resolve() for root in (*skill_dirs, *settings.skill_dirs))
         for plugin in [LandingHooks(self), *plugins]:
             self.framework.plugin_manager.register(plugin)
+        installed = {entry.name: entry for entry in entry_points(group="bub")}
+        for name in settings.plugins:
+            if name not in installed:
+                message = f"Bub plugin {name!r} is not installed in this execution environment."
+                raise ValueError(message)
+            plugin = installed[name].load()
+            self.framework.plugin_manager.register(plugin(self.framework) if callable(plugin) else plugin, name=name)
         self.active: dict[str, asyncio.Task[Action]] = {}
-        self.worker_task: asyncio.Task[None] | None = None
 
     def create_agent(self) -> BubAgent:
-        agent = BubAgent(self.framework, tools=self.tools, skill_dirs=())
+        agent = BubAgent(self.framework, tools=[*self.tools, *self.framework.get_tools()], skill_dirs=())
         agent.name = "landing"
         agent.max_steps = self.settings.max_steps
         # Delegated text remains model input, even when it starts with Bub's command prefix.
@@ -134,56 +140,20 @@ class Runtime:
         return discover_skills(workspace, skill_dirs=[roots[0], *self.skill_roots, *roots[1:]])
 
     def workspace(self, selected: str | None = None) -> Path:
-        if self.workspaces is None:
-            path = Path(selected).expanduser().resolve() if selected else self.framework.workspace
-        else:
-            name = selected or "default"
-            if name not in self.workspaces:
-                message = f"Workspace {name!r} is not registered."
-                raise ValueError(message)
-            path = self.workspaces[name].resolve()
+        path = Path(selected).expanduser().resolve() if selected else self.framework.workspace
         if not path.is_dir():
             message = f"Workspace does not exist: {path}"
             raise ValueError(message)
         return path
 
-    def workspace_name(self, path: str | Path) -> str:
-        resolved = Path(path).expanduser().resolve()
-        if self.workspaces is None:
-            return str(resolved)
-        for name, registered in self.workspaces.items():
-            if registered.resolve() == resolved:
-                return name
-        message = f"Workspace {str(resolved)!r} is not registered."
-        raise ValueError(message)
-
     @contextlib.asynccontextmanager
-    async def running(self, *, background: bool = False) -> AsyncGenerator["Runtime"]:
+    async def running(self) -> AsyncGenerator["Runtime"]:
         """Run work within Bub's resources, stopping execution before they close."""
         async with self.framework.running():
-            self.worker_task = asyncio.create_task(self.worker()) if background else None
             try:
                 yield self
             finally:
                 await self.stop()
-
-    @contextlib.asynccontextmanager
-    async def lifespan(self, app: object) -> AsyncGenerator[None]:
-        """ASGI lifespan callback that owns background execution."""
-        async with self.running(background=True):
-            yield
-
-    def submit(
-        self, request: ActionRequest, *, scope: str = "local", key: str | None = None, retry_of: str | None = None
-    ) -> tuple[Action, bool]:
-        """Persist work for a running background host and return its receipt."""
-        if self.worker_task is None or self.worker_task.done() or self.worker_task.cancelling():
-            message = "The worker is unavailable."
-            raise RuntimeError(message)
-        self.workspace(request.workspace)
-        action, created = self.tasks.create(request, scope=scope, key=key, retry_of=retry_of)
-        self.pending.set()
-        return action, created
 
     async def run(
         self,
@@ -205,7 +175,7 @@ class Runtime:
         )
         return await self._wait(action.id, verify=verify)
 
-    async def _wait(self, action_id: str, *, cancel_on_interrupt: bool = True, **kwargs) -> Action:
+    async def _wait(self, action_id: str, **kwargs) -> Action:
         task = self.active.get(action_id)
         if task is None:
             task = asyncio.create_task(self.execute(action_id, **kwargs))
@@ -214,10 +184,7 @@ class Runtime:
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            if cancel_on_interrupt:
-                self.cancel(action_id)
-            else:
-                task.cancel()
+            self.cancel(action_id)
             await asyncio.gather(task, return_exceptions=True)
             raise
 
@@ -361,19 +328,8 @@ class Runtime:
             task.cancel()
         return action
 
-    async def worker(self) -> None:
-        while True:
-            self.pending.clear()
-            while (action_id := self.tasks.next()) is not None:
-                try:
-                    await self._wait(action_id, cancel_on_interrupt=False)
-                except asyncio.CancelledError:
-                    if (parent := asyncio.current_task()) and parent.cancelling():
-                        raise
-            await self.pending.wait()
-
     async def stop(self) -> None:
-        tasks = [*self.active.values(), *([self.worker_task] if self.worker_task is not None else [])]
+        tasks = list(self.active.values())
         for task in tasks:
             if not task.done() and not task.cancelling():
                 task.cancel()

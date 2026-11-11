@@ -1,12 +1,14 @@
 """Native agent publication and event admission through a prepared gh executable."""
 
+import hashlib
+import hmac
 import json
 import os
 
 import pytest
 from typer.testing import CliRunner
 
-from landing.adapters import github
+from landing.adapters.github import publication as github
 from landing.cli import create_cli_app
 from landing.models import Action
 from tests.conftest import completion
@@ -29,6 +31,9 @@ path = Path(os.environ["TEST_GITHUB_STATE"])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
 endpoint = args[1]
+if args[0] == "repo" and args[1] == "view":
+    print(state.get("workspace_repository", "example/landing"))
+    raise SystemExit(0)
 if state.get("unavailable"):
     raise SystemExit("GitHub is unavailable")
 if args[0] != "api":
@@ -69,6 +74,10 @@ elif "-f" in args and args[args.index("-f") + 1].startswith("body="):
         state["head"] = "next-candidate"
     path.write_text(json.dumps(state))
     print(json.dumps(record))
+elif endpoint.endswith("/dispatches"):
+    state.setdefault("dispatches", []).append(json.load(sys.stdin))
+    path.write_text(json.dumps(state))
+    print(json.dumps({"workflow_run_id": 123, "html_url": "https://github.com/example/landing/actions/runs/123"}))
 elif "--input" in args:
     source = args[args.index("--input") + 1]
     body = json.loads(sys.stdin.read() if source == "-" else Path(source).read_text())
@@ -147,13 +156,13 @@ def invoke(tmp_path, platform, monkeypatch):
         for name, value in {
             "GITHUB_EVENT_PATH": str(source),
             "GITHUB_RUN_ID": "acceptance",
-            "INPUT_REPOSITORY": repository,
-            "INPUT_DELIVERY_KEY": key or "",
-            "INPUT_DATABASE": str(database or tmp_path / "landing.sqlite3"),
-            "INPUT_COMMAND_PREFIX": prefix,
-            "INPUT_NUMBER": str(number),
-            "INPUT_TRUST": trust,
-            "INPUT_UPSTREAM_WORKFLOW": "release-main",
+            "LANDING_GITHUB_REPOSITORY": repository,
+            "LANDING_GITHUB_DELIVERY_KEY": key or "",
+            "LANDING_DB": str(database or tmp_path / "landing.sqlite3"),
+            "LANDING_GITHUB_COMMAND_PREFIX": prefix,
+            "LANDING_GITHUB_NUMBER": str(number),
+            "LANDING_GITHUB_TRUST": trust,
+            "LANDING_GITHUB_UPSTREAM_WORKFLOW": "release-main",
         }.items():
             monkeypatch.setenv(name, value)
         result = CliRunner().invoke(create_cli_app(), ["github", "event"])
@@ -173,9 +182,9 @@ def invoke(tmp_path, platform, monkeypatch):
 
 
 @pytest.fixture
-def alert_dispatch(platform, monkeypatch):
+def alert_event(platform, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setenv("GITHUB_EVENT_NAME", "repository_dispatch")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "dependabot_alert")
     state = json.loads(platform.read_text())
     state["alert"] = {
         "number": 7,
@@ -184,32 +193,32 @@ def alert_dispatch(platform, monkeypatch):
     platform.write_text(json.dumps(state))
     return {
         "repository": {"full_name": "example/landing", "default_branch": "main"},
-        "action": "dependabot_alert",
-        "client_payload": {"alert_number": 7, "state": "fixed"},
+        "action": "created",
+        "alert": {"number": 7, "state": "fixed"},
     }
 
 
 @pytest.mark.parametrize("current_state", ["open", "fixed", "dismissed"])
-def test_current_alert_state_selects_work(platform, invoke, model, alert_dispatch, current_state):
+def test_current_alert_state_selects_work(platform, invoke, model, alert_event, current_state):
     state = json.loads(platform.read_text())
     state["alert"]["state"] = current_state
     platform.write_text(json.dumps(state))
-    alert_dispatch["client_payload"]["state"] = "fixed" if current_state == "open" else "open"
+    alert_event["alert"]["state"] = "fixed" if current_state == "open" else "open"
     if current_state == "open":
         model[0].append(completion("The affected dependency has no patched version."))
     else:
         model[0].append(completion(tool="no_update", arguments={"reason": "No tracked work changed."}))
-    action = invoke(alert_dispatch)
+    action = invoke(alert_event)
     assert action is not None and action.status == "completed"
     assert action.mode == ("bumper" if current_state == "open" else "issuer")
     assert not json.loads(platform.read_text())["comments"]
 
 
-def test_unreadable_alert_reports_error_without_publication(platform, invoke, model, alert_dispatch):
+def test_unreadable_alert_reports_error_without_publication(platform, invoke, model, alert_event):
     state = json.loads(platform.read_text())
     state["unavailable"] = True
     platform.write_text(json.dumps(state))
-    invoke(alert_dispatch, error="GitHub is unavailable")
+    invoke(alert_event, error="GitHub is unavailable")
     assert not json.loads(platform.read_text())["comments"]
 
 
@@ -244,10 +253,11 @@ def dependency_ci(platform, monkeypatch):
 
 
 @pytest.mark.parametrize("source", ["pull_request", "workflow_dispatch"])
+@pytest.mark.parametrize("signed", [False, True])
 def test_failed_dependency_pr_gets_one_bump_reply(
-    tmp_path, platform, invoke, model, monkeypatch, dependency_ci, source
+    tmp_path, platform, invoke, model, monkeypatch, dependency_ci, source, signed
 ):
-    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    monkeypatch.setenv("LANDING_GITHUB_BUMP_ON_FAILURE", "true")
     dependency_ci["workflow_run"]["event"] = source
     dependency_ci["workflow_run"]["actor"]["login"] = "maintainer"
     if source == "workflow_dispatch":
@@ -266,13 +276,31 @@ def test_failed_dependency_pr_gets_one_bump_reply(
         ),
         completion("Reported the dependency candidate's blocker."),
     ])
-    action = invoke(dependency_ci, key=None)
+
+    def event():
+        if not signed:
+            return dependency_ci
+        from uuid import uuid4
+
+        monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+        monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+        body = json.dumps(dependency_ci)
+        return {
+            "inputs": {
+                "event": body,
+                "event_name": "workflow_run",
+                "delivery": str(uuid4()),
+                "signature": "sha256=" + hmac.new(b"signing-fixture", body.encode(), hashlib.sha256).hexdigest(),
+            }
+        }
+
+    action = invoke(event(), key=None)
     assert action is not None and action.mode == "bumper" and action.status == "completed"
     delivered = json.loads(platform.read_text())
     assert len(delivered["comments"]) == 1
     assert delivered["comments"][0]["body"].endswith("The candidate is blocked upstream.")
     dependency_ci["workflow_run"]["id"] = 456
-    assert invoke(dependency_ci, key=None, database=tmp_path / "next-run.sqlite3") is None
+    assert invoke(event(), key=None, database=tmp_path / "next-run.sqlite3") is None
     assert json.loads(platform.read_text())["comments"] == delivered["comments"]
 
 
@@ -280,7 +308,7 @@ def test_failed_dependency_pr_gets_one_bump_reply(
 def test_dependency_ci_failure_skips_ineligible_candidates(
     platform, invoke, model, monkeypatch, dependency_ci, condition
 ):
-    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false" if condition == "disabled" else "true")
+    monkeypatch.setenv("LANDING_GITHUB_BUMP_ON_FAILURE", "false" if condition == "disabled" else "true")
     run = dependency_ci["workflow_run"]
     if condition == "success":
         run["conclusion"] = condition
@@ -294,7 +322,7 @@ def test_dependency_ci_failure_skips_ineligible_candidates(
 
 @pytest.mark.parametrize("condition", ["author", "closed", "stale-head", "fork", "multiple-prs"])
 def test_dependency_ci_failure_skips_ineligible_prs(platform, invoke, model, monkeypatch, dependency_ci, condition):
-    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    monkeypatch.setenv("LANDING_GITHUB_BUMP_ON_FAILURE", "true")
     state = json.loads(platform.read_text())
     if condition == "author":
         state["target"]["user"]["login"] = "contributor"
@@ -319,7 +347,7 @@ def test_unusable_event_payload_is_reported_as_invalid_input(tmp_path, platform,
     source = tmp_path / "event.json"
     source.write_text(json.dumps(payload))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(source))
-    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
     result = CliRunner().invoke(create_cli_app(), ["github", "event"])
     assert result.exit_code == 2, result.output
     assert diagnostic in result.stderr
@@ -1092,3 +1120,143 @@ def test_replayed_repair_does_not_claim_validation(tmp_path, platform, invoke, m
     assert replay.status == "failed"
     assert len(model[1]) == calls
     assert len(json.loads(platform.read_text())["comments"]) == 1
+
+
+@pytest.mark.parametrize("case", ["authorized", "revoked", "tampered"])
+def test_signed_dispatch_uses_original_authority_and_publication(platform, model, monkeypatch, tmp_path, case):
+    from fastapi.testclient import TestClient
+
+    from landing.server import create_app
+    from tests.test_server import post
+
+    monkeypatch.setenv("LANDING_RUNNER", "gha")
+    monkeypatch.chdir(tmp_path)
+    for name, value in {
+        "LANDING_GITHUB_WEBHOOK_SECRET": "webhook-fixture",
+    }.items():
+        monkeypatch.setenv(name, value)
+    app = create_app()
+    with TestClient(app) as client:
+        original = {
+            "repository": {"full_name": "example/landing", "default_branch": "main"},
+            "action": "created",
+            "issue": {"number": 42},
+            "comment": {"id": 81, "body": "/landing explain Why did CI fail?", "user": {"login": "maintainer"}},
+        }
+        response = post(client, original)
+        assert response.status_code == 202, response.text
+        assert response.json()["workflow_run_id"] == 123
+        inputs = json.loads(platform.read_text())["dispatches"][0]["inputs"]
+    if case == "revoked":
+        state = json.loads(platform.read_text())
+        state["permission"] = "read"
+        platform.write_text(json.dumps(state))
+    elif case == "authorized":
+        stamp = github.marker("explainer", f"webhook:{inputs['signature']}")
+        model[0].extend([
+            completion(
+                tool="fs_write",
+                arguments={
+                    "path": "reply.json",
+                    "content": json.dumps({"body": stamp + "\nThe CI fixture failed."}),
+                },
+            ),
+            completion(
+                tool="bash",
+                arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"},
+            ),
+            completion(tool="confirm_reply", arguments={"comment_id": 1}),
+            completion("Published the explanation."),
+        ])
+    dispatch_event = tmp_path / "dispatch.json"
+    inputs = json.loads(platform.read_text())["dispatches"][0]["inputs"]
+    if case == "tampered":
+        inputs["event"] = inputs["event"].replace("Why did CI fail?", "Perform different work.")
+    dispatch_event.write_text(json.dumps({"inputs": inputs}))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(dispatch_event),
+        "GITHUB_REPOSITORY": "example/landing",
+        "GITHUB_RUN_ID": "123",
+        "INPUT_COMMAND": "fix",
+        "LANDING_GITHUB_TRUST": "repository",
+        "LANDING_DB": str(tmp_path / "runner.sqlite3"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    if case == "tampered":
+        assert result.exit_code == 2
+        assert "webhook signature" in result.stderr
+        assert not model[1]
+        return
+    assert result.exit_code == 0, result.stderr
+    if case == "revoked":
+        assert not result.stdout
+        assert not model[1]
+        assert not json.loads(platform.read_text())["comments"]
+    else:
+        action = Action.model_validate_json(result.stdout)
+        assert action.status == "completed", action.error
+        assert action.mode == "explainer"
+        assert action.instruction == "Why did CI fail?"
+        assert len(json.loads(platform.read_text())["comments"]) == 1
+    # A fresh runner reuses native publication evidence even if an unsigned delivery header changes.
+    inputs["delivery"] = "a-different-forwarded-id"
+    dispatch_event.write_text(json.dumps({"inputs": inputs}))
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "webhook-fixture")
+    monkeypatch.setenv("LANDING_DB", str(tmp_path / "retry.sqlite3"))
+    duplicate = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert duplicate.exit_code == 0, duplicate.stderr
+    assert len(json.loads(platform.read_text())["comments"]) == (1 if case == "authorized" else 0)
+
+
+def test_forwarded_headers_cannot_grant_native_dispatch_authority(platform, model, monkeypatch, tmp_path):
+    body = json.dumps({
+        "repository": {"full_name": "example/landing"},
+        "sender": {"login": "outsider"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    })
+    signature = "sha256=" + hmac.new(b"webhook-fixture", body.encode(), hashlib.sha256).hexdigest()
+    source = tmp_path / "event.json"
+    source.write_text(
+        json.dumps({
+            "inputs": {"event": body, "signature": signature, "delivery": "opaque", "event_name": "workflow_dispatch"}
+        })
+    )
+    state = json.loads(platform.read_text())
+    state["permission"] = "read"
+    platform.write_text(json.dumps(state))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_REPOSITORY": "example/landing",
+        "LANDING_GITHUB_WEBHOOK_SECRET": "webhook-fixture",
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    assert not result.stdout
+    assert not model[1]
+
+
+def test_repositories_do_not_share_model_history_in_the_same_workspace(platform, model, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LANDING_DB", str(tmp_path / "history.sqlite3"))
+    monkeypatch.setenv("INPUT_COMMAND", "explain")
+    monkeypatch.setenv("LANDING_GITHUB_DELIVERY_KEY", "shared-label")
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
+    monkeypatch.setenv("INPUT_INSTRUCTION", "Remember private-note=123.")
+    model[0].append(completion("Remembered the note."))
+    assert CliRunner().invoke(create_cli_app(), ["github", "event"]).exit_code == 0
+
+    async def inspect(**request):
+        return completion("Leaked context." if "private-note=123" in str(request["messages"]) else "Isolated context.")
+
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "another/landing")
+    monkeypatch.setenv("INPUT_INSTRUCTION", "Check whether a private note from another repository is visible.")
+    model[0].append(inspect)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["result"] == "Isolated context."
