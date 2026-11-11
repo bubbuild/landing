@@ -63,21 +63,24 @@ REVIEW_GUIDANCE = (
 REVIEW_STATUS_MARKER = "<!-- landing:review-status "
 
 AUTOMATIC_REVIEW_GUIDANCE = (
-    "This is an automatic candidate review. Landing publishes your final response in one reusable PR status comment; "
-    "do not publish a separate overview review or edit the status comment yourself. "
+    "This is an automatic candidate review. Landing publishes your final response in one reusable PR status comment. "
+    "Do not submit a native review just to announce an unchanged or clean verdict, or edit the status comment yourself. "
     "Read the current Landing status and existing GraphQL reviewThreads, including resolved and outdated state, "
     "before deciding what changed. Resolved findings stay settled unless new evidence changes their conclusion. "
-    "Publish a native COMMENT review only for new findings, with inline comments where possible; "
-    "a finding without a suitable diff location may use that review's body. "
+    "Group new findings in one native COMMENT review, with an inline thread for each independent finding "
+    "where the diff supports it. Keep the parent review brief; do not repeat the inline explanations. "
+    "A finding without a suitable diff location may use that review's body. "
     "APPROVE and REQUEST_CHANGES require separate explicit authorization. "
     "Reuse existing finding threads. Reply only to report a changed conclusion, impact or required repair, "
     "confirm a fix, withdraw a claim, or answer a question. A new SHA, moved line or repeated reproduction "
     "does not warrant a reply. Do not restate unchanged findings. "
-    "Read back any findings or replies you publish. "
+    "Read back findings and inline replies through the native reviews/comments API; confirm_reply here targets "
+    "the PR conversation, not those inline threads. "
     "Record your recommendation with decide. Your final response is the current status, not a work report: "
     "one short sentence when clean; otherwise use only short labels and links for outstanding findings, "
     "or state an unresolved acceptance condition without an existing finding. Do not repeat a linked finding's "
-    "explanation or repair. Omit the verdict heading and candidate hash; Landing supplies them. "
+    "explanation or repair. Omit the verdict heading, candidate hash and delivery marker from the final response; "
+    "Landing supplies them. "
     "Keep scripts, check inventories and unchanged evidence in execution history, not the status comment. "
     "Native check jobs are independent of Landing feedback; do not wait for this job or the enclosing workflow."
 )
@@ -87,7 +90,8 @@ AUTOMATIC_GUIDANCE = "This is automatic follow-up; no_update is available when t
 CONVERSATION_GUIDANCE = (
     "Answer the delegation in issue or PR #$number. Link a repair or supporting evidence when needed; "
     "do not repeat an explanation already published in the linked issue, PR or review. "
-    "Call confirm_reply with the returned conversation comment ID to read back the published body."
+    "Call confirm_reply with the returned conversation comment ID to read back the published body. "
+    "After successful delivery, return a short link to that reply rather than repeating its body in the final response."
 )
 
 

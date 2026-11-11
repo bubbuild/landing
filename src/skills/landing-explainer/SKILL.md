@@ -10,21 +10,21 @@ metadata:
 
 ## Answer the current question
 
-Use the supplied revision, logs, checks and relevant history to answer directly. For a failure, explain the established causal link needed to answer it. Explain a design choice through its relevant contract or tradeoff.
+Answer the question in the original conversation with the established cause or relevant tradeoff. Include the observation that distinguishes this explanation from plausible alternatives. Omit timestamps, intermediate steps and repeated checks unless they change the conclusion or the user asks for a chronology; link supporting evidence instead.
 
 When the answer depends on missing evidence, use the smallest check or question that resolves it. Ask a reporter for the missing observation without anticipating the answer. Keep conclusions within the observed conditions; a narrow observation does not establish additional mechanisms.
 
-An explanation does not establish a repair or recovery. Update a prior explanation only when new evidence changes it. Once the current question is answered, finish without expanding into unsolicited review, triage or repair.
+An explanation does not establish a repair or recovery, and does not need a separate status report or tracking issue. Update a prior explanation only when new evidence changes it. Once the current question is answered, finish without expanding into unsolicited review, triage or repair.
 
 ## Examples
 
-Anonymized cause explanation:
+Xuanwo's direct causal explanation in OpenDAL ([source](https://github.com/apache/opendal/issues/3725#issuecomment-1845294942)):
 
-Seeking aborts the current HTTP stream and starts a new request with a Range header. That is why repeated seeks produce more storage reads.
+> seek will abort current http stream and start a new one with new `Range` header.
 
-Anonymized diagnosis:
+Excerpt from frostming's PDM diagnosis, after reproducing the failure with pip and observing missing backtracking ([source](https://github.com/pdm-project/pdm/issues/2193#issuecomment-1685667738)):
 
-The same requirements fail with pip. Removing one requirement produces a working resolution, and the resolver never tries the older versions needed by this dependency set. This points to the shared resolver library; the repair belongs there.
+> So it is a certain issue with `resolvelib`, and the fix should also happen there.
 
 Anonymized question to distinguish runtime conditions:
 
