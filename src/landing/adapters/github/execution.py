@@ -95,7 +95,7 @@ async def _run(
     event = delegation.event
     repository, command = options.repository, delegation.command
     number, head, key = delegation.number, delegation.head, delegation.delivery_key
-    reply_required = not bool(event and ("workflow_run" in event or "dependabot_alert" in event))
+    reply_required = delegation.reply_required
     workspace = landing.framework.workspace
     mode = COMMANDS[command]
     stamp = marker(mode, key)
@@ -106,7 +106,7 @@ async def _run(
     automatic_review = bool(
         expected_review
         and event
-        and not event.get("comment")
+        and not delegation.comment
         and ("pull_request" in event or event_name == "workflow_dispatch")
     )
     publication = Publication(

@@ -20,6 +20,8 @@ class Delegation:
     head: str = ""
     run_id: str = ""
     delivery_key: str = ""
+    comment: bool = False
+    reply_required: bool = True
 
 
 def command_matches(event: dict, prefix: str) -> bool:
@@ -219,7 +221,12 @@ def route_event(options: GitHubSettings, event: dict | None) -> Delegation:
         pull = event.get("pull_request")
         if pull:
             number, head = required(pull, "number"), required(pull, "head", "sha")
-    return Delegation(command, instruction, event, number, head, run_id, key)
+    # Automatic sources publish their own outcome; a comment always expects an answer.
+    comment = bool(event and "comment" in event)
+    automatic = bool(event and ("workflow_run" in event or "dependabot_alert" in event))
+    return Delegation(
+        command, instruction, event, number, head, run_id, key, comment=comment, reply_required=not automatic
+    )
 
 
 def prepare_event(
