@@ -1172,6 +1172,10 @@ def test_event_policy_precedence_and_excluded_keys(tmp_path, monkeypatch, operat
     )
     monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
     monkeypatch.setenv("INPUT_COMMAND_PREFIX", "@env")
+    native_event = tmp_path / "native-event.json"
+    native_event.write_text("{}")
+    monkeypatch.setenv("GITHUB_RUN_ID", "native-run")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(native_event))
     from bub.configure import load
 
     load(operator_home)
@@ -1183,9 +1187,9 @@ def test_event_policy_precedence_and_excluded_keys(tmp_path, monkeypatch, operat
     assert settings.bump_on_failure is True
     assert settings.repository == "example/landing"
     assert (settings.number, settings.head, settings.checked_revision) == (0, "", None)
-    assert settings.run_id == ""
+    assert settings.run_id == "native-run"
     assert settings.delivery_key is None
-    assert settings.event is None
+    assert settings.event == native_event
     assert settings.database is None
     assert github.GitHubSettings(command_prefix="@explicit").command_prefix == "@explicit"
 
