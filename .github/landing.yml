@@ -26,8 +26,6 @@ modes:
       assess affected user behavior.
   issuer:
     instructions: |
-      Native checks are independent of Landing feedback; ignore the Landing feedback job itself when
-      assessing whether native checks completed.
       Triage only the failures or evidence supplied for this event. Read the affected job logs through gh,
       and deployment evidence when a release supplies it; reuse a matching issue and record an actionable
       current problem. Do not scan unrelated open issues or create issues for resolved historical failures.
