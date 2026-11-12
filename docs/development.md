@@ -100,7 +100,7 @@ Configure this repository's workflows with these GitHub variables and secrets:
 | Variable `LANDING_MODEL` | Model identifier; unset disables feedback. |
 | Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
 | Secret `LANDING_API_KEY` | Provider key. |
-| Variable `LANDING_TRUST` | Caller policy, default `repository`. |
+| Variable `LANDING_TRUST` | Optional caller policy; unset keeps the Landing YAML value, then `repository`. |
 | Secret `LANDING_ADMISSION_TOKEN` | Optional admission credential; organization owner checks need Members read. |
 | Secret `LANDING_GITHUB_TOKEN` | Publication token, default workflow token. |
 | Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
@@ -110,6 +110,8 @@ For a workflow-token candidate, start Main explicitly using the repository proce
 ```bash
 gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA
 ```
+
+Duty sets its model, endpoint, and credential environment once at job level, so its two Action steps no longer repeat the same block. Policy inputs a step omits defer to Landing YAML and then to the documented defaults; both duty steps pass `trust` from the same variable, and their distinct upstream workflow allow-lists stay separate. Main keeps its environment on its single Action step and omits the `checked-revision` and `run-id` entries the Action already derives from `github.sha` and `github.run_id`.
 
 Candidate self-checks install Landing from that checkout. A duty task using the default-branch runtime does not reload it when the selected workspace changes.
 
