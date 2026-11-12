@@ -1,0 +1,2 @@
+# Shared model policy for the repository workflows.
+model_timeout_seconds: 120
