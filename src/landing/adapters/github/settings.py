@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, Field, FilePath, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from landing.settings import PolicySettings
@@ -16,7 +16,8 @@ class GitHubEnvironment(BaseSettings):
     actions: bool = False
     repository: str = ""
     event_name: str = ""
-    event_path: FilePath | None = None
+    # Existence is checked when the event is read, so a missing file cannot block output reporting.
+    event_path: Path | None = None
     actor: str = ""
     triggering_actor: str = ""
     run_id: str = ""

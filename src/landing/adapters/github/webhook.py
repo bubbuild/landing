@@ -26,13 +26,14 @@ class WebhookSettings(PolicySettings):
     command_prefix: str = GitHubSettings.model_fields["command_prefix"].default
 
 
-def forwarded_inputs(envelope: dict) -> dict:
-    """Return the forwarded inputs of an executor envelope, empty when the event is native.
+FORWARDED_FIELDS = ("event", "signature", "event_name", "delivery")
 
-    A native event file omits ``inputs`` or sends ``null``. A native dispatch event does carry an
-    ``inputs`` object, so the envelope is identified by the forwarded ``event`` field itself: once
-    that key is present, the envelope is forwarded even when its value is empty, and only a valid
-    signature decides whether it is admitted.
+
+def forwarded_inputs(envelope: dict) -> dict:
+    """Return the forwarded inputs of an executor envelope, empty when it has none.
+
+    A native event file omits ``inputs`` or sends ``null``; a native ``workflow_dispatch`` event
+    carries an ``inputs`` object with whatever inputs the workflow declares.
     """
     inputs = envelope.get("inputs")
     if inputs is None:
@@ -43,13 +44,16 @@ def forwarded_inputs(envelope: dict) -> dict:
     return inputs
 
 
-def carries_forwarded_body(envelope: dict) -> bool:
-    """Whether the envelope claims a forwarded body, by field presence rather than truthiness.
+def claims_forwarded_delivery(envelope: dict) -> bool:
+    """Whether a dispatch envelope declares a forwarded body instead of native maintenance.
 
-    A native ``workflow_dispatch`` event also has an ``inputs`` object, so presence of ``inputs``
-    alone cannot select verification; the forwarded ``event`` field can.
+    The executor workflow declares ``event``, ``signature``, ``event_name``, and ``delivery`` with
+    empty defaults and documents leaving them empty for maintenance. That shape is native work, so
+    a forwarded delivery is claimed only when one of those fields carries a value. A claimed body
+    then has to verify; an unverifiable claim is invalid input, never silent native authority.
     """
-    return "event" in forwarded_inputs(envelope)
+    inputs = forwarded_inputs(envelope)
+    return any(inputs.get(name) for name in FORWARDED_FIELDS)
 
 
 def read_forwarded(inputs: dict, secret: str) -> ForwardedDelivery:
@@ -60,12 +64,12 @@ def read_forwarded(inputs: dict, secret: str) -> ForwardedDelivery:
         # The forwarded field is present, so this is a broken envelope, never a native event.
         message = "The forwarded event body must be a JSON string."
         raise ValueError(message)  # noqa: TRY004 -- invalid serialized input, not a Python argument type.
+    # Authenticate the exact bytes received, before reporting anything about their content.
+    verify_signature(body.encode(), signature, secret)
     if not body.strip():
-        # Authenticate first, so an empty body never becomes a way to probe the signature check.
-        verify_signature(b"", signature, secret)
         message = "The forwarded event body must not be empty."
         raise ValueError(message)
-    event = read_webhook(body.encode(), signature, secret)
+    event = json_object(body.encode())
     event_name = required(inputs, "event_name")
     if not isinstance(event_name, str) or not event_name.strip():
         # A forwarded delivery always names its original event; an empty name must never read as native.
@@ -84,6 +88,10 @@ def verify_signature(body: bytes, signature: str, secret: str) -> None:
 
 def read_webhook(body: bytes, signature: str, secret: str) -> dict:
     verify_signature(body, signature, secret)
+    return json_object(body)
+
+
+def json_object(body: bytes) -> dict:
     event = json.loads(body.decode())
     if not isinstance(event, dict):
         message = "The webhook must contain a JSON object."

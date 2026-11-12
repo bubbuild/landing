@@ -1430,6 +1430,80 @@ def test_signing_key_leaves_the_environment_before_configuration_or_event_readin
     assert not model[1]
 
 
+def test_executor_workflow_empty_dispatch_defaults_stay_native_maintenance(tmp_path, platform, monkeypatch):
+    """The workflow declares empty event/signature/event_name/delivery defaults for maintenance."""
+    from unittest.mock import AsyncMock
+
+    from landing.adapters.github.events import NativeEvent
+
+    event = {
+        "inputs": {"event": "", "signature": "", "event_name": "", "delivery": ""},
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+    }
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(event))
+    output = tmp_path / "output.txt"
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_REPOSITORY": "example/landing",
+        "GITHUB_OUTPUT": str(output),
+        "LANDING_DB": str(tmp_path / "maintenance.sqlite3"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    execute = AsyncMock(return_value=None)
+    monkeypatch.setattr("landing.cli.execute_github", execute)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.output
+    assert execute.await_args is not None
+    ingress = execute.await_args.args[1]
+    assert isinstance(ingress, NativeEvent)
+    assert ingress.event_name == "workflow_dispatch"
+    assert "skipped" in output.read_text()
+
+
+def test_claimed_forwarded_body_with_empty_bytes_authenticates_the_exact_body(tmp_path, platform, monkeypatch, model):
+    """A whitespace body is authenticated as sent, then rejected as empty; neither is a signature pass."""
+    cases = {
+        "whitespace-signed-as-sent": ("   ", hmac.new(b"signing-fixture", b"   ", hashlib.sha256).hexdigest(), True),
+        "whitespace-signed-as-empty": ("   ", hmac.new(b"signing-fixture", b"", hashlib.sha256).hexdigest(), False),
+    }
+    for case, (body, digest, authentic) in cases.items():
+        source = tmp_path / f"{case}.json"
+        source.write_text(
+            json.dumps({"inputs": {"event": body, "signature": "sha256=" + digest, "event_name": "issue_comment"}})
+        )
+        for name, value in {
+            "GITHUB_EVENT_PATH": str(source),
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REPOSITORY": "example/landing",
+            "LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture",
+        }.items():
+            monkeypatch.setenv(name, value)
+        result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+        assert result.exit_code == 2, (case, result.output)
+        expected = "must not be empty" if authentic else "Invalid GitHub webhook signature"
+        assert expected in result.stderr, (case, result.stderr)
+    assert not model[1]
+
+
+def test_missing_event_file_still_reports_a_failed_step(tmp_path, platform, monkeypatch, model):
+    """Output destinations are the runner's files; a broken context must not silence the report."""
+    output = tmp_path / "output.txt"
+    for name, value in {
+        "GITHUB_EVENT_PATH": str(tmp_path / "missing.json"),
+        "GITHUB_REPOSITORY": "example/landing",
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "status<<" in output.read_text()
+    assert "failed" in output.read_text()
+    assert not model[1]
+
+
 def test_native_event_files_still_run_without_forwarded_inputs(tmp_path, platform, monkeypatch, model):
     event = {"repository": {"full_name": "example/landing"}, "sender": {"type": "Bot", "login": "team-app[bot]"}}
     source = tmp_path / "event.json"

@@ -23,7 +23,7 @@ from landing.adapters.github.events import Ingress, NativeEvent
 from landing.adapters.github.execution import execute as execute_github
 from landing.adapters.github.execution import with_repository_context
 from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
-from landing.adapters.github.webhook import carries_forwarded_body, forwarded_inputs, read_forwarded
+from landing.adapters.github.webhook import claims_forwarded_delivery, forwarded_inputs, read_forwarded
 from landing.database import open_database, own_database
 from landing.hooks import TerminationHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
@@ -307,13 +307,17 @@ def write_outputs(context: GitHubEnvironment | None, action: Action | None, *, e
         "decision": action.decision or "" if action else "",
         "result": error if error is not None else action.result or "" if action else "",
     }
-    if context is not None and context.output:
-        with context.output.open("a") as output:
+    # Output destinations are the runner's own files, read from the environment so a failure to
+    # parse the full event context cannot suppress the report as well.
+    output_path = context.output if context is not None else os.environ.get("GITHUB_OUTPUT")
+    summary_path = context.step_summary if context is not None else os.environ.get("GITHUB_STEP_SUMMARY")
+    if output_path:
+        with Path(output_path).open("a") as output:
             for name, value in outputs.items():
                 delimiter = uuid4().hex
                 output.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
-    if context is not None and context.step_summary:
-        with context.step_summary.open("a") as output:
+    if summary_path:
+        with Path(summary_path).open("a") as output:
             output.write(outputs["result"] + "\n")
 
 
@@ -341,7 +345,7 @@ def github_event(ctx: typer.Context) -> None:
         settings = execution_settings(ctx)
         options = GitHubSettings()
         payload = native_event(context)
-        if payload and carries_forwarded_body(payload):
+        if payload and claims_forwarded_delivery(payload):
             # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
             ingress = read_forwarded(forwarded_inputs(payload), secret)
             options = GitHubSettings.for_webhook(options.repository)
