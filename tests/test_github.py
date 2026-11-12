@@ -1384,6 +1384,7 @@ def test_native_event_files_still_run_without_forwarded_inputs(tmp_path, platfor
         "GITHUB_REPOSITORY": "example/landing",
         "GITHUB_RUN_ID": "acceptance",
         "LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture",
+        "LANDING_DB": str(tmp_path / "native.sqlite3"),
     }.items():
         monkeypatch.setenv(name, value)
     model[0].append(completion("Explained the release."))
