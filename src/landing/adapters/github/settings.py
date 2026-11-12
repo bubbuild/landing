@@ -60,11 +60,16 @@ class GitHubSettings(BaseSettings):
 
     @classmethod
     def for_webhook(cls, repository: str) -> "GitHubSettings":
-        options = cls(repository=repository)
-        options.delegated_command = "review"
-        options.instruction = cls.model_fields["instruction"].default
-        options.number, options.head, options.run_id, options.delivery_key = 0, "", "", None
-        return options
+        """Integration policy for a verified webhook, without any Action task inputs."""
+        return cls(
+            repository=repository,
+            delegated_command="review",
+            instruction=cls.model_fields["instruction"].default,
+            number=0,
+            head="",
+            run_id="",
+            delivery_key=None,
+        )
 
     @field_validator("check", "upstream_workflow", "dependency_update_actors", mode="before")
     @classmethod

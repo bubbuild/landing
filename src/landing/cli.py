@@ -20,11 +20,10 @@ from bub.configure import load
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
-from landing.adapters.github.api import required
 from landing.adapters.github.execution import execute as execute_github
 from landing.adapters.github.execution import with_repository_context
 from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
-from landing.adapters.github.webhook import read_webhook
+from landing.adapters.github.webhook import forwarded_inputs, read_forwarded
 from landing.database import open_database, own_database
 from landing.hooks import TerminationHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
@@ -324,16 +323,10 @@ def github_event(ctx: typer.Context) -> None:
         message = "The event file must contain a JSON object."
         raise ValueError(message)
     source, webhook_key = None, None
-    if (payload or {}).get("inputs", {}).get("event"):
-        inputs = required(payload, "inputs")
-        payload = read_webhook(
-            required(inputs, "event").encode(),
-            required(inputs, "signature"),
-            os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""),
-        )
-        source = required(inputs, "event_name")
-        # GitHub signs the body, not delivery headers; changing a forwarded ID must not mint new publication identity.
-        webhook_key = f"webhook:{required(inputs, 'signature')}"
+    if payload and forwarded_inputs(payload).get("event"):
+        # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
+        delivery = read_forwarded(forwarded_inputs(payload), os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""))
+        payload, source, webhook_key = delivery.event, delivery.event_name, delivery.key
         options = GitHubSettings.for_webhook(options.repository)
     os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", None)
     settings = execution_settings(ctx)

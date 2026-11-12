@@ -8,7 +8,7 @@ from pathlib import Path
 from landing.adapters.github.api import repository_at, required
 from landing.adapters.github.execution import execute
 from landing.adapters.github.settings import GitHubSettings
-from landing.adapters.github.webhook import read_webhook
+from landing.adapters.github.webhook import read_forwarded
 from landing.database import open_database
 from landing.hooks import TerminationHooks
 from landing.inbox import Inbox
@@ -22,19 +22,20 @@ async def run(database: Path, event_id: int, config_file: Path, skill_dirs: tupl
     for name in tuple(os.environ):
         if name.startswith("GITHUB_") and name != "GITHUB_TOKEN":
             os.environ.pop(name)
-    payload = read_webhook(required(inputs, "event").encode(), required(inputs, "signature"), secret)
+    # A local worker is its own trust boundary; it verifies the forwarded body again.
+    delivery = read_forwarded(inputs, secret)
     workspace = Path.cwd()
     options = GitHubSettings.for_webhook(repository_at(workspace))
     return await execute(
         options,
-        payload,
+        delivery.event,
         database=database,
         workspace=workspace,
         config_file=config_file,
         skill_dirs=skill_dirs,
         plugins=[TerminationHooks()],
-        source=required(inputs, "event_name"),
-        fallback_key=f"webhook:{required(inputs, 'signature')}",
+        source=delivery.event_name,
+        fallback_key=delivery.key,
     )
 
 

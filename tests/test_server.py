@@ -155,6 +155,15 @@ def test_github_acceptance_does_not_require_run_metadata(receiver):
         assert response.json() == {}
 
 
+def test_command_prefix_configured_once_filters_the_same_way(receiver, monkeypatch):
+    with TestClient(create_app()) as client:
+        assert post(client, event("@team-bot review Inspect retry behavior.")).status_code == 204
+    monkeypatch.setenv("LANDING_GITHUB_COMMAND_PREFIX", "@team-bot")
+    with TestClient(create_app()) as client:
+        assert post(client, event("@team-bot review Inspect retry behavior.")).status_code == 202
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 1
+
+
 def test_candidate_prs_need_a_same_repository_non_draft_head(receiver):
     payload = {
         "repository": {"full_name": "example/landing", "default_branch": "main"},
