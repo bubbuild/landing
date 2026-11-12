@@ -64,6 +64,55 @@ def test_action_reports_advisory_gate_separately_from_native_checks(tmp_path, ch
     assert "Reviewed the candidate." in (tmp_path / "summary.md").read_text()
 
 
+def _outputs(path):
+    """Read the GitHub output file format this Action writes."""
+    values, name, delimiter = {}, None, ""
+    for line in path.read_text().splitlines():
+        if name is None:
+            key, marker, value = line.partition("<<")
+            name, delimiter = (key, value) if marker else (None, "")
+            if name is not None:
+                values[name] = ""
+        elif line == delimiter:
+            name = None
+        else:
+            values[name] += line + "\n"
+    return {key: value.strip() for key, value in values.items()}
+
+
+def test_action_reports_a_skipped_event_separately_from_a_failed_step(tmp_path):
+    with provider([]) as (api_base, _):
+        result = delegate(
+            tmp_path,
+            api_base,
+            "review",
+            "",
+            extra_env={"LANDING_GITHUB_REPOSITORY": "other/repository"},
+        )
+    assert result.returncode == 2, result.stderr
+    assert "workflow repository" in result.stderr
+    outputs = _outputs(tmp_path / "outputs.txt")
+    # A broken invocation must not look like an event this Action chose not to handle.
+    assert outputs["status"] == "failed"
+    assert outputs["id"] == ""
+    assert "workflow repository" in outputs["result"]
+
+
+def test_action_and_cli_agree_on_the_recorded_outcome_for_advisory_gates(tmp_path, capsys):
+    responses = [completion(tool="decide", arguments={"decision": "block"}), completion("One retry defect.")]
+    with provider(responses) as (api_base, _):
+        result = delegate(tmp_path, api_base, "review", "")
+    assert result.returncode == 0, result.stderr
+    action = json.loads(result.stdout)
+    assert (action["status"], action["decision"]) == ("completed", "block")
+    outputs = _outputs(tmp_path / "outputs.txt")
+    assert (outputs["id"], outputs["status"], outputs["decision"]) == (action["id"], "completed", "block")
+    with open_database(tmp_path / "landing.sqlite3") as engine:
+        saved = Tasks(engine).get(action["id"])
+    # One record, rendered by each entry: the Action reports it without failing the advisory gate.
+    assert (saved.result, saved.decision, saved.error) == ("One retry defect.", "block", None)
+
+
 def test_action_retains_failed_fix_and_validation(tmp_path):
     responses = [
         completion(tool="fs_write", arguments={"path": "answer with spaces.txt", "content": "42\n"}),

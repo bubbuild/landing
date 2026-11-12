@@ -23,7 +23,7 @@ from landing.adapters.github.events import Ingress, NativeEvent
 from landing.adapters.github.execution import execute as execute_github
 from landing.adapters.github.execution import with_repository_context
 from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
-from landing.adapters.github.webhook import forwarded_inputs, read_forwarded
+from landing.adapters.github.webhook import carries_forwarded_body, forwarded_inputs, read_forwarded
 from landing.database import open_database, own_database
 from landing.hooks import TerminationHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
@@ -295,59 +295,76 @@ def serve(
     )
 
 
-def write_outputs(action: Action | None) -> None:
-    """Write native Action outputs and the step summary when available."""
+def write_outputs(context: GitHubEnvironment | None, action: Action | None, *, error: str | None = None) -> None:
+    """Write native Action outputs and the step summary when available.
+
+    A step that fails before an action exists still records ``failed``, so a downstream job can
+    tell a broken runner apart from an event that was intentionally skipped.
+    """
     outputs = {
         "id": action.id if action else "",
-        "status": action.status if action else "skipped",
+        "status": "failed" if error is not None else action.status if action else "skipped",
         "decision": action.decision or "" if action else "",
-        "result": action.result or "" if action else "",
+        "result": error if error is not None else action.result or "" if action else "",
     }
-    context = GitHubEnvironment()
-    if context.output:
+    if context is not None and context.output:
         with context.output.open("a") as output:
             for name, value in outputs.items():
                 delimiter = uuid4().hex
                 output.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
-    if context.step_summary:
+    if context is not None and context.step_summary:
         with context.step_summary.open("a") as output:
             output.write(outputs["result"] + "\n")
 
 
+def native_event(context: GitHubEnvironment) -> dict | None:
+    """Read the event file this runner was given, or None when it has none."""
+    if not context.event_path:
+        return None
+    payload = json.loads(context.event_path.read_text())
+    if not isinstance(payload, dict):
+        message = "The event file must contain a JSON object."
+        raise ValueError(message)  # noqa: TRY004 -- invalid serialized input, not a Python argument type.
+    return payload
+
+
 def github_event(ctx: typer.Context) -> None:
     """Execute the native Actions event or a signed webhook envelope."""
-    # Load operator policy before integration settings resolve, so the Action uses the same source.
-    settings = execution_settings(ctx)
-    options = GitHubSettings()
-    context = GitHubEnvironment()
-    payload = json.loads(context.event_path.read_text()) if context.event_path else None
-    if context.event_path and not isinstance(payload, dict):
-        message = "The event file must contain a JSON object."
-        raise ValueError(message)
     ingress: Ingress
-    # Remove the signing key before parsing so a malformed envelope cannot leave it for later work.
+    context: GitHubEnvironment | None = None
+    # Remove the signing key before reading configuration or the event file, so no later failure
+    # can leave it in the environment of the work this process starts.
     secret = os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", "")
-    inputs = forwarded_inputs(payload) if payload else {}
-    if inputs.get("event"):
-        # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
-        ingress = read_forwarded(inputs, secret)
-        options = GitHubSettings.for_webhook(options.repository)
-    else:
-        ingress = NativeEvent(payload, context.event_name, context.run_id, context.run_attempt)
-    action = asyncio.run(
-        execute_github(
-            options,
-            ingress,
-            database=settings.db or context.runner_temp / "landing/landing.sqlite3",
-            skill_dirs=ctx.find_root().params.get("skill_dir") or (),
-            plugins=[TerminationHooks()],
-            context=context,
+    try:
+        context = GitHubEnvironment()
+        # Load operator policy before integration settings resolve, so the Action uses the same source.
+        settings = execution_settings(ctx)
+        options = GitHubSettings()
+        payload = native_event(context)
+        if payload and carries_forwarded_body(payload):
+            # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
+            ingress = read_forwarded(forwarded_inputs(payload), secret)
+            options = GitHubSettings.for_webhook(options.repository)
+        else:
+            ingress = NativeEvent(payload, context.event_name, context.run_id, context.run_attempt)
+        action = asyncio.run(
+            execute_github(
+                options,
+                ingress,
+                database=settings.db or context.runner_temp / "landing/landing.sqlite3",
+                skill_dirs=ctx.find_root().params.get("skill_dir") or (),
+                plugins=[TerminationHooks()],
+                context=context,
+            )
         )
-    )
-    write_outputs(action)
+    except (ValueError, OSError, RuntimeError) as exc:
+        # The step fails either way; record why so its outputs are not reported as skipped.
+        write_outputs(context, None, error=str(exc) or type(exc).__name__)
+        raise
+    write_outputs(context, action)
     if action is not None:
         typer.echo(action.model_dump_json(indent=2))
-        raise typer.Exit(action.status != "completed")
+        raise typer.Exit(action.step_exit_code())
 
 
 def main(argv: list[str] | None = None) -> int:

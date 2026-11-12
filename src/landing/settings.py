@@ -36,8 +36,9 @@ def load_configuration(path: Path | None = None) -> None:
     """Load Landing's operator YAML through Bub's loader.
 
     This is plain file loading: it creates no agent, database, or workspace, so the relay can read
-    operator policy without starting execution resources. Each call replaces the loaded data, so
-    two configurations in one process never mix.
+    operator policy without starting execution resources. Each call replaces Bub's process-wide
+    configuration data, so an entry point that loads once and then constructs its settings reads a
+    single file; concurrent work in the same process is outside that scope.
     """
     load((path or ConfigurationFile().config_file).expanduser())
 
@@ -59,9 +60,16 @@ class YamlPolicySource(PydanticBaseSettingsSource):
 class PolicySettings(BaseSettings):
     """Component settings that also accept named operator policy from Landing's YAML.
 
-    Priority is explicit programmatic values, environment, YAML, then defaults. The allow-list is
-    the boundary: a component opts in to specific policy names, so the file cannot supply task
-    inputs, caller identity, event context, or credentials.
+    Priority is explicit programmatic values, then the environment, then YAML, then defaults.
+    Bub reads a ``.env`` file at import, so those values appear here as environment, not as YAML,
+    and they win over the operator file just like exported variables do.
+
+    The allow-list is the boundary: a component opts in to specific policy names, so the file
+    cannot supply task inputs, caller identity, event context, or credentials.
+
+    Loading replaces the process-wide configuration data that Bub's loader keeps. Each entry point
+    that constructs these settings after loading therefore sees one file; this is not a general
+    isolation guarantee for work that runs concurrently with a reload.
     """
 
     yaml_fields: ClassVar[frozenset[str]] = frozenset()

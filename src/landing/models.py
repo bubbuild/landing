@@ -82,6 +82,10 @@ class Action(Model):
     def exit_code(self) -> int:
         return int(self.status != "completed" or (self.mode == "gatekeeper" and self.decision != "allow"))
 
+    def step_exit_code(self) -> int:
+        """Exit code for a hosted step, where a gate recommendation stays advisory."""
+        return int(self.status != "completed")
+
 
 class Event(Model):
     id: int

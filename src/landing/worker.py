@@ -50,7 +50,7 @@ def main() -> int:
     if action is None:
         return 0
     print(action.model_dump_json(indent=2))
-    return int(action.status != "completed")
+    return action.step_exit_code()
 
 
 if __name__ == "__main__":

@@ -1374,6 +1374,62 @@ def test_non_object_forwarded_inputs_are_invalid_not_native(tmp_path, platform, 
     assert not model[1]
 
 
+@pytest.mark.parametrize("body", ["", None])
+def test_explicitly_empty_forwarded_body_is_never_treated_as_native(tmp_path, platform, monkeypatch, model, body):
+    """The forwarded field's presence selects verification, so an empty value cannot fall back."""
+    signature = "sha256=" + hmac.new(b"signing-fixture", (body or "").encode(), hashlib.sha256).hexdigest()
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps({"inputs": {"event": body, "signature": signature, "event_name": "issue_comment"}}))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_REPOSITORY": "example/landing",
+        "LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture",
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "forwarded event body" in result.stderr
+    assert not model[1]
+
+
+def test_native_dispatch_inputs_do_not_select_forwarded_verification(tmp_path, platform, monkeypatch, model):
+    """A native workflow_dispatch event has inputs too; only a forwarded event field selects verification."""
+    event = {
+        "inputs": {"command": "fix", "instruction": "Repair the workflow."},
+        "repository": {"full_name": "example/landing"},
+        "sender": {"type": "User", "login": "maintainer"},
+    }
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(event))
+    for name, value in {
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_REPOSITORY": "example/landing",
+        "GITHUB_RUN_ID": "acceptance",
+        "LANDING_DB": str(tmp_path / "native.sqlite3"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    model[0].append(completion("Repaired the workflow."))
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["instruction"] == "Carry out the delegated task using repository guidance."
+
+
+def test_signing_key_leaves_the_environment_before_configuration_or_event_reading(
+    tmp_path, platform, monkeypatch, model
+):
+    """Even an unreadable event file must not leave the secret for the work this process starts."""
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/landing")
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "LANDING_GITHUB_WEBHOOK_SECRET" not in os.environ
+    assert not model[1]
+
+
 def test_native_event_files_still_run_without_forwarded_inputs(tmp_path, platform, monkeypatch, model):
     event = {"repository": {"full_name": "example/landing"}, "sender": {"type": "Bot", "login": "team-app[bot]"}}
     source = tmp_path / "event.json"
