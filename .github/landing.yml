@@ -1,6 +1,7 @@
 # Shared operator policy for the Main and Landing duty workflows.
-# Both workflows set LANDING_CONFIG to this file; the bundled Action declares these inputs empty,
-# so a non-empty workflow value (${{ vars.* }}) still overrides an entry here.
+# The duty job points LANDING_CONFIG here; the feedback job copies this file from the trusted base
+# revision, because its checkout contains candidate files. The bundled Action declares these inputs
+# empty, so a non-empty workflow value (for example ${{ vars.LANDING_TRUST }}) still wins.
 model_timeout_seconds: 120
 
 # Duty bumping: help a failed same-repository candidate workflow after native CI fails.
@@ -25,6 +26,8 @@ modes:
       assess affected user behavior.
   issuer:
     instructions: |
+      Native checks are independent of Landing feedback; ignore the Landing feedback job itself when
+      assessing whether native checks completed.
       Triage only the failures or evidence supplied for this event. Read the affected job logs through gh,
       and deployment evidence when a release supplies it; reuse a matching issue and record an actionable
       current problem. Do not scan unrelated open issues or create issues for resolved historical failures.

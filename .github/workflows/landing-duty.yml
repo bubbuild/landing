@@ -23,6 +23,8 @@ permissions:
 
 jobs:
   duty:
+    # The job gate can only read repository variables; .github/landing.yml holds the
+    # bump-on-failure default and remains authoritative when the Action admits the event.
     if: >-
       vars.LANDING_MODEL != '' &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
@@ -121,7 +123,6 @@ jobs:
           command: bump
           checked-revision: ${{ github.event_name != 'workflow_run' && github.sha || '' }}
           delivery-key: ${{ github.event_name != 'workflow_run' && format('duty:{0}', github.run_id) || '' }}
-          instruction: Carry out the delegated dependency maintenance.
       - name: Collect browser evidence
         if: always()
         run: |

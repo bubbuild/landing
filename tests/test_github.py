@@ -1265,9 +1265,10 @@ def test_shared_repository_config_sets_workflow_policy(tmp_path, monkeypatch):
             monkeypatch.delenv(name)
     monkeypatch.setenv("HOME", str(tmp_path))
     composite_inputs(monkeypatch)
-    from bub.configure import load
+    from bub.configure import ensure_config, load
 
     load(SHARED_CONFIG)
+    assert ensure_config(Settings).model_timeout_seconds == 120
     settings = github.GitHubSettings(repository="example/landing")
     assert settings.bump_on_failure is True
     assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]

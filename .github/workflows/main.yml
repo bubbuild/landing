@@ -161,12 +161,17 @@ jobs:
         # base revision and keep it outside the artifact directory.
         env:
           POLICY_REVISION: ${{ github.event.pull_request.base.sha || github.sha }}
+          POLICY_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
           mkdir -p "$RUNNER_TEMP/policy"
-          if git show "$POLICY_REVISION:.github/landing.yml" > "$RUNNER_TEMP/policy/landing.yml" 2>/dev/null; then
-            echo "LANDING_CONFIG=$RUNNER_TEMP/policy/landing.yml" >> "$GITHUB_ENV"
-          else
-            echo "::warning::No operator policy at $POLICY_REVISION; Landing defaults apply."
+          policy="$RUNNER_TEMP/policy/landing.yml"
+          if ! git show "$POLICY_REVISION:.github/landing.yml" > "$policy" 2>/dev/null &&
+             ! { [ -n "$POLICY_BRANCH" ] && git show "origin/$POLICY_BRANCH:.github/landing.yml" > "$policy" 2>/dev/null; }; then
+            rm -f "$policy"
+            echo "::warning::No operator policy at the base revision; Landing defaults apply."
+          fi
+          if [ -s "$policy" ]; then
+            echo "LANDING_CONFIG=$policy" >> "$GITHUB_ENV"
           fi
       - uses: ./.github/actions/setup-python-env
       - uses: sersoft-gmbh/setup-gh-cli-action@v3
