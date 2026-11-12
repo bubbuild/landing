@@ -1092,3 +1092,114 @@ def test_replayed_repair_does_not_claim_validation(tmp_path, platform, invoke, m
     assert replay.status == "failed"
     assert len(model[1]) == calls
     assert len(json.loads(platform.read_text())["comments"]) == 1
+
+
+@pytest.fixture
+def operator_home(tmp_path, monkeypatch):
+    """Point HOME at a disposable directory whose operator YAML this test controls."""
+    for name in tuple(os.environ):
+        if name.startswith("INPUT_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / ".landing" / "config.yml"
+    path.parent.mkdir()
+    return path
+
+
+def test_operator_yaml_sets_event_policy_end_to_end(tmp_path, platform, model, monkeypatch, operator_home):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {
+            "body": "@team-bot review Inspect retry behavior.",
+            "user": {"type": "User", "login": "maintainer"},
+        },
+    }
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(event))
+    for name, value in {
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_RUN_ID": "acceptance",
+        "INPUT_REPOSITORY": "example/landing",
+        "INPUT_DELIVERY_KEY": "policy",
+        "INPUT_DATABASE": str(tmp_path / "landing.sqlite3"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    default_prefix = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert default_prefix.exit_code == 0, default_prefix.stderr
+    assert not default_prefix.stdout
+
+    operator_home.write_text("command_prefix: '@team-bot'\n")
+    responses, _ = model
+    responses.extend([
+        completion(
+            tool="fs_write",
+            arguments={
+                "path": "comment.json",
+                "content": json.dumps({"body": github.marker("gatekeeper", "policy") + "\nInspect retry behavior."}),
+            },
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input comment.json"}
+        ),
+        completion("Published the result."),
+    ])
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    action = Action.model_validate_json(result.stdout)
+    assert action.mode == "gatekeeper"
+    assert action.instruction == "Inspect retry behavior."
+
+
+def test_event_policy_precedence_and_excluded_keys(tmp_path, monkeypatch, operator_home):
+    operator_home.write_text(
+        "repository: other/landing\n"
+        "command_prefix: '@yaml'\n"
+        "trust: owner\n"
+        "upstream_workflow: release-main\n"
+        "check: |\n"
+        "  unit\n"
+        "  lint\n"
+        "bump_on_failure: true\n"
+        "number: 9\n"
+        "head: candidate-head\n"
+        "checked_revision: tested-head\n"
+        "run_id: 123\n"
+        "delivery_key: yaml-key\n"
+        "database: yaml.sqlite3\n"
+        "event: yaml-event.json\n"
+    )
+    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    monkeypatch.setenv("INPUT_COMMAND_PREFIX", "@env")
+    from bub.configure import load
+
+    load(operator_home)
+    settings = github.GitHubSettings()
+    assert settings.command_prefix == "@env"
+    assert settings.trust == "owner"
+    assert settings.upstream_workflow == ["release-main"]
+    assert settings.check == ["unit", "lint"]
+    assert settings.bump_on_failure is True
+    assert settings.repository == "example/landing"
+    assert (settings.number, settings.head, settings.checked_revision) == (0, "", None)
+    assert settings.run_id == ""
+    assert settings.delivery_key is None
+    assert settings.event is None
+    assert settings.database is None
+    assert github.GitHubSettings(command_prefix="@explicit").command_prefix == "@explicit"
+
+
+def test_missing_operator_yaml_keeps_defaults(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    from bub.configure import load
+
+    load(tmp_path / ".landing" / "config.yml")
+    settings = github.GitHubSettings()
+    assert settings.command_prefix == "/landing"
+    assert settings.trust == "repository"
+    assert settings.upstream_workflow == []
+    assert settings.check == []
+    assert settings.bump_on_failure is False
+    assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]

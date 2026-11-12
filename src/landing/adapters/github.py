@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import uuid4
 
 import typer
@@ -22,6 +22,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from landing.models import COMMANDS, Action, ActionRequest, Decision, FileInput, Mode
 from landing.runtime import Runtime
+from landing.settings import PolicySettings
 
 REPOSITORY_GUIDANCE = (
     "GitHub repository: $repository. Use the prepared gh CLI. In GitHub conversations use #number or owner/repo#number "
@@ -113,12 +114,26 @@ class GitHubEnvironment(BaseSettings):
     admission_token: str | None = Field(default=None, validation_alias="GH_ADMISSION_TOKEN", repr=False)
 
 
-class GitHubSettings(BaseSettings):
-    """Action inputs and explicit CLI overrides, independent of native authority."""
+class GitHubSettings(PolicySettings):
+    """Action inputs and explicit CLI overrides, independent of native authority.
+
+    The loaded Landing YAML may set operator policy only: command prefix, caller trust, allowed
+    upstream workflows, dependency bumping, dependency update actors, and required checks. Task
+    inputs, caller identity, event context, run identity, database, and delivery keys stay with
+    the invocation.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="INPUT_", env_ignore_empty=True, populate_by_name=True, extra="ignore", hide_input_in_errors=True
     )
+    yaml_fields: ClassVar[frozenset[str]] = frozenset({
+        "command_prefix",
+        "trust",
+        "upstream_workflow",
+        "bump_on_failure",
+        "dependency_update_actors",
+        "check",
+    })
     repository: str = Field(validation_alias=AliasChoices("INPUT_REPOSITORY", "GITHUB_REPOSITORY"))
     event: FilePath | None = Field(default=None, validation_alias="GITHUB_EVENT_PATH")
     delegated_command: Literal["review", "fix", "triage", "explain", "bump"] = Field(
@@ -819,9 +834,12 @@ def github_event(
     check: Annotated[list[str] | None, typer.Option(help="Required validation (repeatable).")] = None,
 ) -> None:
     """Admit and route an event, then confirm native publication."""
+    from landing.cli import execution_runtime, execution_settings
+
+    settings = execution_settings(ctx)
     parameters = {**locals(), "database": ctx.find_root().params.get("db")}
     options = GitHubSettings(**{
-        name: value for name, value in parameters.items() if name != "ctx" and value is not None
+        name: value for name, value in parameters.items() if name not in {"ctx", "settings"} and value is not None
     })
     context = GitHubEnvironment()
     payload = json.loads(options.event.read_text()) if options.event else None
@@ -838,9 +856,6 @@ def github_event(
     ):
         write_outputs(None)
         raise typer.Exit()
-    from landing.cli import execution_runtime, execution_settings
-
-    settings = execution_settings(ctx)
     upstream_run = (payload or {}).get("workflow_run", {})
     if payload and (
         upstream_run.get("event") == "pull_request"

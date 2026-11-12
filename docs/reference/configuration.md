@@ -120,6 +120,17 @@ Local workspace defaults to the current directory. Servers register names with `
 
 The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
 
+Landing YAML may also set operator policy for the GitHub runner: `command_prefix`, `trust`, `upstream_workflow`, `bump_on_failure`, `dependency_update_actors`, and `check`. CLI options, then `INPUT_*`, then YAML, then defaults decide each value. The file cannot set the repository, event file, command or instruction, issue or PR number, candidate head, checked revision, run identity, delivery key, database, or caller credentials.
+
+```yaml
+command_prefix: "@team-bot"
+trust: repository
+upstream_workflow: [release-main]
+check:
+  - uv run ty check
+  - uv run pre-commit run --all-files
+```
+
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 
 ## Container replication
