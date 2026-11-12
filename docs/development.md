@@ -111,7 +111,7 @@ For a workflow-token candidate, start Main explicitly using the repository proce
 gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA
 ```
 
-Duty sets its model, endpoint, and credential environment once at job level, so its two Action steps no longer repeat the same block. Policy inputs a step omits defer to Landing YAML and then to the documented defaults; both duty steps pass `trust` from the same variable, and their distinct upstream workflow allow-lists stay separate. Main keeps its environment on its single Action step and omits the `checked-revision` and `run-id` entries the Action already derives from `github.sha` and `github.run_id`.
+Duty sets its non-secret model, endpoint, completion options, and timeout once at job level. Each Action step receives its provider key separately, so unrelated preparation steps do not inherit it. Policy inputs a step omits defer to Landing YAML and then to the documented defaults; both duty steps pass `trust` from the same variable, and their distinct upstream workflow allow-lists stay separate. Main keeps its environment on its single Action step and omits the `checked-revision` and `run-id` entries the Action already derives from `github.sha` and `github.run_id`.
 
 Candidate self-checks install Landing from that checkout. A duty task using the default-branch runtime does not reload it when the selected workspace changes.
 

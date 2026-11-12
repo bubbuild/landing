@@ -108,7 +108,7 @@ The `bubbuild/landing` Action executes work from GitHub workflow events. [Get st
 | `checks` | Required check commands, one per line; empty means Landing YAML, then none. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
 
-These six policy inputs default to empty, and the Action's composite step only forwards the values it receives, so an omitted input defers to Landing YAML and then to the documented default. An explicit input, including `false` or an empty list, still wins. Task inputs stay with the invocation.
+These six policy inputs default to empty, and the Action's composite step only forwards the values it receives, so an omitted input defers to Landing YAML and then to the documented default. An explicit non-empty input, including `false`, still wins. Task inputs stay with the invocation.
 
 Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without task creation, model use, delegated tools or checks, or publication. Permission lookup errors fail the Action. Execution or required publication failure also fails the step; gate recommendations remain advisory. Automatic PR and candidate dispatch reviews update one status comment instead of requiring a new overview review per execution. Explicit review commands retain their required reply. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
 
