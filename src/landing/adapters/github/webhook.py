@@ -1,4 +1,4 @@
-"""Verify GitHub's payload and pass it directly to the repository's executor."""
+"""Verify GitHub's payload and hand the executor one ingress value."""
 
 import hashlib
 import hmac
