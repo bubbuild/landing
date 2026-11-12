@@ -98,7 +98,8 @@ The `bubbuild/landing` Action executes work from GitHub workflow events. [Get st
 | `trust` | `repository` or `owner`; `repository` applies when the input is empty and no Landing YAML sets it. |
 | `upstream-workflow` | Allowed `workflow_run` name; empty means Landing YAML, then rejecting these events. |
 | `bump-on-failure` | Opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails; empty means Landing YAML, then `false`. |
-| `dependency-update-actors` | Update account logins, one per line; empty means Landing YAML, then `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
+| `dependency-update-actors` | Update account logins, one per line; empty means Landing YAML, then `dependabot[bot]` and `renovate[bot]`. A non-empty value replaces that list. The current PR author must match. |
+| `dependency-update-actor-additions` | More update account logins, one per line, added to the effective list instead of replacing it; blank lines add nothing. |
 | `number` | Issue or PR number; supplied by the event when available. |
 | `head` | Candidate head, distinct from the checked revision; PR events supply it. |
 | `checked-revision` | Actual checked commit, default `github.sha`. |

@@ -126,10 +126,16 @@ Landing YAML may also set operator policy for the GitHub runner: `command_prefix
 command_prefix: "@team-bot"
 trust: repository
 upstream_workflow: [release-main]
+bump_on_failure: true
+dependency_update_actors:
+  - dependabot[bot]
+  - renovate[bot]
 check:
   - uv run ty check
   - uv run pre-commit run --all-files
 ```
+
+`dependency_update_actors` sets the allowed update accounts. A non-empty `dependency-update-actors` input or `--dependency-update-actor` option replaces that list; `dependency-update-actor-additions` or `--dependency-update-actor-addition` adds logins to the effective list, so a workflow can union a prepared publishing identity and repository variables with the configured base. Blank additions add nothing.
 
 The bundled Action declares these six inputs empty, so a step that omits a `with:` entry inherits the file and then the default, while a workflow value such as `${{ vars.LANDING_TRUST }}` still wins when set. To maintain static policy in one checked-in file, set `LANDING_CONFIG` once at job level and leave the policy entries out of every Action step:
 

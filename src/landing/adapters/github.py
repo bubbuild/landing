@@ -146,6 +146,7 @@ class GitHubSettings(PolicySettings):
     dependency_update_actors: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["dependabot[bot]", "renovate[bot]"]
     )
+    dependency_update_actor_additions: Annotated[list[str], NoDecode] = Field(default_factory=list)
     command_prefix: str = "/landing"
     number: int = Field(default=0, ge=0)
     head: str = ""
@@ -155,7 +156,9 @@ class GitHubSettings(PolicySettings):
     database: Path | None = None
     check: Annotated[list[str], NoDecode] = Field(default_factory=list, validation_alias="INPUT_CHECKS")
 
-    @field_validator("check", "upstream_workflow", "dependency_update_actors", mode="before")
+    @field_validator(
+        "check", "upstream_workflow", "dependency_update_actors", "dependency_update_actor_additions", mode="before"
+    )
     @classmethod
     def multiline_inputs(cls, value):
         return [line for line in value.splitlines() if line.strip()] if isinstance(value, str) else value
@@ -279,10 +282,16 @@ def rows(endpoint: str, repository: str) -> list[dict]:
     return [item for page in json.loads(gh(["api", endpoint, "--paginate", "--slurp"], repository)) for item in page]
 
 
+def update_actors(options: GitHubSettings) -> set[str]:
+    """Effective allowed update accounts: the configured or replaced list plus dynamic additions."""
+    names = [*options.dependency_update_actors, *options.dependency_update_actor_additions]
+    return {name.strip().casefold() for name in names if name.strip()}
+
+
 def dependency_pull(options: GitHubSettings, event: dict) -> dict | None:
     """Resolve an opted-in update account's failed CI to its current, same-repository PR."""
     run = required(event, "workflow_run")
-    actors = {name.strip().casefold() for name in options.dependency_update_actors if name.strip()}
+    actors = update_actors(options)
     pulls = required(run, "pull_requests")
     head = required(run, "head_sha")
     if not pulls:
@@ -824,6 +833,10 @@ def github_event(
     dependency_update_actors: Annotated[
         list[str] | None,
         typer.Option("--dependency-update-actor", help="Allowed dependency update account (repeatable)."),
+    ] = None,
+    dependency_update_actor_additions: Annotated[
+        list[str] | None,
+        typer.Option("--dependency-update-actor-addition", help="Additional allowed update account (repeatable)."),
     ] = None,
     command_prefix: Annotated[str | None, typer.Option(help="Comment command prefix.")] = None,
     number: Annotated[int | None, typer.Option(min=0, help="Issue or PR number.")] = None,

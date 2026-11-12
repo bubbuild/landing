@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from landing.adapters import github
 from landing.cli import create_cli_app
 from landing.models import Action
+from landing.settings import Settings
 from tests.conftest import completion
 
 
@@ -276,6 +277,44 @@ def test_failed_dependency_pr_gets_one_bump_reply(
     dependency_ci["workflow_run"]["id"] = 456
     assert invoke(dependency_ci, key=None, database=tmp_path / "next-run.sqlite3") is None
     assert json.loads(platform.read_text())["comments"] == delivered["comments"]
+
+
+def test_dynamic_actor_additions_extend_the_configured_base(
+    tmp_path, platform, invoke, model, monkeypatch, dependency_ci
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    state = json.loads(platform.read_text())
+    state["target"]["user"]["login"] = "example-publisher"
+    platform.write_text(json.dumps(state))
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "\n  example-publisher \n")
+    (tmp_path / "reply.json").write_text(json.dumps({"body": github.marker("bumper", "bump:42:candidate-head")}))
+    model[0].extend([
+        completion(
+            tool="bash",
+            arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"},
+        ),
+        completion("Reported the dependency candidate's blocker."),
+    ])
+    action = invoke(dependency_ci, key=None)
+    assert action is not None and action.mode == "bumper"
+    assert len(json.loads(platform.read_text())["comments"]) == 1
+
+
+@pytest.mark.parametrize("author", ["contributor", "dependabot[bot]"])
+def test_actor_additions_keep_the_base_and_reject_unlisted_authors(
+    platform, invoke, model, monkeypatch, dependency_ci, author
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "   \n")
+    state = json.loads(platform.read_text())
+    state["target"]["user"]["login"] = author
+    platform.write_text(json.dumps(state))
+    expected = author == "dependabot[bot]"
+    if expected:
+        model[0].extend([completion("Reported the dependency candidate's blocker.")])
+    action = invoke(dependency_ci, key=None)
+    assert (action is not None) is expected
+    assert not json.loads(platform.read_text())["comments"]
 
 
 @pytest.mark.parametrize("condition", ["disabled", "success", "unapproved-workflow", "foreign-source"])
@@ -1196,6 +1235,51 @@ def test_event_policy_precedence_and_excluded_keys(tmp_path, monkeypatch, operat
     assert github.GitHubSettings(command_prefix="@explicit").command_prefix == "@explicit"
 
 
+def test_shared_repository_config_sets_workflow_policy(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("INPUT_", "GITHUB_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    composite_inputs(monkeypatch)
+    from bub.configure import load
+
+    load(SHARED_CONFIG)
+    settings = github.GitHubSettings(repository="example/landing")
+    assert settings.bump_on_failure is True
+    assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]
+    assert github.update_actors(settings) == {"dependabot[bot]", "renovate[bot]"}
+    assert settings.trust == "repository"
+    assert settings.command_prefix == "/landing"
+
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false")
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "\n  \n")
+    overridden = github.GitHubSettings(repository="example/landing")
+    assert overridden.bump_on_failure is False
+    assert github.update_actors(overridden) == {"dependabot[bot]", "renovate[bot]"}
+
+
+def test_shared_repository_config_supplies_mode_instructions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from bub.configure import ensure_config, load
+
+    load(SHARED_CONFIG)
+    modes = ensure_config(Settings).modes
+    assert "assess affected user behavior" in modes["gatekeeper"].instructions
+    assert "resolved historical failures" in modes["issuer"].instructions
+    assert "preserve" in modes["bumper"].instructions
+
+
+def test_workflows_leave_static_policy_to_the_shared_config():
+    """A static value copied back into a workflow silently defeats the shared operator config."""
+    for path in WORKFLOWS:
+        text = path.read_text()
+        assert "LANDING_CONFIG" in text, path
+        assert "dependabot[bot]" not in text, path
+        assert "renovate[bot]" not in text, path
+        assert "|| 'true'" not in text, path
+        assert "|| '{}'" not in text, path
+
+
 def test_missing_operator_yaml_keeps_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
@@ -1211,12 +1295,16 @@ def test_missing_operator_yaml_keeps_defaults(tmp_path, monkeypatch):
     assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]
 
 
-ACTION_METADATA = Path(__file__).resolve().parents[1] / "action.yml"
+REPOSITORY = Path(__file__).resolve().parents[1]
+SHARED_CONFIG = REPOSITORY / ".github" / "landing.yml"
+WORKFLOWS = (REPOSITORY / ".github/workflows/main.yml", REPOSITORY / ".github/workflows/landing-duty.yml")
+ACTION_METADATA = REPOSITORY / "action.yml"
 POLICY_INPUTS = (
     "trust",
     "command-prefix",
     "bump-on-failure",
     "dependency-update-actors",
+    "dependency-update-actor-additions",
     "upstream-workflow",
     "checks",
 )
@@ -1239,7 +1327,9 @@ def test_action_defaults_admit_operator_policy_and_keep_explicit_overrides(tmp_p
             monkeypatch.delenv(name)
     monkeypatch.setenv("HOME", str(tmp_path))
     exported = composite_inputs(monkeypatch)
-    assert [exported["INPUT_" + name.upper().replace("-", "_")] for name in POLICY_INPUTS] == [""] * 6
+    assert [exported["INPUT_" + name.upper().replace("-", "_")] for name in POLICY_INPUTS] == [""] * len(
+        POLICY_INPUTS
+    )
 
     config = tmp_path / ".landing" / "config.yml"
     config.parent.mkdir()

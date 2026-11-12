@@ -25,6 +25,9 @@ inputs:
   dependency-update-actors:
     description: Allowed dependency PR authors, one per line. Empty leaves the Landing YAML value, then dependabot[bot] and renovate[bot].
     default: ''
+  dependency-update-actor-additions:
+    description: More allowed dependency PR authors, one per line, unioned with the effective list. Empty adds nothing.
+    default: ''
   number:
     description: Issue or PR number; the event supplies it when available.
     default: '0'
@@ -81,6 +84,7 @@ runs:
         INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
         INPUT_BUMP_ON_FAILURE: ${{ inputs.bump-on-failure }}
         INPUT_DEPENDENCY_UPDATE_ACTORS: ${{ inputs.dependency-update-actors }}
+        INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS: ${{ inputs.dependency-update-actor-additions }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_INSTRUCTION: ${{ inputs.instruction }}
         INPUT_REPOSITORY: ${{ inputs.repository }}
