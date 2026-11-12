@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from landing.server import ServerSettings, create_app
+from landing.settings import load_configuration
 
 
 @pytest.fixture
@@ -200,6 +201,93 @@ def test_dispatch_only_relay_never_builds_execution_framework(receiver, monkeypa
         assert post(client, event()).status_code == 202
         assert client.get("/up").status_code == 200
     assert len(json.loads(receiver.read_text())["dispatches"]) == 1
+
+
+def test_operator_yaml_supplies_receiver_policy_without_execution_resources(receiver, monkeypatch, tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text("command_prefix: '@team-bot'\nrunner: gha\nworkflow: from-yaml.yml\n")
+    monkeypatch.setenv("LANDING_CONFIG", str(config))
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "webhook-fixture")
+
+    def refuse(*args, **kwargs):
+        message = "A relay must not construct execution resources."
+        raise AssertionError(message)
+
+    monkeypatch.setattr("landing.server.BubFramework", refuse)
+    # Only the YAML selects GHA placement here; no environment value overrides it.
+    monkeypatch.delenv("LANDING_RUNNER")
+    with TestClient(create_app()) as client:
+        assert post(client, event("@team-bot review Inspect retry behavior.")).status_code == 202
+    dispatched = json.loads(receiver.read_text())["dispatches"][0]
+    assert dispatched["endpoint"].endswith("/actions/workflows/from-yaml.yml/dispatches")
+
+
+def test_environment_overrides_operator_yaml_policy(receiver, monkeypatch, tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text("command_prefix: '@team-bot'\n")
+    monkeypatch.setenv("LANDING_CONFIG", str(config))
+    with TestClient(create_app()) as client:
+        assert post(client, event("@team-bot review Inspect retry behavior.")).status_code == 202
+    monkeypatch.setenv("LANDING_GITHUB_COMMAND_PREFIX", "/landing")
+    with TestClient(create_app()) as client:
+        assert post(client, event("@team-bot review Inspect retry behavior.")).status_code == 204
+        assert post(client, event("/landing review Inspect retry behavior.")).status_code == 202
+    # The YAML prefix accepted the first delivery; the environment value replaced it for the next one.
+    assert len(json.loads(receiver.read_text())["dispatches"]) == 2
+
+
+def test_yaml_cannot_supply_native_caller_identity_or_task_inputs(monkeypatch, tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "\n".join([
+            "trust: owner",
+            "command_prefix: '@team-bot'",
+            "upstream_workflow: [release-main]",
+            "repository: example/landing",
+            "actions: true",
+            "actor: maintainer",
+            "triggering_actor: maintainer",
+            "run_id: 999",
+            "delegated_command: bump",
+            "instruction: From YAML",
+            "number: 42",
+            "head: from-yaml",
+            "delivery_key: from-yaml",
+            "",
+        ])
+    )
+    monkeypatch.setenv("LANDING_CONFIG", str(config))
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/landing")
+    load_configuration()
+    from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
+
+    policy = GitHubSettings()
+    context = GitHubEnvironment()
+    assert (policy.trust, policy.command_prefix) == ("owner", "@team-bot")
+    assert policy.upstream_workflow == ["release-main"]
+    # Task inputs and native identity keep their own sources.
+    assert (policy.delegated_command, policy.instruction, policy.number, policy.head) == (
+        "review",
+        GitHubSettings.model_fields["instruction"].default,
+        0,
+        "",
+    )
+    assert policy.delivery_key is None
+    assert (context.actions, context.actor, context.triggering_actor, context.run_id) == (False, "", "", "")
+
+
+def test_reloading_another_configuration_does_not_mix_operator_policy(monkeypatch, tmp_path):
+    from landing.adapters.github.settings import GitHubSettings
+
+    first, second = tmp_path / "first.yml", tmp_path / "second.yml"
+    monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
+    first.write_text("trust: owner\ncommand_prefix: '@first'\n")
+    second.write_text("command_prefix: '@second'\n")
+    for path, expected in ((first, ("owner", "@first")), (second, ("repository", "@second"))):
+        monkeypatch.setenv("LANDING_CONFIG", str(path))
+        load_configuration()
+        policy = GitHubSettings()
+        assert (policy.trust, policy.command_prefix) == expected
 
 
 def test_ping_needs_no_repository_identity(receiver):

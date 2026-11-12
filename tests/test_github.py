@@ -1328,6 +1328,91 @@ def test_forwarded_envelope_that_is_not_usable_input_exits_invalid(tmp_path, pla
     assert not model[1]
 
 
+def _signed_envelope(secret, body, **inputs):
+    signature = "sha256=" + hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return {"inputs": {"event": body, "signature": signature, **inputs}}
+
+
+@pytest.mark.parametrize("event_name", ["", "   ", 7])
+def test_forwarded_delivery_never_passes_for_a_native_event(tmp_path, platform, monkeypatch, model, event_name):
+    """A forwarded envelope with an unusable event name is rejected, not admitted as native work."""
+    body = json.dumps({
+        "repository": {"full_name": "example/landing"},
+        "sender": {"login": "outsider"},
+        "pull_request": {"number": 42, "head": {"sha": "candidate-head"}},
+    })
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(_signed_envelope("signing-fixture", body, event_name=event_name)))
+    state = json.loads(platform.read_text())
+    state["permission"] = "read"
+    platform.write_text(json.dumps(state))
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_REPOSITORY": "example/landing",
+        "LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture",
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "event name" in result.stderr
+    assert not model[1]
+
+
+@pytest.mark.parametrize("inputs", ["", 0, [], ["event"]])
+def test_non_object_forwarded_inputs_are_invalid_not_native(tmp_path, platform, monkeypatch, model, inputs):
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps({"inputs": inputs}))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(source))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/landing")
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "JSON object" in result.stderr
+    assert not model[1]
+
+
+def test_native_event_files_still_run_without_forwarded_inputs(tmp_path, platform, monkeypatch, model):
+    event = {"repository": {"full_name": "example/landing"}, "sender": {"type": "Bot", "login": "team-app[bot]"}}
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(event))
+    for name, value in {
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_EVENT_NAME": "release",
+        "GITHUB_REPOSITORY": "example/landing",
+        "GITHUB_RUN_ID": "acceptance",
+        "LANDING_GITHUB_WEBHOOK_SECRET": "signing-fixture",
+    }.items():
+        monkeypatch.setenv(name, value)
+    model[0].append(completion("Explained the release."))
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "completed"
+
+
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        {"inputs": {"event": "{}"}},
+        {"inputs": {"event": "{}", "signature": "sha256=wrong", "event_name": "issue_comment"}},
+        {"inputs": "not-an-object"},
+    ],
+)
+def test_malformed_envelope_does_not_leave_the_signing_key(tmp_path, platform, monkeypatch, model, envelope):
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(envelope))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(source))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/landing")
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "LANDING_GITHUB_WEBHOOK_SECRET" not in os.environ
+    assert not model[1]
+
+
 def test_routing_one_event_repeatedly_gives_the_same_delegation(monkeypatch):
     monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
     options = GitHubSettings()

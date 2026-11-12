@@ -10,16 +10,19 @@ from typing import Annotated, Literal
 from bub import BubFramework
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
 from landing.adapters.github.events import selected_event
 from landing.adapters.github.webhook import WebhookSettings, dispatch, read_webhook
 from landing.local import LocalRunner
-from landing.settings import DEFAULT_DATABASE, ConfigurationFile
+from landing.settings import DEFAULT_DATABASE, ConfigurationFile, PolicySettings, load_configuration
 
 
-class ServerSettings(BaseSettings):
+class ServerSettings(PolicySettings):
+    """How this receiver runs: execution location and prepared checkout."""
+
+    yaml_fields = frozenset({"runner", "workspace"})
     model_config = SettingsConfigDict(env_prefix="LANDING_", env_ignore_empty=True)
     runner: Literal["local", "gha"] = "local"
     workspace: Path = Field(default_factory=Path.cwd)
@@ -29,6 +32,8 @@ class ServerSettings(BaseSettings):
 def create_app(  # noqa: C901 -- routes share the selected execution lifespan.
     *, options: ServerSettings | None = None, skill_dirs: tuple[Path, ...] = ()
 ) -> FastAPI:
+    # Reading operator YAML creates no execution resources; a relay stays a relay.
+    load_configuration()
     options, settings = options or ServerSettings(), WebhookSettings()
     local = None
     framework = None

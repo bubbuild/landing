@@ -12,6 +12,7 @@ from landing.adapters.github.webhook import read_forwarded
 from landing.database import open_database
 from landing.hooks import TerminationHooks
 from landing.inbox import Inbox
+from landing.settings import load_configuration
 
 
 async def run(database: Path, event_id: int, config_file: Path, skill_dirs: tuple[Path, ...]):
@@ -25,6 +26,8 @@ async def run(database: Path, event_id: int, config_file: Path, skill_dirs: tupl
     # A local worker is its own trust boundary; it verifies the forwarded body again.
     delivery = read_forwarded(inputs, secret)
     workspace = Path.cwd()
+    # The worker reads the same operator policy the receiver and Action loaded.
+    load_configuration(config_file)
     options = GitHubSettings.for_webhook(repository_at(workspace))
     return await execute(
         options,

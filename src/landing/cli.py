@@ -16,7 +16,6 @@ from uuid import uuid4
 import typer
 from bub import Settings as BubSettings
 from bub import config, ensure_config
-from bub.configure import load
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
@@ -29,7 +28,7 @@ from landing.database import open_database, own_database
 from landing.hooks import TerminationHooks
 from landing.models import COMMANDS, TERMINAL, Action, ActionRequest, FileInput, Input
 from landing.runtime import Runtime
-from landing.settings import DEFAULT_DATABASE, ConfigurationFile
+from landing.settings import DEFAULT_DATABASE, load_configuration
 from landing.tasks import NotFoundError, Tasks
 
 
@@ -73,7 +72,7 @@ class Command(TyperCommand):
 
 
 def execution_settings(ctx: typer.Context) -> ExecutionSettings:
-    load(ConfigurationFile().config_file.expanduser())
+    load_configuration()
     settings = ensure_config(ExecutionSettings)
     for name, value in ctx.find_root().params.items():
         if name in ExecutionSettings.model_fields and value is not None:
@@ -317,6 +316,8 @@ def write_outputs(action: Action | None) -> None:
 
 def github_event(ctx: typer.Context) -> None:
     """Execute the native Actions event or a signed webhook envelope."""
+    # Load operator policy before integration settings resolve, so the Action uses the same source.
+    settings = execution_settings(ctx)
     options = GitHubSettings()
     context = GitHubEnvironment()
     payload = json.loads(context.event_path.read_text()) if context.event_path else None
@@ -324,14 +325,15 @@ def github_event(ctx: typer.Context) -> None:
         message = "The event file must contain a JSON object."
         raise ValueError(message)
     ingress: Ingress
-    if payload and forwarded_inputs(payload).get("event"):
+    # Remove the signing key before parsing so a malformed envelope cannot leave it for later work.
+    secret = os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", "")
+    inputs = forwarded_inputs(payload) if payload else {}
+    if inputs.get("event"):
         # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
-        ingress = read_forwarded(forwarded_inputs(payload), os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""))
+        ingress = read_forwarded(inputs, secret)
         options = GitHubSettings.for_webhook(options.repository)
     else:
         ingress = NativeEvent(payload, context.event_name, context.run_id, context.run_attempt)
-    os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", None)
-    settings = execution_settings(ctx)
     action = asyncio.run(
         execute_github(
             options,

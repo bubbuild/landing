@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 from pydantic import AliasChoices, Field, FilePath, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from landing.settings import PolicySettings
+
 
 class GitHubEnvironment(BaseSettings):
     """Native runner context; configuration files cannot grant caller authority."""
@@ -27,9 +29,18 @@ class GitHubEnvironment(BaseSettings):
     runner_temp: Path = Field(default=Path("."), validation_alias="RUNNER_TEMP")
 
 
-class GitHubSettings(BaseSettings):
+class GitHubSettings(PolicySettings):
     """Action task inputs and integration policy, independent of event content."""
 
+    # Only integration policy is operator-configurable; task inputs keep coming from the Action.
+    yaml_fields = frozenset({
+        "command_prefix",
+        "trust",
+        "upstream_workflow",
+        "bump_on_failure",
+        "dependency_update_actors",
+        "check",
+    })
     model_config = SettingsConfigDict(
         env_prefix="LANDING_GITHUB_",
         env_ignore_empty=True,

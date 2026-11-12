@@ -150,20 +150,21 @@ def admitted(  # noqa: C901 -- platform authority and original caller checks sha
     body = (comment.get("body") or "").strip() if comment else ""
     if comment and (not command_matches(event, prefix) or body.startswith("<!-- landing:")):
         return False
+    # A forwarded delivery is identified by presence, never by truthiness: an empty authenticated
+    # event name must not fall back to the native context and inherit its authority.
+    forwarded = authenticated_event is not None
+    if forwarded and not authenticated_event.strip():
+        message = "A forwarded delivery must name its event."
+        raise ValueError(message)
     # Only native Actions context authenticates writes and dispatch; forwarded headers cannot grant that authority.
     # workflow_run is covered only after validating its originating workflow above.
-    source = authenticated_event or (context.event_name if context else "")
+    source = authenticated_event if forwarded else (context.event_name if context else "")
     native_source = (
-        (not authenticated_event and source in {"push", "release", "workflow_dispatch", "schedule"})
+        (not forwarded and source in {"push", "release", "workflow_dispatch", "schedule"})
         or (source == "workflow_run" and run is not None)
         or (source == "dependabot_alert" and "alert" in event)
     )
-    if (
-        trust == "repository"
-        and ((context and context.actions) or authenticated_event)
-        and native_source
-        and not comment
-    ):
+    if trust == "repository" and ((context and context.actions) or forwarded) and native_source and not comment:
         return True
     actor = required(comment, "user") if comment else required(run, "actor") if run else event.get("sender")
     if not actor:
