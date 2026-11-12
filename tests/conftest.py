@@ -50,6 +50,8 @@ def local_cli_environment(monkeypatch, tmp_path):
     for name in tuple(os.environ):
         if name.startswith(("LANDING_", "BUB_")):
             monkeypatch.delenv(name)
+    # Landing reads operator YAML from the user's home; keep tests off the real file.
+    monkeypatch.setenv("HOME", str(tmp_path))
     mcp_config = tmp_path / "mcp.json"
     mcp_config.write_text('{"mcpServers": {}}')
     monkeypatch.setenv("LANDING_MCP_CONFIG", str(mcp_config))
