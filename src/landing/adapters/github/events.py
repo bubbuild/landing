@@ -10,6 +10,37 @@ from .settings import GitHubEnvironment, GitHubSettings
 
 
 @dataclass(frozen=True)
+class NativeEvent:
+    """An event the runner read itself; the native Actions context supplies caller authority."""
+
+    event: dict | None
+    event_name: str
+    run_id: str = ""
+    run_attempt: str = "1"
+
+    @property
+    def delivery_key(self) -> str:
+        return f"action:{self.run_id}:{self.run_attempt}" if self.run_id else ""
+
+
+@dataclass(frozen=True)
+class ForwardedDelivery:
+    """A signed body forwarded by the receiver and re-verified in this process."""
+
+    event: dict
+    event_name: str
+    signature: str
+
+    @property
+    def delivery_key(self) -> str:
+        # GitHub signs the body, not delivery headers; a forwarded ID cannot mint publication identity.
+        return f"webhook:{self.signature}"
+
+
+Ingress = NativeEvent | ForwardedDelivery
+
+
+@dataclass(frozen=True)
 class Delegation:
     """The admitted work one event hands to execution, independent of entry point."""
 

@@ -60,7 +60,11 @@ class GitHubSettings(BaseSettings):
 
     @classmethod
     def for_webhook(cls, repository: str) -> "GitHubSettings":
-        """Integration policy for a verified webhook, without any Action task inputs."""
+        """Integration policy for a verified webhook, without Action task inputs.
+
+        Required check commands remain runner configuration: a delegated webhook task validates the way
+        the executing runner is configured to validate, as the forwarded-envelope contract describes.
+        """
         return cls(
             repository=repository,
             delegated_command="review",

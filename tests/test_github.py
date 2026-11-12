@@ -1248,6 +1248,86 @@ def test_forwarded_headers_cannot_grant_native_dispatch_authority(platform, mode
     assert not model[1]
 
 
+def _forwarded_comment(secret, event, event_name="issue_comment"):
+    body = json.dumps(event)
+    signature = "sha256=" + hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return {"inputs": {"event": body, "signature": signature, "event_name": event_name, "delivery": "forwarded"}}
+
+
+def _deliver(model, stamp):
+    model.extend([
+        completion(
+            tool="fs_write",
+            arguments={"path": "reply.json", "content": json.dumps({"body": stamp + "\nRepaired."})},
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"}
+        ),
+        completion("Repaired."),
+    ])
+
+
+def test_native_and_forwarded_ingress_take_the_same_admission_decision(platform, invoke, model, monkeypatch):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair retry behavior.", "user": {"type": "User", "login": "maintainer"}},
+    }
+    responses, requests = model
+    _deliver(responses, github.marker("fixer", "delegation"))
+    native = invoke(event)
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    envelope = _forwarded_comment("signing-fixture", event)
+    body = json.dumps(event)
+    signature = "sha256=" + hmac.new(b"signing-fixture", body.encode(), hashlib.sha256).hexdigest()
+    assert envelope["inputs"]["signature"] == signature
+    _deliver(responses, github.marker("fixer", f"webhook:{signature}"))
+    before = len(requests)
+    forwarded = invoke(envelope, key=None)
+    assert native is not None and forwarded is not None
+    assert (
+        (native.mode, native.instruction, native.status)
+        == (
+            forwarded.mode,
+            forwarded.instruction,
+            forwarded.status,
+        )
+        == ("fixer", "Repair retry behavior.", "completed")
+    )
+    assert len(requests) > before
+    # Each ingress keeps its own delivery identity: the native run and the signed body.
+    assert github.marker("fixer", "delegation") != github.marker("fixer", f"webhook:{signature}")
+
+
+def test_forwarded_ingress_rejects_an_unauthorized_caller_like_a_native_event(platform, invoke, model, monkeypatch):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {"body": "/landing fix Repair retry behavior.", "user": {"type": "User", "login": "contributor"}},
+    }
+    state = json.loads(platform.read_text())
+    state["permission"] = "read"
+    platform.write_text(json.dumps(state))
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    assert invoke(_forwarded_comment("signing-fixture", event)) is None
+    assert invoke(event) is None
+    assert not model[1]
+
+
+@pytest.mark.parametrize("envelope", [{"inputs": "not-an-object"}, {"inputs": {"event": "{}"}}])
+def test_forwarded_envelope_that_is_not_usable_input_exits_invalid(tmp_path, platform, monkeypatch, model, envelope):
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(envelope))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(source))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/landing")
+    monkeypatch.setenv("LANDING_GITHUB_WEBHOOK_SECRET", "signing-fixture")
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 2, result.output
+    assert "JSON object" in result.stderr or "signature" in result.stderr
+    assert not model[1]
+
+
 def test_routing_one_event_repeatedly_gives_the_same_delegation(monkeypatch):
     monkeypatch.setenv("LANDING_GITHUB_REPOSITORY", "example/landing")
     options = GitHubSettings()

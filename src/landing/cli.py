@@ -20,6 +20,7 @@ from bub.configure import load
 from pydantic_settings import SettingsConfigDict
 from typer.core import TyperCommand
 
+from landing.adapters.github.events import Ingress, NativeEvent
 from landing.adapters.github.execution import execute as execute_github
 from landing.adapters.github.execution import with_repository_context
 from landing.adapters.github.settings import GitHubEnvironment, GitHubSettings
@@ -322,25 +323,23 @@ def github_event(ctx: typer.Context) -> None:
     if context.event_path and not isinstance(payload, dict):
         message = "The event file must contain a JSON object."
         raise ValueError(message)
-    source, webhook_key = None, None
+    ingress: Ingress
     if payload and forwarded_inputs(payload).get("event"):
         # A dispatched envelope is re-verified here: this runner process is a new trust boundary.
-        delivery = read_forwarded(forwarded_inputs(payload), os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""))
-        payload, source, webhook_key = delivery.event, delivery.event_name, delivery.key
+        ingress = read_forwarded(forwarded_inputs(payload), os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", ""))
         options = GitHubSettings.for_webhook(options.repository)
+    else:
+        ingress = NativeEvent(payload, context.event_name, context.run_id, context.run_attempt)
     os.environ.pop("LANDING_GITHUB_WEBHOOK_SECRET", None)
     settings = execution_settings(ctx)
-    fallback = webhook_key or (f"action:{context.run_id}:{context.run_attempt}" if context.run_id else None)
     action = asyncio.run(
         execute_github(
             options,
-            payload,
+            ingress,
             database=settings.db or context.runner_temp / "landing/landing.sqlite3",
             skill_dirs=ctx.find_root().params.get("skill_dir") or (),
             plugins=[TerminationHooks()],
             context=context,
-            source=source,
-            fallback_key=fallback,
         )
     )
     write_outputs(action)

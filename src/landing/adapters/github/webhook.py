@@ -3,13 +3,13 @@
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass
 from urllib.parse import quote
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from landing.adapters.github.api import gh, required
+from landing.adapters.github.events import ForwardedDelivery
 from landing.adapters.github.settings import GitHubSettings
 
 
@@ -22,30 +22,20 @@ class WebhookSettings(BaseSettings):
     command_prefix: str = GitHubSettings.model_fields["command_prefix"].default
 
 
-@dataclass(frozen=True)
-class Delivery:
-    """A verified forwarded webhook body as the executing boundary receives it."""
-
-    event: dict
-    event_name: str
-    signature: str
-
-    @property
-    def key(self) -> str:
-        # GitHub signs the body, not delivery headers; a forwarded ID cannot mint publication identity.
-        return f"webhook:{self.signature}"
-
-
 def forwarded_inputs(envelope: dict) -> dict:
     """Return the forwarded inputs of an executor envelope, empty for a native event."""
-    return envelope.get("inputs") or {}
+    inputs = envelope.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        message = "The forwarded inputs must be a JSON object."
+        raise ValueError(message)  # noqa: TRY004 -- invalid serialized input, not a Python argument type.
+    return inputs
 
 
-def read_forwarded(inputs: dict, secret: str) -> Delivery:
+def read_forwarded(inputs: dict, secret: str) -> ForwardedDelivery:
     """Verify forwarded inputs at the receiving trust boundary."""
     signature = required(inputs, "signature")
     event = read_webhook(required(inputs, "event").encode(), signature, secret)
-    return Delivery(event=event, event_name=required(inputs, "event_name"), signature=signature)
+    return ForwardedDelivery(event=event, event_name=required(inputs, "event_name"), signature=signature)
 
 
 def read_webhook(body: bytes, signature: str, secret: str) -> dict:

@@ -28,14 +28,12 @@ async def run(database: Path, event_id: int, config_file: Path, skill_dirs: tupl
     options = GitHubSettings.for_webhook(repository_at(workspace))
     return await execute(
         options,
-        delivery.event,
+        delivery,
         database=database,
         workspace=workspace,
         config_file=config_file,
         skill_dirs=skill_dirs,
         plugins=[TerminationHooks()],
-        source=delivery.event_name,
-        fallback_key=delivery.key,
     )
 
 

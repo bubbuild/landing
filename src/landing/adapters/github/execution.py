@@ -13,7 +13,7 @@ from landing.models import COMMANDS, Action, ActionRequest, FileInput
 from landing.runtime import Runtime
 
 from .api import gh, required
-from .events import Delegation, prepare_event
+from .events import Delegation, ForwardedDelivery, Ingress, prepare_event
 from .publication import (
     AUTOMATIC_GUIDANCE,
     AUTOMATIC_REVIEW_GUIDANCE,
@@ -202,7 +202,7 @@ async def _run(
 
 async def execute(
     options: GitHubSettings,
-    payload: dict | None,
+    ingress: Ingress,
     *,
     database: Path,
     workspace: Path | None = None,
@@ -210,25 +210,28 @@ async def execute(
     skill_dirs: Iterable[Path] = (),
     plugins: Iterable[object] = (),
     context: GitHubEnvironment | None = None,
-    source: str | None = None,
-    fallback_key: str | None = None,
 ) -> Action | None:
-    accepted, delegation = prepare_event(options, payload, authenticated_event=source, context=context)
+    """Admit one verified ingress value and run its delegation.
+
+    Only a forwarded delivery carries the receiver's signature authority; a native event takes its
+    authority from the Actions context that read it.
+    """
+    authenticated = isinstance(ingress, ForwardedDelivery)
+    accepted, delegation = prepare_event(
+        options,
+        ingress.event,
+        authenticated_event=ingress.event_name if authenticated else None,
+        context=context,
+    )
     if not accepted or delegation is None:
         return None
     if not delegation.delivery_key:
-        if not fallback_key:
+        if not ingress.delivery_key:
             message = "Set LANDING_GITHUB_DELIVERY_KEY outside a GitHub workflow."
             raise ValueError(message)
-        delegation = replace(delegation, delivery_key=fallback_key)
+        delegation = replace(delegation, delivery_key=ingress.delivery_key)
     checked_revision = options.checked_revision
     if checked_revision is None:
         checked_revision = context.checked_revision if context else ""
     runtime = Runtime(database, workspace=workspace, config_file=config_file, skill_dirs=skill_dirs, plugins=plugins)
-    return await _run(
-        runtime,
-        options,
-        delegation,
-        checked_revision=checked_revision,
-        event_name=source or (context.event_name if context else ""),
-    )
+    return await _run(runtime, options, delegation, checked_revision=checked_revision, event_name=ingress.event_name)
