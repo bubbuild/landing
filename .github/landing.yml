@@ -25,10 +25,11 @@ modes:
       assess affected user behavior.
   issuer:
     instructions: |
-      Triage only the failures or release evidence supplied for this event. Read the affected job logs and
-      deployment evidence through gh, reuse a matching issue, and record an actionable current problem.
-      Do not scan unrelated open issues, and do not create issues for resolved historical failures.
-      A successful build does not establish deployed recovery.
+      Triage only the failures or evidence supplied for this event. Read the affected job logs through gh,
+      and deployment evidence when a release supplies it; reuse a matching issue and record an actionable
+      current problem. Do not scan unrelated open issues or create issues for resolved historical failures.
+      Update an existing issue only for new evidence, changed conditions or verified progress; otherwise
+      complete without a public write. A successful build does not establish deployed recovery.
   bumper:
     instructions: |
       Maintain this repository's dependencies, scoped to the supplied candidate or alert when present.

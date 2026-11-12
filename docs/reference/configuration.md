@@ -154,7 +154,7 @@ jobs:
           command: review
 ```
 
-The checkout supplies the configuration file. In privileged workflows, load operator policy from a trusted revision, not a candidate-controlled file. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
+The checkout supplies the configuration file. In privileged workflows, load operator policy from a trusted revision, not a candidate-controlled file. Landing's feedback job checks out the candidate, so it copies `.github/landing.yml` from the PR base revision into the runner temp directory and points `LANDING_CONFIG` there; the duty job checks out the default branch and reads the checked-in file directly. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
 
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 

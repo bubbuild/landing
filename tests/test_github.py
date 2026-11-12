@@ -279,6 +279,30 @@ def test_failed_dependency_pr_gets_one_bump_reply(
     assert json.loads(platform.read_text())["comments"] == delivered["comments"]
 
 
+def test_release_admission_keeps_its_own_bump_policy(tmp_path, invoke, model, monkeypatch):
+    """A release step must not inherit the shared dependency-bumping policy."""
+    from bub.configure import load
+
+    load(SHARED_CONFIG)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false")
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {
+            "id": 123,
+            "name": "release-main",
+            "event": "pull_request",
+            "head_repository": {"full_name": "example/landing"},
+            "head_branch": "main",
+            "conclusion": "failure",
+            "actor": {"login": "maintainer"},
+        },
+    }
+    assert invoke(event, key=None) is None
+    assert not model[1]
+
+
 def test_dynamic_actor_additions_extend_the_configured_base(
     tmp_path, platform, invoke, model, monkeypatch, dependency_ci
 ):
@@ -1266,6 +1290,7 @@ def test_shared_repository_config_supplies_mode_instructions(tmp_path, monkeypat
     modes = ensure_config(Settings).modes
     assert "assess affected user behavior" in modes["gatekeeper"].instructions
     assert "resolved historical failures" in modes["issuer"].instructions
+    assert "deployment evidence" in modes["issuer"].instructions
     assert "preserve" in modes["bumper"].instructions
 
 
@@ -1327,9 +1352,7 @@ def test_action_defaults_admit_operator_policy_and_keep_explicit_overrides(tmp_p
             monkeypatch.delenv(name)
     monkeypatch.setenv("HOME", str(tmp_path))
     exported = composite_inputs(monkeypatch)
-    assert [exported["INPUT_" + name.upper().replace("-", "_")] for name in POLICY_INPUTS] == [""] * len(
-        POLICY_INPUTS
-    )
+    assert [exported["INPUT_" + name.upper().replace("-", "_")] for name in POLICY_INPUTS] == [""] * len(POLICY_INPUTS)
 
     config = tmp_path / ".landing" / "config.yml"
     config.parent.mkdir()

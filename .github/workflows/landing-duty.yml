@@ -92,6 +92,8 @@ jobs:
         with:
           trust: ${{ vars.LANDING_TRUST }}
           upstream-workflow: release-main
+          # Release admission is its own boundary: never inherit the dependency-bumping policy.
+          bump-on-failure: false
           command: triage
           checked-revision: ${{ github.event_name != 'workflow_run' && github.sha || '' }}
           delivery-key: ${{ format('duty:{0}', github.event.comment.id || github.run_id) }}
