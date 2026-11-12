@@ -120,7 +120,7 @@ Local workspace defaults to the current directory. Servers register names with `
 
 The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
 
-Landing YAML may also set operator policy for the GitHub runner: `command_prefix`, `trust`, `upstream_workflow`, `bump_on_failure`, `dependency_update_actors`, and `check`. CLI options, then `INPUT_*`, then YAML, then defaults decide each value. The file cannot set the repository, event file, command or instruction, issue or PR number, candidate head, checked revision, run identity, delivery key, database, or caller credentials.
+Landing YAML may also set operator policy for the GitHub runner: `command_prefix`, `trust`, `upstream_workflow`, `bump_on_failure`, `dependency_update_actors`, and `check`. CLI options, then `INPUT_*`, then YAML, then defaults decide each value. The bundled Action ships empty defaults for these six inputs, so omitting a `with:` entry defers to the file; a workflow value such as `${{ vars.LANDING_TRUST }}` still wins when the variable is set. The file cannot set the repository, event file, command or instruction, issue or PR number, candidate head, checked revision, run identity, delivery key, database, or caller credentials.
 
 ```yaml
 command_prefix: "@team-bot"
@@ -130,6 +130,22 @@ check:
   - uv run ty check
   - uv run pre-commit run --all-files
 ```
+
+The bundled Action declares these six inputs empty, so a step that omits a `with:` entry inherits the file and then the default. To maintain static policy in one checked-in file, set `LANDING_CONFIG` once at job level and leave the policy entries out of every Action step:
+
+```yaml
+jobs:
+  feedback:
+    runs-on: ubuntu-latest
+    env:
+      LANDING_CONFIG: .github/landing.yml
+    steps:
+      - uses: bubbuild/landing@v1
+        with:
+          command: review
+```
+
+Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A workflow value always wins over the file, including an explicit `false`.
 
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 

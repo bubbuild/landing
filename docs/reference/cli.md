@@ -95,18 +95,20 @@ The `bubbuild/landing` Action executes work from GitHub workflow events. [Get st
 | `command` | `review` (default), `fix`, `triage`, `explain`, or `bump`; comment events route their own command. |
 | `instruction` | Task and acceptance criteria; defaults to carrying out the selected action using repository guidance. |
 | `repository` | Workflow repository; cross-repository targets fail. |
-| `trust` | `repository` (default) or `owner`. |
-| `upstream-workflow` | Allowed `workflow_run` name; empty rejects these events. |
-| `bump-on-failure` | Default `false`; opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails. |
-| `dependency-update-actors` | Update account logins, one per line; defaults to `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
+| `trust` | `repository` or `owner`; `repository` applies when the input is empty and no Landing YAML sets it. |
+| `upstream-workflow` | Allowed `workflow_run` name; empty means Landing YAML, then rejecting these events. |
+| `bump-on-failure` | Opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails; empty means Landing YAML, then `false`. |
+| `dependency-update-actors` | Update account logins, one per line; empty means Landing YAML, then `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
 | `number` | Issue or PR number; supplied by the event when available. |
 | `head` | Candidate head, distinct from the checked revision; PR events supply it. |
 | `checked-revision` | Actual checked commit, default `github.sha`. |
 | `run-id` | Native run to inspect, default the current run. |
 | `delivery-key` | Stable delivery identity; default run ID and attempt, or PR number and candidate head for automatic bump. |
-| `command-prefix` | Comment prefix, default `/landing`. |
-| `checks` | Required check commands, one per line. |
+| `command-prefix` | Comment prefix; empty means Landing YAML, then `/landing`. |
+| `checks` | Required check commands, one per line; empty means Landing YAML, then none. |
 | `database` | SQLite path, default `RUNNER_TEMP/landing/landing.sqlite3`. |
+
+These six policy inputs default to empty, and the Action's composite step only forwards the values it receives, so an omitted input defers to Landing YAML and then to the documented default. An explicit input, including `false` or an empty list, still wins. Task inputs stay with the invocation.
 
 Outputs are `id`, `status`, `decision`, and `result`. Unrelated or unauthorized events return `status: skipped` without task creation, model use, delegated tools or checks, or publication. Permission lookup errors fail the Action. Execution or required publication failure also fails the step; gate recommendations remain advisory. Automatic PR and candidate dispatch reviews update one status comment instead of requiring a new overview review per execution. Explicit review commands retain their required reply. Automatic unchanged issuer follow-up can finish without a public update. See [GitHub integration](../guides/github.md) for trust and publication.
 
