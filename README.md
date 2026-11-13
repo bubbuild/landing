@@ -5,19 +5,24 @@
   </picture>
 </h1>
 
-Landing explains CI failures, fixes delegated problems, triages issues, and publishes review feedback where your team works. It uses your existing tools and checks.
+Landing delegates engineering work to a language model using the tools, checks, and identity you already prepared. It explains a failure, turns a problem into an actionable issue, repairs a demonstrated defect, reviews a candidate, or updates a dependency.
 
-With Landing, you own and control the workflow. Choose the model, prepare the execution environment, and adapt instructions and skills to your project. Run it in CI, locally, or as a service. Landing is open source under Apache-2.0 and requires no hosted Landing account.
+You bring the model endpoint, the execution environment, and the acceptance checks. Landing admits the work, runs the selected mode with your project guidance, verifies publication, and records the result in SQLite. It is an Apache-2.0 application; the documented paths need no hosted Landing account.
 
-## Start in CI
+## Quick start
 
-[Set up your first PR review](https://getlanding.dev/get-started/). Configure a model, add the GitHub Action to your prepared workflow, and open a PR. Landing publishes review feedback with code comments for actionable findings. Your team decides what to accept using that feedback and independent checks.
+With Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and a POSIX host:
 
-```text
-Configure CI -> Open a PR -> Read the feedback -> Decide what to accept
+```bash
+uv tool install landing
+export LANDING_MODEL="openai:gpt-4.1"
+export LANDING_API_KEY="your-provider-api-key"
+landing explain "Explain this failure and suggest the next useful check." --input check.log
 ```
 
-Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and grant the review job `contents: read` and `pull-requests: write`. After checkout and successful native checks, add this step to your existing workflow:
+Run it from your project checkout and use a saved UTF-8 log for `check.log`. The same install serves `triage`, `fix`, `review`, and `bump`; each command works independently. See [local use](https://getlanding.dev/guides/local/) for delegating work and reading the result.
+
+To review pull requests instead, [add the Action to a GitHub workflow](https://getlanding.dev/get-started/): set the model, let your native checks run, and read the advisory review it publishes.
 
 ```yaml
 - uses: bubbuild/landing@main
@@ -28,30 +33,37 @@ Set the `LANDING_MODEL` repository variable and `LANDING_API_KEY` secret, and gr
     LANDING_API_KEY: ${{ secrets.LANDING_API_KEY }}
   with:
     command: review
-    instruction: Native checks passed for this checkout. Review this PR using repository guidance and publish actionable findings inline.
+    instruction: Review this candidate against repository guidance and the native checks. Publish actionable findings.
 ```
 
-The example follows `main`; pin a release tag or reviewed commit to keep the runtime fixed. `continue-on-error` keeps automatic feedback advisory; inspect the Action logs if no status comment appears. The Action uses your authenticated `gh`, project tools, and skills. It checks who can delegate before starting the agent. See [CI integration](https://getlanding.dev/guides/ci/) for other CI systems and [GitHub integration](https://getlanding.dev/guides/github/) for `/landing` commands, publishing identities, and trust policy.
+The example follows `main`; pin a release tag or reviewed commit to keep the runtime fixed. `continue-on-error` keeps automatic feedback advisory, and the Action checks who may delegate before starting any work.
 
-To build the same review and delegated-fix experience, ask your agent to read [Landing's workflows](https://github.com/bubbuild/landing/tree/main/.github/workflows) and [development guide](https://getlanding.dev/development/), then adapt the CI setup to your repository's tools and checks.
+## Entry points
 
-## Use it locally
+| Entry point | Use it when |
+| --- | --- |
+| CLI | You work against a local checkout, or your CI is not GitHub Actions. |
+| [GitHub Action and events](https://getlanding.dev/guides/github/) | Work is triggered by repository events, comments, or schedules. |
+| [HTTP service](https://getlanding.dev/guides/server/) | Several callers share one queue and prepared environment. |
 
-With Python 3.12 or later, [uv](https://docs.astral.sh/uv/), and a POSIX host:
+All three accept the same modes, instructions, and inputs, and record the same action lifecycle; required checks apply to `fix`, `review`, and `bump`, not `explain` or `triage`. [CLI reference](https://getlanding.dev/reference/cli/) and [HTTP reference](https://getlanding.dev/reference/http/) list the exact contracts. The service also ships as an image: [deploy](https://getlanding.dev/guides/deploy/) covers Compose and `ghcr.io/bubbuild/landing`.
 
-```bash
-uv tool install landing
-export LANDING_MODEL="openai:gpt-4.1"
-export LANDING_API_KEY="your-provider-api-key"
-landing explain "Explain this failure and the next useful check." --input check.log
-```
+## Configure and adapt
 
-Run from your project checkout and use a saved UTF-8 log for `check.log`. The commands are `explain`, `triage`, `fix`, `review`, and `bump`; each works independently. [Local use](https://getlanding.dev/guides/local/) shows how to delegate work and inspect the result.
+[Configuration](https://getlanding.dev/reference/configuration/) covers the model, skills, mode capabilities, MCP servers, and runner policy, including precedence and the values a settings file may set. [Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, tools, and required checks.
 
-## Work with your team
+Keep in mind:
 
-Reliable results draw on your documentation, work items, infrastructure, tests, benchmarks, and observability. [Working with Landing](https://getlanding.dev/working-with-landing/) explains how to connect that context and retain feedback. Automate the engineering work you can delegate, and use the time saved to stay involved with contributors and users. Community Over Code.
+- Instructions and capability lists guide the agent; they do not sandbox it or grant authority. Enforce both in your tools and workflow permissions.
+- Checks decide what a task may claim. Keep your required native checks independent of Landing's advice.
+- Task completion, a published reply, and a passing check establish different things. Your team still accepts the work.
 
-[Make Landing work for you](https://getlanding.dev/make-it-yours/) covers project instructions, skills, and tools. For shared execution, [run the server](https://getlanding.dev/guides/server/) or [deploy the container](https://getlanding.dev/guides/deploy/) from `ghcr.io/bubbuild/landing:latest`. Actions and model history are stored in SQLite; workspace files stay in your workspace, and model requests go to your chosen provider.
+## Limits
 
-[Contributions](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md) are welcome. Licensed under [Apache-2.0](https://github.com/bubbuild/landing/blob/main/LICENSE). Powered by [Bub](https://bub.build/) and [tape.systems](https://tape.systems/).
+Landing runs where you install it and uses the credentials you give it. It does not supply a model, isolate an untrusted checkout, or configure your CI. A fork pull request normally runs native checks while receiving no model or publication credentials.
+
+## Learn more
+
+[Working with Landing](https://getlanding.dev/working-with-landing/) explains how engineering context and verification make delegated work reliable. [CI integration](https://getlanding.dev/guides/ci/) covers scope, concurrency, and ordinary CI commands; [troubleshooting](https://getlanding.dev/guides/troubleshooting/) starts from an observed failure. [Develop and dogfood](https://getlanding.dev/development/) describes how Landing itself is built and tested.
+
+Contributions are welcome; see [CONTRIBUTING.md](https://github.com/bubbuild/landing/blob/main/CONTRIBUTING.md). Licensed under [Apache-2.0](https://github.com/bubbuild/landing/blob/main/LICENSE). Built on [Bub](https://bub.build/).

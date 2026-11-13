@@ -68,15 +68,17 @@ Manual Action calls can select `command: bump`; local event calls can use `githu
 
 Opt in with `bump-on-failure: true` and an `upstream-workflow` name that runs independent candidate checks. Listen for `workflow_run: completed`; only a `failure` conclusion from a `pull_request` run or a candidate branch `workflow_dispatch` qualifies. The current PR author must match `dependency-update-actors`, which defaults to `dependabot[bot]` and `renovate[bot]`. Prepare isolated candidate tools and [Dependabot credentials](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions). Leave automatic help disabled to require an explicit `/landing bump` delegation.
 
+Admission stays per workflow: `upstream-workflow` names the one workflow_run source you trust for a step, so a release listener and a failed-candidate listener use separate values. Do not widen one to cover both.
+
 Automatic help requires one open same-repository PR whose head matches the failed run. Ineligible or ambiguous candidates skip; API errors fail the invocation. With the default delivery key, repeated notifications skip when the publishing account already left a marked reply for that candidate. The agent rechecks the current head and CI results before editing.
 
 New updates produce an authorized draft and independent CI. Compatibility repair waits for current candidate CI failure. Existing PRs receive authorized repairs on their original branch and retain their draft status; missing write access does not justify a replacement PR. Added commits can affect a bot's [automatic maintenance](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/manage-dependabot-prs). A new head receives a new assessment; if automatic repair leaves the same failure unresolved, the agent replies with the blocker instead of repeating speculative edits.
 
-Landing's duty workflow invokes the same bump task every Monday at 02:23 UTC or on manual dispatch. It covers open Dependabot alerts and Python dependencies using uv under project version policy, preserving pinning style when versions change. New candidates use `deps/landing-*` draft PRs; existing candidates are reused. Automatic help allows Dependabot, Renovate and the prepared publisher's `deps/landing-*` PRs; `LANDING_DEPENDENCY_UPDATE_ACTORS` adds logins. Set `LANDING_BUMP_ON_FAILURE=false` to disable it.
+A scheduled or dispatched bump task reuses this path: it covers open Dependabot alerts and project dependencies under the instructions you supply, and reuses an existing candidate instead of opening a duplicate. Put the allowed update accounts in Landing YAML once, then pass `dependency-update-actor-additions` for identities that only the run knows, such as the publishing account discovered from the authenticated `gh`. Additions extend the configured list; a non-empty `dependency-update-actors` input replaces it. See [Configuration](../reference/configuration.md#github-workflows-and-runner).
 
 ### Handle security alerts and unresolved blockers
 
-GitHub exposes `dependabot_alert` as a [webhook event](https://docs.github.com/en/webhooks/webhook-events-and-payloads#dependabot_alert), not a native Actions trigger. Real-time delivery requires a prepared receiver that verifies GitHub's signature and forwards the repository's alert number through [repository dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#repository_dispatch). Landing's duty workflow accepts this payload; it does not deploy a receiver or configure its subscription.
+GitHub exposes `dependabot_alert` as a [webhook event](https://docs.github.com/en/webhooks/webhook-events-and-payloads#dependabot_alert), not a native Actions trigger. Real-time delivery requires a prepared receiver that verifies GitHub's signature and forwards the repository's alert number through [repository dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#repository_dispatch).
 
 ```json
 {
@@ -89,7 +91,7 @@ The current GitHub alert state determines the work: open selects bump; fixed or 
 
 When authorized, the agent reuses or creates an issue for confirmed exposure or blockers such as no patched version, policy conflicts or unresolved compatibility failures. It records the alert or candidate, dependency path, blocker and acceptance criteria. Routine PRs need no extra issue; unchanged evidence needs no issue update. Dismissal alone does not prove repair.
 
-Listeners must exist on the default branch to receive events. Landing's [duty workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing-duty.yml) is a project example, not a requirement for using the Action.
+Listeners must exist on the default branch to receive events. Landing's own workflows are an example you may adapt; the Action does not deploy a receiver or configure an alert subscription for you.
 
 ## Choose who can delegate
 

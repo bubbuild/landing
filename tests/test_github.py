@@ -2,13 +2,16 @@
 
 import json
 import os
+from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from landing.adapters import github
 from landing.cli import create_cli_app
 from landing.models import Action
+from landing.settings import Settings
 from tests.conftest import completion
 
 
@@ -274,6 +277,68 @@ def test_failed_dependency_pr_gets_one_bump_reply(
     dependency_ci["workflow_run"]["id"] = 456
     assert invoke(dependency_ci, key=None, database=tmp_path / "next-run.sqlite3") is None
     assert json.loads(platform.read_text())["comments"] == delivered["comments"]
+
+
+def test_release_admission_keeps_its_own_bump_policy(tmp_path, invoke, model, monkeypatch):
+    """A release step must not inherit the shared dependency-bumping policy."""
+    from bub.configure import load
+
+    load(SHARED_CONFIG)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false")
+    event = {
+        "repository": {"full_name": "example/landing", "default_branch": "main"},
+        "workflow_run": {
+            "id": 123,
+            "name": "release-main",
+            "event": "pull_request",
+            "head_repository": {"full_name": "example/landing"},
+            "head_branch": "main",
+            "conclusion": "failure",
+            "actor": {"login": "maintainer"},
+        },
+    }
+    assert invoke(event, key=None) is None
+    assert not model[1]
+
+
+def test_dynamic_actor_additions_extend_the_configured_base(
+    tmp_path, platform, invoke, model, monkeypatch, dependency_ci
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    state = json.loads(platform.read_text())
+    state["target"]["user"]["login"] = "example-publisher"
+    platform.write_text(json.dumps(state))
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "\n  example-publisher \n")
+    (tmp_path / "reply.json").write_text(json.dumps({"body": github.marker("bumper", "bump:42:candidate-head")}))
+    model[0].extend([
+        completion(
+            tool="bash",
+            arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"},
+        ),
+        completion("Reported the dependency candidate's blocker."),
+    ])
+    action = invoke(dependency_ci, key=None)
+    assert action is not None and action.mode == "bumper"
+    assert len(json.loads(platform.read_text())["comments"]) == 1
+
+
+@pytest.mark.parametrize("author", ["contributor", "dependabot[bot]"])
+def test_actor_additions_keep_the_base_and_reject_unlisted_authors(
+    platform, invoke, model, monkeypatch, dependency_ci, author
+):
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "true")
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "   \n")
+    state = json.loads(platform.read_text())
+    state["target"]["user"]["login"] = author
+    platform.write_text(json.dumps(state))
+    expected = author == "dependabot[bot]"
+    if expected:
+        model[0].extend([completion("Reported the dependency candidate's blocker.")])
+    action = invoke(dependency_ci, key=None)
+    assert (action is not None) is expected
+    assert not json.loads(platform.read_text())["comments"]
 
 
 @pytest.mark.parametrize("condition", ["disabled", "success", "unapproved-workflow", "foreign-source"])
@@ -1092,3 +1157,325 @@ def test_replayed_repair_does_not_claim_validation(tmp_path, platform, invoke, m
     assert replay.status == "failed"
     assert len(model[1]) == calls
     assert len(json.loads(platform.read_text())["comments"]) == 1
+
+
+@pytest.fixture
+def operator_home(tmp_path, monkeypatch):
+    """Point HOME at a disposable directory whose operator YAML this test controls."""
+    for name in tuple(os.environ):
+        if name.startswith("INPUT_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / ".landing" / "config.yml"
+    path.parent.mkdir()
+    return path
+
+
+def test_operator_yaml_sets_event_policy_end_to_end(tmp_path, platform, model, monkeypatch, operator_home):
+    event = {
+        "repository": {"full_name": "example/landing"},
+        "issue": {"number": 42},
+        "comment": {
+            "body": "@team-bot review Inspect retry behavior.",
+            "user": {"type": "User", "login": "maintainer"},
+        },
+    }
+    source = tmp_path / "event.json"
+    source.write_text(json.dumps(event))
+    for name, value in {
+        "GITHUB_EVENT_PATH": str(source),
+        "GITHUB_RUN_ID": "acceptance",
+        "INPUT_REPOSITORY": "example/landing",
+        "INPUT_DELIVERY_KEY": "policy",
+        "INPUT_DATABASE": str(tmp_path / "landing.sqlite3"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    default_prefix = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert default_prefix.exit_code == 0, default_prefix.stderr
+    assert not default_prefix.stdout
+
+    operator_home.write_text("command_prefix: '@team-bot'\n")
+    responses, _ = model
+    responses.extend([
+        completion(
+            tool="fs_write",
+            arguments={
+                "path": "comment.json",
+                "content": json.dumps({"body": github.marker("gatekeeper", "policy") + "\nInspect retry behavior."}),
+            },
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input comment.json"}
+        ),
+        completion("Published the result."),
+    ])
+    result = CliRunner().invoke(create_cli_app(), ["github", "event"])
+    assert result.exit_code == 0, result.stderr
+    action = Action.model_validate_json(result.stdout)
+    assert action.mode == "gatekeeper"
+    assert action.instruction == "Inspect retry behavior."
+
+
+def test_event_policy_precedence_and_excluded_keys(tmp_path, monkeypatch, operator_home):
+    operator_home.write_text(
+        "repository: other/landing\n"
+        "command_prefix: '@yaml'\n"
+        "trust: owner\n"
+        "upstream_workflow: release-main\n"
+        "check: |\n"
+        "  unit\n"
+        "  lint\n"
+        "bump_on_failure: true\n"
+        "number: 9\n"
+        "head: candidate-head\n"
+        "checked_revision: tested-head\n"
+        "run_id: 123\n"
+        "delivery_key: yaml-key\n"
+        "database: yaml.sqlite3\n"
+        "event: yaml-event.json\n"
+    )
+    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    monkeypatch.setenv("INPUT_COMMAND_PREFIX", "@env")
+    native_event = tmp_path / "native-event.json"
+    native_event.write_text("{}")
+    monkeypatch.setenv("GITHUB_RUN_ID", "native-run")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(native_event))
+    from bub.configure import load
+
+    load(operator_home)
+    settings = github.GitHubSettings()
+    assert settings.command_prefix == "@env"
+    assert settings.trust == "owner"
+    assert settings.upstream_workflow == ["release-main"]
+    assert settings.check == ["unit", "lint"]
+    assert settings.bump_on_failure is True
+    assert settings.repository == "example/landing"
+    assert (settings.number, settings.head, settings.checked_revision) == (0, "", None)
+    assert settings.run_id == "native-run"
+    assert settings.delivery_key is None
+    assert settings.event == native_event
+    assert settings.database is None
+    assert github.GitHubSettings(command_prefix="@explicit").command_prefix == "@explicit"
+
+
+def test_shared_repository_config_sets_workflow_policy(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("INPUT_", "GITHUB_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    composite_inputs(monkeypatch)
+    from bub.configure import ensure_config, load
+
+    load(SHARED_CONFIG)
+    assert ensure_config(Settings).model_timeout_seconds == 120
+    settings = github.GitHubSettings(repository="example/landing")
+    assert settings.bump_on_failure is True
+    assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]
+    assert github.update_actors(settings) == {"dependabot[bot]", "renovate[bot]"}
+    assert settings.trust == "repository"
+    assert settings.command_prefix == "/landing"
+
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false")
+    monkeypatch.setenv("INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS", "\n  \n")
+    overridden = github.GitHubSettings(repository="example/landing")
+    assert overridden.bump_on_failure is False
+    assert github.update_actors(overridden) == {"dependabot[bot]", "renovate[bot]"}
+
+
+def test_shared_repository_config_supplies_mode_instructions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from bub.configure import ensure_config, load
+
+    load(SHARED_CONFIG)
+    modes = ensure_config(Settings).modes
+    assert "assess affected user behavior" in modes["gatekeeper"].instructions
+    assert "resolved historical failures" in modes["issuer"].instructions
+    assert "deployment evidence" in modes["issuer"].instructions
+    assert "preserve" in modes["bumper"].instructions
+
+
+def test_workflows_leave_static_policy_to_the_shared_config():
+    """A static value copied back into a workflow silently defeats the shared operator config."""
+    for path in WORKFLOWS:
+        text = path.read_text()
+        assert "LANDING_CONFIG" in text, path
+        assert "dependabot[bot]" not in text, path
+        assert "renovate[bot]" not in text, path
+        assert "|| 'true'" not in text, path
+        assert "|| '{}'" not in text, path
+
+
+def test_missing_operator_yaml_keeps_defaults(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("INPUT_REPOSITORY", "example/landing")
+    from bub.configure import load
+
+    load(tmp_path / ".landing" / "config.yml")
+    settings = github.GitHubSettings()
+    assert settings.command_prefix == "/landing"
+    assert settings.trust == "repository"
+    assert settings.upstream_workflow == []
+    assert settings.check == []
+    assert settings.bump_on_failure is False
+    assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]
+
+
+REPOSITORY = Path(__file__).resolve().parents[1]
+SHARED_CONFIG = REPOSITORY / ".github" / "landing.yml"
+WORKFLOWS = (REPOSITORY / ".github/workflows/main.yml", REPOSITORY / ".github/workflows/landing-duty.yml")
+ACTION_METADATA = REPOSITORY / "action.yml"
+POLICY_INPUTS = (
+    "trust",
+    "command-prefix",
+    "bump-on-failure",
+    "dependency-update-actors",
+    "dependency-update-actor-additions",
+    "upstream-workflow",
+    "checks",
+)
+
+
+def composite_inputs(monkeypatch) -> dict[str, str]:
+    """Export the bundled Action's declared defaults exactly as its composite step maps them."""
+    declared = yaml.safe_load(ACTION_METADATA.read_text())["inputs"]
+    exported = {}
+    for name, specification in declared.items():
+        value = str(specification.get("default", ""))
+        exported[f"INPUT_{name.upper().replace('-', '_')}"] = value
+        monkeypatch.setenv(f"INPUT_{name.upper().replace('-', '_')}", value)
+    return exported
+
+
+def test_action_defaults_admit_operator_policy_and_keep_explicit_overrides(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("INPUT_", "GITHUB_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    exported = composite_inputs(monkeypatch)
+    assert [exported["INPUT_" + name.upper().replace("-", "_")] for name in POLICY_INPUTS] == [""] * len(POLICY_INPUTS)
+
+    config = tmp_path / ".landing" / "config.yml"
+    config.parent.mkdir()
+    config.write_text(
+        "trust: owner\n"
+        "command_prefix: '@team-bot'\n"
+        "upstream_workflow: release-main\n"
+        "bump_on_failure: true\n"
+        "dependency_update_actors: [maintainer]\n"
+        "check: |\n"
+        "  unit\n"
+        "  lint\n"
+    )
+    from bub.configure import load
+
+    load(config)
+    settings = github.GitHubSettings()
+    assert settings.trust == "owner"
+    assert settings.command_prefix == "@team-bot"
+    assert settings.upstream_workflow == ["release-main"]
+    assert settings.bump_on_failure is True
+    assert settings.dependency_update_actors == ["maintainer"]
+    assert settings.check == ["unit", "lint"]
+
+    monkeypatch.setenv("INPUT_BUMP_ON_FAILURE", "false")
+    monkeypatch.setenv("INPUT_CHECKS", "integration")
+    monkeypatch.setenv("INPUT_TRUST", "repository")
+    overridden = github.GitHubSettings()
+    assert overridden.bump_on_failure is False
+    assert overridden.check == ["integration"]
+    assert overridden.trust == "repository"
+    assert overridden.command_prefix == "@team-bot"
+
+
+def test_composite_maps_every_declared_input():
+    """An input the composite step does not export would silently change behavior."""
+    metadata = yaml.safe_load(ACTION_METADATA.read_text())
+    exported = metadata["runs"]["steps"][-1]["env"]
+    assert {name.upper().replace("-", "_") for name in metadata["inputs"]} == {
+        key.removeprefix("INPUT_") for key in exported if key.startswith("INPUT_")
+    }
+
+
+def test_action_defaults_keep_released_policy_without_operator_config(tmp_path, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("INPUT_", "GITHUB_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    composite_inputs(monkeypatch)
+    from bub.configure import load
+
+    load(tmp_path / ".landing" / "config.yml")
+    settings = github.GitHubSettings()
+    assert settings.trust == "repository"
+    assert settings.command_prefix == "/landing"
+    assert settings.bump_on_failure is False
+    assert settings.dependency_update_actors == ["dependabot[bot]", "renovate[bot]"]
+    assert (settings.upstream_workflow, settings.check) == ([], [])
+
+
+def test_hosted_action_applies_owner_policy_to_a_write_collaborator(tmp_path, platform, model, monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(("INPUT_", "GITHUB_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    state = json.loads(platform.read_text())
+    state["owner"] = {"type": "User", "id": 1}
+    state["permission"] = "write"
+    platform.write_text(json.dumps(state))
+    config = tmp_path / ".landing" / "config.yml"
+    config.parent.mkdir()
+    config.write_text("trust: owner\n")
+    event_path = tmp_path / "event.json"
+    event_path.write_text("{}")
+    exported = composite_inputs(monkeypatch)
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "issue_comment",
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_RUN_ID": "hosted-run",
+        "GITHUB_REPOSITORY": "example/landing",
+        "INPUT_REPOSITORY": "example/landing",
+        "INPUT_DELIVERY_KEY": "hosted-policy",
+        "INPUT_DATABASE": str(tmp_path / "landing.sqlite3"),
+        "INPUT_CHECKS": "",
+    }.items():
+        monkeypatch.setenv(name, value)
+    assert exported["INPUT_TRUST"] == ""
+
+    def event(user):
+        payload = {
+            "repository": {"full_name": "example/landing"},
+            "issue": {"number": 42},
+            "comment": {"body": "/landing explain Explain this failure.", "user": user},
+        }
+        event_path.write_text(json.dumps(payload))
+        return CliRunner().invoke(create_cli_app(), ["github", "event"])
+
+    writer = event({"type": "User", "id": 2, "login": "writer"})
+    assert writer.exit_code == 0, writer.stderr
+    assert not writer.stdout
+    assert not model[1]
+
+    answer = "The failure comes from the retry loop."
+    responses, _ = model
+    responses.extend([
+        completion(
+            tool="fs_write",
+            arguments={
+                "path": "reply.json",
+                "content": json.dumps({"body": github.marker("explainer", "hosted-policy") + "\n" + answer}),
+            },
+        ),
+        completion(
+            tool="bash", arguments={"command": "gh api repos/example/landing/issues/42/comments --input reply.json"}
+        ),
+        completion(tool="confirm_reply", arguments={"comment_id": 1}),
+        completion(answer),
+    ])
+    owner = event({"type": "User", "id": 1, "login": "owner"})
+    assert owner.exit_code == 0, owner.stderr
+    admitted_action = Action.model_validate_json(owner.stdout)
+    assert admitted_action.mode == "explainer"
+    assert admitted_action.status == "completed"

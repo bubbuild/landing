@@ -1,19 +1,17 @@
 # Make Landing work for you
 
-You choose the model, environment, instructions, tools, and acceptance checks. Start with the built-in commands and adapt the parts your team needs. CLI, CI, and HTTP calls share the same action contract.
+You choose the model endpoint, execution environment, instructions, tools, and acceptance checks. The built-in commands work as shipped; adapt the parts your team needs. CLI, CI, and HTTP calls share the same action contract.
 
 ## Choose the model and environment
 
-Configure the model where work executes:
+Configure the model where work executes; [Configuration](reference/configuration.md#model) lists the settings, endpoints, and precedence:
 
 ```bash
 export LANDING_MODEL="openai:gpt-4.1"
 export LANDING_API_KEY="your-provider-api-key"
 ```
 
-You can save settings in `~/.landing/config.yml`; see [Configuration](reference/configuration.md) for endpoints and precedence. Model requests go to the selected provider, whose data handling applies.
-
-Prepare checkouts, language runtimes, dependencies, credentials, and baseline data using your existing setup process. A remote client uses the server's prepared environment. Landing does not install project tools or skills for you.
+Model requests go to the selected provider, whose data handling applies. Prepare checkouts, language runtimes, dependencies, credentials, and baseline data with your existing setup process. A remote caller uses the server's prepared environment; Landing does not install project tools or skills for you.
 
 ## Provide project guidance
 
@@ -25,7 +23,7 @@ Landing reads the selected workspace's root `AGENTS.md`. Its guidance asks the a
 Use python acceptance.py to verify CLI behavior. Compare benchmarks with the same workload and environment. When investigating a deployed failure, record the deployed revision and the relevant logs.
 ```
 
-Instructions guide the agent; they do not grant permissions or enforce an operating-system boundary.
+Instructions guide the agent; they grant no permissions and enforce no boundary.
 
 ## Prepare skills
 
@@ -60,4 +58,4 @@ Checks execute in the task workspace. Exit status establishes pass or failure, s
 
 Supply focused evidence with `--input`, use the prepared gh CLI for [GitHub](guides/github.md), or translate another platform's events into the [HTTP contract](reference/http.md). Provider signatures belong at that translation boundary. Use a [service](guides/server.md) for shared callers.
 
-Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters. Use the CLI, GitHub integration, or [HTTP service](reference/http.md) to delegate work. For an embedded agent, use [Bub's SDK](https://bub.build/docs/build/sdk/). Actions and model history stay in SQLite; workspace files remain separate. Choose retention and [recovery](guides/recovery.md) for both.
+Landing's Apache-2.0 source lets you change prompts, runtime behavior, and adapters. Actions and model history stay in SQLite; workspace files remain separate, so choose retention and [recovery](guides/recovery.md) for both. For an embedded agent outside Landing's entry points, use [Bub's SDK](https://bub.build/docs/build/sdk/).

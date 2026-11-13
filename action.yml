@@ -14,19 +14,20 @@ inputs:
     description: Workflow repository receiving the work; cross-repository targets are rejected.
     default: ${{ github.repository }}
   trust:
-    description: Native caller scope (repository writers or owner).
-    default: repository
+    description: Native caller scope (repository writers or owner). Empty leaves the Landing YAML value, then repository.
+    default: ''
   upstream-workflow:
     description: Allowed workflow_run source name; empty rejects workflow_run events.
     default: ''
   bump-on-failure:
-    description: Opt in to helping dependency update PRs after an allowed upstream workflow fails.
-    default: 'false'
+    description: Opt in to helping dependency update PRs after an allowed upstream workflow fails. Empty leaves the Landing YAML value, then false.
+    default: ''
   dependency-update-actors:
-    description: Allowed dependency PR authors, one per line.
-    default: |
-      dependabot[bot]
-      renovate[bot]
+    description: Allowed dependency PR authors, one per line. Empty leaves the Landing YAML value, then dependabot[bot] and renovate[bot].
+    default: ''
+  dependency-update-actor-additions:
+    description: More allowed dependency PR authors, one per line, unioned with the effective list. Empty adds nothing.
+    default: ''
   number:
     description: Issue or PR number; the event supplies it when available.
     default: '0'
@@ -43,8 +44,8 @@ inputs:
     description: Stable identifier for a delegated delivery.
     default: ''
   command-prefix:
-    description: GitHub comment prefix, independent of the publishing account.
-    default: /landing
+    description: GitHub comment prefix, independent of the publishing account. Empty leaves the Landing YAML value, then /landing.
+    default: ''
   checks:
     description: Required check commands, one per line.
     default: ''
@@ -83,6 +84,7 @@ runs:
         INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
         INPUT_BUMP_ON_FAILURE: ${{ inputs.bump-on-failure }}
         INPUT_DEPENDENCY_UPDATE_ACTORS: ${{ inputs.dependency-update-actors }}
+        INPUT_DEPENDENCY_UPDATE_ACTOR_ADDITIONS: ${{ inputs.dependency-update-actor-additions }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_INSTRUCTION: ${{ inputs.instruction }}
         INPUT_REPOSITORY: ${{ inputs.repository }}

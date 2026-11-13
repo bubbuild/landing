@@ -1,0 +1,41 @@
+# Shared operator policy for the Main and Landing duty workflows.
+# The duty job points LANDING_CONFIG here; the feedback job copies this file from the trusted base
+# revision, because its checkout contains candidate files. The bundled Action declares these inputs
+# empty, so a non-empty workflow value (for example ${{ vars.LANDING_TRUST }}) still wins.
+model_timeout_seconds: 120
+
+# Duty bumping: help a failed same-repository candidate workflow after native CI fails.
+bump_on_failure: true
+
+# Static dependency update base. The duty workflow unions its prepared publishing identity and
+# LANDING_DEPENDENCY_UPDATE_ACTORS additions on top of this list; a non-empty
+# dependency-update-actors input replaces the list instead.
+dependency_update_actors:
+  - dependabot[bot]
+  - renovate[bot]
+
+modes:
+  gatekeeper:
+    instructions: |
+      Review the affected behavior in this PR. Use supplied native check results and relevant review
+      history; investigate only unresolved questions, and publish useful findings or a brief clean verdict.
+      Native checks are independent of Landing feedback; ignore the Landing feedback job itself when
+      assessing whether native checks completed.
+      Read the relevant diff through gh. Generated site/** output is excluded; inspect its source when
+      needed. For documentation, assess command, configuration and workflow accuracy. For implementation,
+      assess affected user behavior.
+  issuer:
+    instructions: |
+      Triage only the failures or evidence supplied for this event. Read the affected job logs through gh,
+      and deployment evidence when a release supplies it; reuse a matching issue and record an actionable
+      current problem. Do not scan unrelated open issues or create issues for resolved historical failures.
+      Update an existing issue only for new evidence, changed conditions or verified progress; otherwise
+      complete without a public write. A successful build does not establish deployed recovery.
+  bumper:
+    instructions: |
+      Maintain this repository's dependencies, scoped to the supplied candidate or alert when present.
+      Use uv for Python runtime and development dependencies; follow project version policy and preserve
+      pinning style.
+      You may publish new updates as draft PRs on fresh deps/landing-* branches and append repair commits
+      to the supplied PR's existing branch. You may start required independent CI following AGENTS.md and
+      maintain necessary tracking issues. Maintainers decide merge and alert dismissal.

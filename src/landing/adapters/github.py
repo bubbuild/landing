@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import uuid4
 
 import typer
@@ -22,6 +22,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from landing.models import COMMANDS, Action, ActionRequest, Decision, FileInput, Mode
 from landing.runtime import Runtime
+from landing.settings import PolicySettings
 
 REPOSITORY_GUIDANCE = (
     "GitHub repository: $repository. Use the prepared gh CLI. In GitHub conversations use #number or owner/repo#number "
@@ -113,12 +114,26 @@ class GitHubEnvironment(BaseSettings):
     admission_token: str | None = Field(default=None, validation_alias="GH_ADMISSION_TOKEN", repr=False)
 
 
-class GitHubSettings(BaseSettings):
-    """Action inputs and explicit CLI overrides, independent of native authority."""
+class GitHubSettings(PolicySettings):
+    """Action inputs and explicit CLI overrides, independent of native authority.
+
+    The loaded Landing YAML may set operator policy only: command prefix, caller trust, allowed
+    upstream workflows, dependency bumping, dependency update actors, and required checks. Task
+    inputs, caller identity, event context, run identity, database, and delivery keys stay with
+    the invocation.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="INPUT_", env_ignore_empty=True, populate_by_name=True, extra="ignore", hide_input_in_errors=True
     )
+    yaml_fields: ClassVar[frozenset[str]] = frozenset({
+        "command_prefix",
+        "trust",
+        "upstream_workflow",
+        "bump_on_failure",
+        "dependency_update_actors",
+        "check",
+    })
     repository: str = Field(validation_alias=AliasChoices("INPUT_REPOSITORY", "GITHUB_REPOSITORY"))
     event: FilePath | None = Field(default=None, validation_alias="GITHUB_EVENT_PATH")
     delegated_command: Literal["review", "fix", "triage", "explain", "bump"] = Field(
@@ -131,6 +146,7 @@ class GitHubSettings(BaseSettings):
     dependency_update_actors: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["dependabot[bot]", "renovate[bot]"]
     )
+    dependency_update_actor_additions: Annotated[list[str], NoDecode] = Field(default_factory=list)
     command_prefix: str = "/landing"
     number: int = Field(default=0, ge=0)
     head: str = ""
@@ -140,7 +156,9 @@ class GitHubSettings(BaseSettings):
     database: Path | None = None
     check: Annotated[list[str], NoDecode] = Field(default_factory=list, validation_alias="INPUT_CHECKS")
 
-    @field_validator("check", "upstream_workflow", "dependency_update_actors", mode="before")
+    @field_validator(
+        "check", "upstream_workflow", "dependency_update_actors", "dependency_update_actor_additions", mode="before"
+    )
     @classmethod
     def multiline_inputs(cls, value):
         return [line for line in value.splitlines() if line.strip()] if isinstance(value, str) else value
@@ -264,10 +282,16 @@ def rows(endpoint: str, repository: str) -> list[dict]:
     return [item for page in json.loads(gh(["api", endpoint, "--paginate", "--slurp"], repository)) for item in page]
 
 
+def update_actors(options: GitHubSettings) -> set[str]:
+    """Effective allowed update accounts: the configured or replaced list plus dynamic additions."""
+    names = [*options.dependency_update_actors, *options.dependency_update_actor_additions]
+    return {name.strip().casefold() for name in names if name.strip()}
+
+
 def dependency_pull(options: GitHubSettings, event: dict) -> dict | None:
     """Resolve an opted-in update account's failed CI to its current, same-repository PR."""
     run = required(event, "workflow_run")
-    actors = {name.strip().casefold() for name in options.dependency_update_actors if name.strip()}
+    actors = update_actors(options)
     pulls = required(run, "pull_requests")
     head = required(run, "head_sha")
     if not pulls:
@@ -810,6 +834,10 @@ def github_event(
         list[str] | None,
         typer.Option("--dependency-update-actor", help="Allowed dependency update account (repeatable)."),
     ] = None,
+    dependency_update_actor_additions: Annotated[
+        list[str] | None,
+        typer.Option("--dependency-update-actor-addition", help="Additional allowed update account (repeatable)."),
+    ] = None,
     command_prefix: Annotated[str | None, typer.Option(help="Comment command prefix.")] = None,
     number: Annotated[int | None, typer.Option(min=0, help="Issue or PR number.")] = None,
     head: Annotated[str | None, typer.Option(help="Candidate commit.")] = None,
@@ -819,9 +847,12 @@ def github_event(
     check: Annotated[list[str] | None, typer.Option(help="Required validation (repeatable).")] = None,
 ) -> None:
     """Admit and route an event, then confirm native publication."""
+    from landing.cli import execution_runtime, execution_settings
+
+    settings = execution_settings(ctx)
     parameters = {**locals(), "database": ctx.find_root().params.get("db")}
     options = GitHubSettings(**{
-        name: value for name, value in parameters.items() if name != "ctx" and value is not None
+        name: value for name, value in parameters.items() if name not in {"ctx", "settings"} and value is not None
     })
     context = GitHubEnvironment()
     payload = json.loads(options.event.read_text()) if options.event else None
@@ -838,9 +869,6 @@ def github_event(
     ):
         write_outputs(None)
         raise typer.Exit()
-    from landing.cli import execution_runtime, execution_settings
-
-    settings = execution_settings(ctx)
     upstream_run = (payload or {}).get("workflow_run", {})
     if payload and (
         upstream_run.get("event") == "pull_request"
