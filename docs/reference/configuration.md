@@ -55,16 +55,16 @@ modes:
     allowed_skills: [landing-issuer, issue-triage]
   fixer:
     allowed_tools: [spill.read, fs.read, fs.write, fs.edit, bash, skill]
-    allowed_skills: [landing-fixer, friendly-python, piglet]
+    allowed_skills: [landing-fixer, team-style]
   gatekeeper:
     instructions: |
       Review supported user-visible behavior.
-      Use $landing-review for project-specific standards.
-    allowed_skills: [landing-gatekeeper, landing-review]
+      Use $review-standards for project-specific rules.
+    allowed_skills: [landing-gatekeeper, review-standards]
     excluded_tools: [fs.write, fs.edit]
   explainer:
     allowed_tools: [spill.read, fs.read, skill]
-    allowed_skills: [landing-explainer, documentation-writer]
+    allowed_skills: [landing-explainer]
 ```
 
 `instructions` adds guidance without replacing the selected method or granting capabilities. Keep project conventions in `AGENTS.md`, reusable methods in skills, and evidence in task inputs. These additions stay literal rather than being evaluated as templates.
@@ -125,14 +125,14 @@ Landing YAML may also set operator policy for the GitHub runner: `command_prefix
 ```yaml
 command_prefix: "@team-bot"
 trust: repository
-upstream_workflow: [release-main]
+upstream_workflow: [ci]
 bump_on_failure: true
 dependency_update_actors:
   - dependabot[bot]
   - renovate[bot]
 check:
-  - uv run ty check
-  - uv run pre-commit run --all-files
+  - make acceptance
+  - make lint
 ```
 
 `dependency_update_actors` sets the allowed update accounts. A non-empty `dependency-update-actors` input or `--dependency-update-actor` option replaces that list; `dependency-update-actor-additions` or `--dependency-update-actor-addition` adds logins to the effective list, so a workflow can union a prepared publishing identity and repository variables with the configured base. Blank additions add nothing.
@@ -154,7 +154,24 @@ jobs:
           command: review
 ```
 
-The checkout supplies the configuration file. In privileged workflows, load operator policy from a trusted revision, not a candidate-controlled file. Landing's feedback job checks out the candidate, so it copies `.github/landing.yml` from the PR base revision into the runner temp directory and points `LANDING_CONFIG` there; the duty job checks out the default branch and reads the checked-in file directly. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
+The checkout supplies the configuration file. In a privileged workflow, load operator policy from a trusted revision instead of the candidate-controlled checkout. A job that checks out a pull request candidate can copy `.github/landing.yml` from the base revision into `RUNNER_TEMP` and point `LANDING_CONFIG` there:
+
+```yaml
+      - name: Prepare operator policy from the trusted revision
+        env:
+          POLICY_REVISION: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/policy"
+          policy="$RUNNER_TEMP/policy/landing.yml"
+          git show "$POLICY_REVISION:.github/landing.yml" > "$policy"
+          echo "LANDING_CONFIG=$policy" >> "$GITHUB_ENV"
+```
+
+This keeps the file outside the checkout, so candidate files cannot supply it. If the base revision may predate the file, fall back to no `LANDING_CONFIG` and let the documented defaults apply rather than reading the checkout.
+
+A job that checks out the default branch can read the checked-in file directly. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
+
+A `workflow_run` listener admits one named upstream workflow per step. Give a release listener and a failed-candidate listener their own `upstream-workflow` values rather than combining them.
 
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 

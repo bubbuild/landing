@@ -80,7 +80,7 @@ Task instructions and evidence stay in task inputs. GitHub adaptation owns desti
 
 ## Run the feedback loop
 
-Main checks candidate PRs, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step: failures emit a warning and retain their task records without failing native CI. Environment preparation outside the Action remains strict, as do explicit delegations. Maintainers can delegate explanations, fixes, triage, and reviews through explicit comment commands. Release follow-up uses the triggering release's failure or recovery evidence.
+The review workflow runs native checks on a candidate pull request, then Landing reviews the affected behavior with those conclusions. Default-branch native failures receive triage; healthy checks skip model feedback. Automatic review and triage use GitHub's `continue-on-error` on the Action step, so a failure emits a warning and keeps its task record without failing native CI. Preparation outside the Action stays strict, as do explicit delegations. Release follow-up uses the triggering release's failure or recovery evidence.
 
 The release workflow also deploys documentation from main on push or manual dispatch. Package publication runs only for a published release; documentation-only runs do not trigger issuer follow-up. Pages artifacts use attempt-specific names so deployment retries select one artifact.
 
@@ -91,33 +91,21 @@ Issue or failure -> Delegated work -> Candidate PR -> Native checks
       +-------------------------------------------------+
 ```
 
-The composite Action is `action.yml`. Main and duty prepare project tools and skills, then call `uses: ./` once with built-in admission. Landing discovers the repository's `.agents` skills and MCP configuration with its default settings. Main groups review work by PR and cancels old candidates; duty uses the default-branch checkout for its prepared environment, admits explicit commands or trusted release events, and queues delegations separately. Admission protects delegated agent work; native workflow policy governs the prepared environment. [GitHub integration](guides/github.md) explains identity, trust, and publication.
+The composite Action is `action.yml`. The repository's workflows prepare project tools and skills, then call `uses: ./` once with built-in admission. A review workflow groups its work by pull request and cancels superseded candidates; a separate job handles delegated commands, dependency work, and release follow-up from a default-branch checkout. Admission protects delegated agent work; native workflow policy governs the prepared environment. [GitHub integration](guides/github.md) explains identity, trust, and publication.
 
-Configure this repository's workflows with these GitHub variables and secrets:
+Static operator policy for the repository's workflows lives in one checked-in Landing YAML file, which those workflows load through `LANDING_CONFIG`. Model, endpoint, and completion bindings stay in workflow environment; each Action step receives its provider key separately so preparation steps do not inherit it. Policy an Action step omits defers to the file and then to the documented default, and distinct upstream workflow names stay separate per step.
 
-| Setting | Purpose |
-| --- | --- |
-| Variable `LANDING_MODEL` | Model identifier; unset disables feedback. |
-| Variables `LANDING_API_BASE`, `LANDING_COMPLETION_ARGS` | Optional endpoint and completion options. |
-| Secret `LANDING_API_KEY` | Provider key. |
-| Variable `LANDING_TRUST` | Optional caller policy; unset keeps the Landing YAML value, then `repository`. |
-| Secret `LANDING_ADMISSION_TOKEN` | Optional admission credential; organization owner checks need Members read. |
-| Secret `LANDING_GITHUB_TOKEN` | Publication token, default workflow token. |
-| Variables `LANDING_GIT_NAME`, `LANDING_GIT_EMAIL` | Optional commit identity; set both. Default is the standard Actions bot. |
-
-For a workflow-token candidate, start Main explicitly using the repository procedure:
+With the workflow token, ordinary pushes do not start another workflow run. Start native CI for a candidate explicitly:
 
 ```bash
 gh workflow run main.yml --ref BRANCH -f number=PR_NUMBER -f head=CANDIDATE_SHA
 ```
 
-Duty sets its non-secret model, endpoint, completion options, and timeout once at job level. Each Action step receives its provider key separately, so unrelated preparation steps do not inherit it. Policy inputs a step omits defer to Landing YAML and then to the documented defaults; both duty steps pass `trust` from the same variable, and their distinct upstream workflow allow-lists stay separate. Main keeps its environment on its single Action step and omits the `checked-revision` and `run-id` entries the Action already derives from `github.sha` and `github.run_id`.
-
-Candidate self-checks install Landing from that checkout. A duty task using the default-branch runtime does not reload it when the selected workspace changes.
+Candidate self-checks install Landing from that checkout. A task using the default-branch runtime does not reload it when the selected workspace changes.
 
 The repository includes a [Playwright MCP example](https://github.com/bubbuild/landing/blob/main/.agents/mcp.json) for demonstration and browser checks during development.
 
-Bundled jobs use a 120-second model request timeout. Main's feedback Action has a 20-minute step timeout inside a 25-minute job, leaving time for warnings and artifact upload. Duty has a 20-minute job timeout. Per-job SQLite artifacts expire after 30 days. Retain lasting findings in issues, project guidance, code, and meaningful regression cases. Update work items when evidence or outcomes change; avoid repeated status reports.
+Retain lasting findings in issues, project guidance, code, and meaningful regression cases. Update work items when evidence or outcomes change; avoid repeated status reports.
 
 ## Publish a release
 
@@ -129,7 +117,7 @@ After validation and merge, publish a GitHub release with an unprefixed version 
 
 Check whether the explanation helped, the repair met acceptance, and feedback reached its intended destination. A model's `allow` is not its quality score. A healthy test matrix does not establish recovery from a deployment failure; verify that failure in the relevant environment.
 
-Keep investigation details in artifacts and public feedback useful to the person receiving it. Automated work can proceed within its authorization. Maintainers stay involved in welcoming contributors, understanding concerns, and resolving disagreements, following [Community Over Code](working-with-landing.md#community-over-code).
+Keep investigation details in artifacts and public feedback useful to the person receiving it. Automated work can proceed within its authorization. Maintainers stay involved in welcoming contributors, understanding concerns, and resolving disagreements, as [Community Over Code](https://www.apache.org/theapacheway/) describes.
 
 ## Verify container recovery
 
