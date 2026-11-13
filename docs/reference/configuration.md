@@ -182,7 +182,7 @@ jobs:
           command: review
 ```
 
-`fetch-depth: 0` matters because a shallow pull request checkout normally lacks the base commit, so the lookup fails. The `if` keeps the runner's `bash -eo pipefail` shell from aborting on a miss, deletes the empty file, and leaves `LANDING_CONFIG` unset, so Landing applies its documented defaults instead of reading an empty file from the checkout. This also covers a base revision that predates the file.
+`fetch-depth: 0` matters because a shallow pull request checkout normally lacks the base commit, so the lookup fails. The `if` keeps the runner's `bash -eo pipefail` shell from aborting and, on a miss, deletes the empty file and skips the export; a base revision that predates the file takes the same path. Use this pattern instead of the job-level `LANDING_CONFIG` above, and keep any job- or step-level `LANDING_CONFIG` out of this job: the export here must be its only source. Skipping the export cannot clear a value the job already carries, so an inherited job-level `LANDING_CONFIG: .github/landing.yml` would keep pointing into the candidate checkout and Landing would read candidate-supplied policy. With no inherited value, a miss leaves the setting absent and Landing applies its documented defaults.
 
 A job that checks out the default branch can read the checked-in file directly. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
 
