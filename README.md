@@ -46,7 +46,7 @@ The example follows `main`; pin a release tag or reviewed commit to keep the run
 | [GitHub Action and events](https://getlanding.dev/guides/github/) | Work is triggered by repository events, comments, or schedules. |
 | [HTTP service](https://getlanding.dev/guides/server/) | Several callers share one queue and prepared environment. |
 
-All three accept the same modes, instructions, inputs, and checks, and record the same action lifecycle. [CLI reference](https://getlanding.dev/reference/cli/) and [HTTP reference](https://getlanding.dev/reference/http/) list the exact contracts. The service also ships as an image: [deploy](https://getlanding.dev/guides/deploy/) covers Compose and `ghcr.io/bubbuild/landing`.
+All three accept the same modes, instructions, and inputs, and record the same action lifecycle; required checks apply to `fix`, `review`, and `bump`, not `explain` or `triage`. [CLI reference](https://getlanding.dev/reference/cli/) and [HTTP reference](https://getlanding.dev/reference/http/) list the exact contracts. The service also ships as an image: [deploy](https://getlanding.dev/guides/deploy/) covers Compose and `ghcr.io/bubbuild/landing`.
 
 ## Configure and adapt
 

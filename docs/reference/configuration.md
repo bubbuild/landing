@@ -154,20 +154,35 @@ jobs:
           command: review
 ```
 
-The checkout supplies the configuration file. In a privileged workflow, load operator policy from a trusted revision instead of the candidate-controlled checkout. A job that checks out a pull request candidate can copy `.github/landing.yml` from the base revision into `RUNNER_TEMP` and point `LANDING_CONFIG` there:
+The checkout supplies the configuration file. In a privileged workflow, load operator policy from a trusted revision instead of the candidate-controlled checkout. A job that checks out a pull request candidate can read `.github/landing.yml` from the base commit into `RUNNER_TEMP` and point `LANDING_CONFIG` there:
 
 ```yaml
+jobs:
+  feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the base commit object must exist for the lookup below
+          persist-credentials: false
       - name: Prepare operator policy from the trusted revision
         env:
           POLICY_REVISION: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/policy"
           policy="$RUNNER_TEMP/policy/landing.yml"
-          git show "$POLICY_REVISION:.github/landing.yml" > "$policy"
-          echo "LANDING_CONFIG=$policy" >> "$GITHUB_ENV"
+          if git show "$POLICY_REVISION:.github/landing.yml" > "$policy" 2>/dev/null && [ -s "$policy" ]; then
+            echo "LANDING_CONFIG=$policy" >> "$GITHUB_ENV"
+          else
+            rm -f "$policy"
+            echo "::warning::No operator policy at the base revision; Landing defaults apply."
+          fi
+      - uses: bubbuild/landing@main
+        with:
+          command: review
 ```
 
-This keeps the file outside the checkout, so candidate files cannot supply it. If the base revision may predate the file, fall back to no `LANDING_CONFIG` and let the documented defaults apply rather than reading the checkout.
+`fetch-depth: 0` matters because a shallow pull request checkout normally lacks the base commit, so the lookup fails. The `if` keeps the runner's `bash -eo pipefail` shell from aborting on a miss, deletes the empty file, and leaves `LANDING_CONFIG` unset, so Landing applies its documented defaults instead of reading an empty file from the checkout. This also covers a base revision that predates the file.
 
 A job that checks out the default branch can read the checked-in file directly. Keep provider credentials in the Action step environment rather than widening their scope to unrelated job steps. Values that vary per event or step, such as the delegated command, instruction, number, head, delivery key, or a `${{ vars.* }}` override, stay in `with:`. A non-empty workflow value wins over the file, including an explicit `false`.
 
