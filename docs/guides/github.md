@@ -93,7 +93,17 @@ Listeners must exist on the default branch to receive events. Landing's [duty wo
 
 ## Delete merged head branches
 
-Set `delete-merged-branch: true` to remove a pull request's own head branch once that pull request is actually merged. Cleanup runs only for a `pull_request` event with action `closed` and a merged pull request; a closed but unmerged pull request, a declined or abandoned action, and an unmerged candidate leave branches untouched. The Action input is empty by default, so an empty or omitted input uses the documented default `false`; an explicit `true` or `false` wins.
+Set `delete-merged-branch: true` to remove a pull request's own head branch once that pull request is actually merged. Cleanup runs only for a `pull_request` event with action `closed` and a merged pull request; a closed but unmerged pull request, a declined or abandoned action, and an unmerged candidate leave branches untouched.
+
+Two pieces of workflow configuration are required, because GitHub delivers neither by default. Subscribe the workflow to the closed action, since the default `pull_request` types exclude it:
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+```
+
+Grant the job `contents: write` so the runner's token may delete a ref; a read-only token makes the cleanup fail rather than silently skip. The input is empty by default, so an empty or omitted value uses the documented default `false`, while an explicit `true` or `false` wins.
 
 Cleanup re-reads the pull request and deletes nothing unless GitHub still reports it as merged. It only ever touches the merged pull request's own head branch in the current repository, so a fork pull request never affects the fork. It skips the default branch, protected branches, and any head branch not owned by the current repository. If the branch head no longer equals the merged pull request's head SHA, the branch advanced after the merge and is left in place.
 
