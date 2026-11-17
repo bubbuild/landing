@@ -84,8 +84,6 @@ landing --db landing.sqlite3 github event --repository example/service --event e
 
 A `repository_dispatch` with `action: dependabot_alert` supplies a positive integer `client_payload.alert_number`. The current GitHub alert state selects the command: open selects bump; fixed or dismissed selects triage. Alert lookup errors fail the invocation. See [security alert integration](../guides/github.md#handle-security-alerts-and-unresolved-blockers) for setup and issue tracking.
 
-With `--delete-merged-branch`, a `pull_request` event whose action is `closed` deletes the merged PR's own head branch instead of delegating work. The invocation prints its outcome and exits without an action record; an absent branch is a successful no-op, and an API or authorization error fails the invocation. See [delete merged head branches](../guides/github.md#delete-merged-head-branches).
-
 In GitHub Actions, the command reads `GITHUB_EVENT_PATH` and the Action's `INPUT_*` environment. Multiline `INPUT_CHECKS` and `INPUT_UPSTREAM_WORKFLOW` supply checks and allowed workflow names. Explicit options take precedence. The database uses `--db`, then `INPUT_DATABASE`, then `LANDING_DB`, then `RUNNER_TEMP/landing/landing.sqlite3`. Outside a workflow, supply `--delivery-key`. Native output and summary files receive the same values as the composite Action.
 
 ## GitHub Action
@@ -100,7 +98,6 @@ The `bubbuild/landing` Action executes work from GitHub workflow events. [Get st
 | `trust` | `repository` (default) or `owner`. |
 | `upstream-workflow` | Allowed `workflow_run` name; empty rejects these events. |
 | `bump-on-failure` | Default `false`; opt in to bump after an allowed same-repository PR or candidate dispatch workflow fails. |
-| `delete-merged-branch` | Empty by default, which uses the default `false`; opt in to delete a merged PR's own head branch. |
 | `dependency-update-actors` | Update account logins, one per line; defaults to `dependabot[bot]` and `renovate[bot]`. The current PR author must match. |
 | `number` | Issue or PR number; supplied by the event when available. |
 | `head` | Candidate head, distinct from the checked revision; PR events supply it. |

@@ -22,9 +22,6 @@ inputs:
   bump-on-failure:
     description: Opt in to helping dependency update PRs after an allowed upstream workflow fails.
     default: 'false'
-  delete-merged-branch:
-    description: Opt in, with an empty default, to deleting a merged PR's own head branch in this repository.
-    default: ''
   dependency-update-actors:
     description: Allowed dependency PR authors, one per line.
     default: |
@@ -85,7 +82,6 @@ runs:
         INPUT_TRUST: ${{ inputs.trust }}
         INPUT_UPSTREAM_WORKFLOW: ${{ inputs.upstream-workflow }}
         INPUT_BUMP_ON_FAILURE: ${{ inputs.bump-on-failure }}
-        INPUT_DELETE_MERGED_BRANCH: ${{ inputs.delete-merged-branch }}
         INPUT_DEPENDENCY_UPDATE_ACTORS: ${{ inputs.dependency-update-actors }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_INSTRUCTION: ${{ inputs.instruction }}

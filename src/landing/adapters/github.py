@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 from typing import Annotated, Any, Literal, cast
-from urllib.parse import quote
 from uuid import uuid4
 
 import typer
@@ -129,7 +128,6 @@ class GitHubSettings(BaseSettings):
     trust: Literal["repository", "owner"] = "repository"
     upstream_workflow: Annotated[list[str], NoDecode] = Field(default_factory=list)
     bump_on_failure: bool = False
-    delete_merged_branch: bool = False
     dependency_update_actors: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["dependabot[bot]", "renovate[bot]"]
     )
@@ -305,58 +303,6 @@ def dependency_alert(options: GitHubSettings, event: dict) -> dict:
     options.delegated_command = "bump" if required(alert, "state") == "open" else "triage"
     options.instruction = f"Follow Dependabot alert {number} using its current API state. " + options.instruction
     return {**event, "dependabot_alert": alert}
-
-
-def not_found(message: str) -> bool:
-    """Distinguish an absent resource from an authorization or transport failure."""
-    return "404" in message or "Not Found" in message
-
-
-def delete_merged_head_branch(repository: str, number: int, default_branch: str) -> str:
-    """Delete a merged pull request's own head branch and report the outcome.
-
-    Only the current repository's own head branch is eligible. The head must still match the
-    merged candidate, so a branch that advanced after the merge stays untouched. An absent
-    branch is a no-op; API failures raise so the invocation fails instead of reporting success.
-    """
-    current = json.loads(gh(["api", f"repos/{repository}/pulls/{number}"], repository))
-    if current.get("state") != "closed" or current.get("merged") is not True:
-        return f"skipped: pull request #{number} is not merged"
-    head = required(current, "head")
-    branch, head_sha = required(head, "ref"), required(head, "sha")
-    if (head.get("repo") or {}).get("full_name", "").casefold() != repository.casefold():
-        return f"skipped: {branch} is not a branch of this repository"
-    if branch == default_branch:
-        return f"skipped: {branch} is the default branch"
-    try:
-        state = json.loads(gh(["api", f"repos/{repository}/branches/{quote(branch, safe='/')}"], repository))
-    except RuntimeError as exc:
-        if not not_found(str(exc)):
-            raise
-        return f"no-op: {branch} is already absent"
-    if state.get("protected"):
-        return f"skipped: {branch} is protected"
-    if required(state, "commit", "sha") != head_sha:
-        return f"skipped: {branch} advanced past the merged head"
-    try:
-        gh(["api", f"repos/{repository}/git/refs/heads/{quote(branch, safe='/')}", "-X", "DELETE"], repository)
-    except RuntimeError as exc:
-        if not not_found(str(exc)):
-            raise
-        return f"no-op: {branch} was already absent"
-    return f"deleted {branch}"
-
-
-def merged_branch_cleanup(options: GitHubSettings, event: dict | None) -> str | None:
-    """Run the opted-in cleanup for a closed pull request event, or defer to delegated work."""
-    if not options.delete_merged_branch or not event or event.get("action") != "closed":
-        return None
-    pull = event.get("pull_request")
-    if not pull:
-        return None
-    return delete_merged_head_branch(
-        options.repository, required(pull, "number"), required(event, "repository", "default_branch")
-    )
 
 
 def marker(mode: Mode, key: str) -> str:
@@ -816,14 +762,6 @@ async def run(landing: Runtime, options: GitHubSettings, event: dict | None = No
     return action
 
 
-def report_cleanup(outcome: str) -> None:
-    """Announce the cleanup outcome without inventing a delegated action record."""
-    typer.echo(outcome, err=True)
-    if summary := GitHubEnvironment().step_summary:
-        with summary.open("a") as output:
-            output.write(outcome + "\n")
-
-
 def write_outputs(action: Action | None) -> None:
     """Write native Action outputs and the step summary when available."""
     outputs = {
@@ -868,10 +806,6 @@ def github_event(
     bump_on_failure: Annotated[
         bool | None, typer.Option("--bump-on-failure/--no-bump-on-failure", help="Help update PRs after failed CI.")
     ] = None,
-    delete_merged_branch: Annotated[
-        bool | None,
-        typer.Option("--delete-merged-branch/--no-delete-merged-branch", help="Delete a merged PR's head branch."),
-    ] = None,
     dependency_update_actors: Annotated[
         list[str] | None,
         typer.Option("--dependency-update-actor", help="Allowed dependency update account (repeatable)."),
@@ -902,12 +836,6 @@ def github_event(
         prefix=options.command_prefix,
         bump_on_failure=options.bump_on_failure,
     ):
-        write_outputs(None)
-        raise typer.Exit()
-    cleanup = merged_branch_cleanup(options, payload)
-    if cleanup is not None:
-        # Cleanup is operator bookkeeping with the runner's credentials; it delegates no model work.
-        report_cleanup(cleanup)
         write_outputs(None)
         raise typer.Exit()
     from landing.cli import execution_runtime, execution_settings

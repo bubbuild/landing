@@ -118,7 +118,7 @@ Local workspace defaults to the current directory. Servers register names with `
 
 ## GitHub workflows and runner
 
-The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown. Optional merged-branch cleanup is off by default; `delete-merged-branch` and `--delete-merged-branch` opt in and use the same prepared credentials.
+The runner uses prepared `GH_TOKEN` or gh login for publication and optional `GH_ADMISSION_TOKEN` for separate admission. Action inputs load from `INPUT_*`; explicit CLI options take precedence. Checks and upstream workflow names use multiline inputs. Native `GITHUB_*` identity and event context come from the execution environment; YAML cannot grant caller authority. An empty `checked-revision` input leaves check provenance unknown.
 
 Commit attribution uses Git configuration or `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL`. Selecting a publication token alone does not change commit attribution. See [GitHub integration](../guides/github.md) for identity and trust, and [Action inputs](cli.md#github-action) for invocation.
 
