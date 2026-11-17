@@ -100,10 +100,32 @@ Two pieces of workflow configuration are required, because GitHub delivers neith
 ```yaml
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, closed]
+    types: [closed]
 ```
 
-Grant the job `contents: write` so the runner's token may delete a ref; a read-only token makes the cleanup fail rather than silently skip. The input is empty by default, so an empty or omitted value uses the documented default `false`, while an explicit `true` or `false` wins.
+Grant the job `contents: write` so the runner's token may delete a ref; a read-only token makes the cleanup fail rather than silently skip. Keep this job separate from your review jobs, so a closed pull request does not rerun the test matrix, and read the action from the default branch rather than from the merged candidate, since this job holds a write token:
+
+```yaml
+permissions:
+  contents: write
+
+jobs:
+  merged-branch:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: bubbuild/landing@main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          delete-merged-branch: 'true'
+```
+
+The input is empty by default, so an empty or omitted value uses the documented default `false`, while an explicit `true` or `false` wins.
 
 Cleanup re-reads the pull request and deletes nothing unless GitHub still reports it as merged. It only ever touches the merged pull request's own head branch in the current repository, so a fork pull request never affects the fork. It skips the default branch, protected branches, and any head branch not owned by the current repository. If the branch head no longer equals the merged pull request's head SHA, the branch advanced after the merge and is left in place.
 
