@@ -91,6 +91,16 @@ When authorized, the agent reuses or creates an issue for confirmed exposure or 
 
 Listeners must exist on the default branch to receive events. Landing's [duty workflow](https://github.com/bubbuild/landing/blob/main/.github/workflows/landing-duty.yml) is a project example, not a requirement for using the Action.
 
+## Delete merged head branches
+
+Set `delete-merged-branch: true` to remove a pull request's own head branch once that pull request is actually merged. Cleanup runs only for a `pull_request` event with action `closed` and a merged pull request; a closed but unmerged pull request, a declined or abandoned action, and an unmerged candidate leave branches untouched. The Action input is empty by default, so an empty or omitted input uses the documented default `false`; an explicit `true` or `false` wins.
+
+Cleanup re-reads the pull request and deletes nothing unless GitHub still reports it as merged. It only ever touches the merged pull request's own head branch in the current repository, so a fork pull request never affects the fork. It skips the default branch, protected branches, and any head branch not owned by the current repository. If the branch head no longer equals the merged pull request's head SHA, the branch advanced after the merge and is left in place.
+
+A branch that is already absent is a successful no-op. Missing write or branch access and other API errors fail the invocation rather than reporting deletion. The step uses the runner's prepared gh credentials, needs no extra scope beyond deleting a branch, and prints its outcome to stderr and the step summary. It creates no action record and delegates no model work.
+
+GitHub also offers a repository-wide "automatically delete head branches" setting. That setting is global to the repository, applies to every merge regardless of workflow events, and is not a Landing-only option; Landing's `delete-merged-branch` policy is the per-invocation alternative and changes no repository settings.
+
 ## Choose who can delegate
 
 `trust: repository` admits effective repository writers and administrators. `trust: owner` admits the current personal owner by user ID, or an active organization owner with native membership `role: admin`. It does not admit every repository administrator. Native [repository permission](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user) and [organization membership](https://docs.github.com/en/rest/orgs/members#get-organization-membership-for-a-user) APIs are authoritative; Landing keeps no member list or permission cache.
